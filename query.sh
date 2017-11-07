@@ -77,7 +77,7 @@ wget --http-user=csifon --http-passwd=UWV21cdg "$url" -O $output_dir/groups.txt
 ## Galaxies
 ## ----
 
-columns_galaxy="GalaxyID, GroupID, Redshift as z, \
+columns_galaxy="GalaxyID, GroupID, \
 CentreOfMass_x as $CentreOfMass_x, \
 CentreOfMass_y as $CentreOfMass_y, \
 CentreOfMass_z as $CentreOfMass_z, \
