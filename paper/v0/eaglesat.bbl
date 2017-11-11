@@ -1,0 +1,47 @@
+\begin{thebibliography}{}
+\makeatletter
+\relax
+\def\mn@urlcharsother{\let\do\@makeother \do\$\do\&\do\#\do\^\do\_\do\%\do\~}
+\def\mn@doi{\begingroup\mn@urlcharsother \@ifnextchar [ {\mn@doi@}
+  {\mn@doi@[]}}
+\def\mn@doi@[#1]#2{\def\@tempa{#1}\ifx\@tempa\@empty \href
+  {http://dx.doi.org/#2} {doi:#2}\else \href {http://dx.doi.org/#2} {#1}\fi
+  \endgroup}
+\def\mn@eprint#1#2{\mn@eprint@#1:#2::\@nil}
+\def\mn@eprint@arXiv#1{\href {http://arxiv.org/abs/#1} {{\tt arXiv:#1}}}
+\def\mn@eprint@dblp#1{\href {http://dblp.uni-trier.de/rec/bibtex/#1.xml}
+  {dblp:#1}}
+\def\mn@eprint@#1:#2:#3:#4\@nil{\def\@tempa {#1}\def\@tempb {#2}\def\@tempc
+  {#3}\ifx \@tempc \@empty \let \@tempc \@tempb \let \@tempb \@tempa \fi \ifx
+  \@tempb \@empty \def\@tempb {arXiv}\fi \@ifundefined
+  {mn@eprint@\@tempb}{\@tempb:\@tempc}{\expandafter \expandafter \csname
+  mn@eprint@\@tempb\endcsname \expandafter{\@tempc}}}
+
+\bibitem[\protect\citeauthoryear{{Crain} et~al.,}{{Crain}
+  et~al.}{2015}]{crain15}
+{Crain} R.~A.,  et~al., 2015, \mn@doi [\mnras] {10.1093/mnras/stv725}, \href
+  {http://adsabs.harvard.edu/abs/2015MNRAS.450.1937C} {450, 1937}
+
+\bibitem[\protect\citeauthoryear{{Knebe} et~al.,}{{Knebe}
+  et~al.}{2011}]{knebe11}
+{Knebe} A.,  et~al., 2011, \mn@doi [\mnras] {10.1111/j.1365-2966.2011.18858.x},
+  \href {http://adsabs.harvard.edu/abs/2011MNRAS.415.2293K} {415, 2293}
+
+\bibitem[\protect\citeauthoryear{{Schaye} et~al.,}{{Schaye}
+  et~al.}{2015}]{schaye15}
+{Schaye} J.,  et~al., 2015, \mn@doi [\mnras] {10.1093/mnras/stu2058}, \href
+  {http://adsabs.harvard.edu/abs/2015MNRAS.446..521S} {446, 521}
+
+\bibitem[\protect\citeauthoryear{{Springel}, {White}, {Tormen}  \&
+  {Kauffmann}}{{Springel} et~al.}{2001}]{springel01_cluster}
+{Springel} V.,  {White} S.~D.~M.,  {Tormen} G.,   {Kauffmann} G.,  2001,
+  \mn@doi [\mnras] {10.1046/j.1365-8711.2001.04912.x}, \href
+  {http://adsabs.harvard.edu/abs/2001MNRAS.328..726S} {328, 726}
+
+\bibitem[\protect\citeauthoryear{{Velliscig} et~al.,}{{Velliscig}
+  et~al.}{2017}]{velliscig17}
+{Velliscig} M.,  et~al., 2017, \mn@doi [\mnras] {10.1093/mnras/stx1789}, \href
+  {http://adsabs.harvard.edu/abs/2017MNRAS.471.2856V} {471, 2856}
+
+\makeatother
+\end{thebibliography}
