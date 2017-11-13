@@ -12,3 +12,9 @@ data
 *.aux
 *.blg
 *.log
+
+# TeXnicle auxiliary files
+*.synctex.gz
+
+# Max OSX files
+*.DS_Store
