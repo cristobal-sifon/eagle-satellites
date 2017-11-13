@@ -8,6 +8,9 @@ data
 # Python module files
 *.pyc
 
+# IPython notebook
+*.ipynb_checkpoints
+
 # Latex auxiliary files
 *.aux
 *.blg
