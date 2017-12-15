@@ -3,6 +3,7 @@ data
 # Backup files
 *~
 *.save
+__pycache__
 
 # Python module files
 *.pyc
