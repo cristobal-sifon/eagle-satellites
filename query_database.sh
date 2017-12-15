@@ -5,24 +5,6 @@ for i in {1..5}; do echo; done
 user=csifon
 passwd=UWV21cdg
 
-snapshot=28
-# must be one of {DMONLY, Ref, ...}
-physics=Ref
-simulation=L0100N1504
-
-if [[ $physics == DMONLY ]]; then
-    table=$physics..$simulation
-else
-    table=$physics$simulation
-fi
-
-output_dir=data/$simulation/$physics/snapshot$snapshot
-# do we need to create the directory?
-if [ ! -d $output_dir ]; then
-    mkdir -p $output_dir
-fi
-
-
 Mstar_min=1E9
 Mass_min=1e10
 
@@ -66,6 +48,28 @@ VmaxRadius=r_vmax
 # ---
 
 baseurl="http://galaxy-catalogue.dur.ac.uk:8080/Eagle?action=doQuery&SQL=select"
+
+## actual code below
+
+simulation=L0100N1504
+# z = 0.18 ~ GAMA
+snapshot=26
+
+for physics in Ref DMONLY
+do
+
+    if [[ $physics == DMONLY ]]; then
+        table=$physics..$simulation
+    else
+        table=$physics$simulation
+    fi
+
+output_dir=data/$simulation/$physics/snapshot$snapshot
+# do we need to create the directory?
+if [ ! -d $output_dir ]; then
+    mkdir -p $output_dir
+fi
+
 
 ## ----
 ## Massive groups
@@ -164,3 +168,7 @@ url="$baseurl GalaxyID, LastProgID, TopLeafID, DescendantID
 $cuts_galaxy"
 
 wget --http-user=$user --http-passwd=$passwd "$url" -O $output_dir/history.txt
+
+
+# closes the physics loop
+done
