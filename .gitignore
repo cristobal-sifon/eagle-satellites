@@ -1,6 +1,5 @@
 data
 
-
 # Backup files
 *~
 *.save
@@ -15,6 +14,7 @@ data
 *.aux
 *.blg
 *.log
+*.out
 
 # TeXnicle auxiliary files
 *.synctex.gz
