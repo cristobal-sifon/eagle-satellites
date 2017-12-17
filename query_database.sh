@@ -132,32 +132,31 @@ if [ $physics != DMONLY ]; then
     cuts_galaxy="$cuts_galaxy and Spurious = 0"
 fi
 
+url="$baseurl $columns_galaxy"
+if [ $physics != DMONLY ]; then
+    url="$url, $columns_hydro"
+fi
+url="$url
+$cuts_galaxy"
+
 
 ## ----
 ## Centrals
 ## ----
 
-url="$baseurl $columns_galaxy"
-if [ $physics != DMONLY ]; then
-    url="$url, $columns_hydro"
-fi
-url="$url
-$cuts_galaxy and SubGroupNumber = 0"
+url_cent="$url
+    and SubGroupNumber = 0"
 
-wget --http-user=$user --http-passwd=$passwd "$url" -O $output_dir/centrals.txt
+wget --http-user=$user --http-passwd=$passwd "$url_cent" -O $output_dir/centrals.txt
 
 ## ----
 ## Satellites
 ## ----
 
-url="$baseurl $columns_galaxy"
-if [ $physics != DMONLY ]; then
-    url="$url, $columns_hydro"
-fi
-url="$url
-$cuts_galaxy and SubGroupNumber > 0"
+url_sat="$url
+    and SubGroupNumber > 0"
 
-wget --http-user=$user --http-passwd=$passwd "$url" -O $output_dir/satellites.txt
+wget --http-user=$user --http-passwd=$passwd "$url_sat" -O $output_dir/satellites.txt
 
 
 ## ----
