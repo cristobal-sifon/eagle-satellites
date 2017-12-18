@@ -11,8 +11,6 @@ import numpy as np
 import re
 from urllib import parse, request
 
-x = parse.urlencode
-
 # Mapping between SQL and numpy types
 numpy_dtype = {
     "real"     : np.float32,
@@ -50,7 +48,7 @@ class WebDBConnection:
     def execute_query(self, sql):
         """Run an SQL query and return the result as a record array"""
         url = self.db_url + "?" \
-            + urllib.urlencode({'action': 'doQuery', 'SQL': sql})
+            + parse.urlencode({'action': 'doQuery', 'SQL': sql})
         request.install_opener(
             request.build_opener(self.auth_handler, self.cookie_handler))
         response = request.urlopen(url)
@@ -101,7 +99,7 @@ class WebDBConnection:
         """Return a list of strings containing the documentation page
            for the specified table"""
         url = self.db_url + "/Help?" \
-            + urllib.urlencode({'page': "databases/"+"Eagle"+"/"+table})
+            + parse.urlencode({'page': "databases/"+"Eagle"+"/"+table})
         request.install_opener(
             request.build_opener(self.auth_handler, self.cookie_handler))
         response = request.urlopen(url)
