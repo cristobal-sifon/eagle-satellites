@@ -44,7 +44,7 @@
 \newcommand{\subfind}{\textsc{subfind}}
 
 
-\title[Mass content of satellites in EAGLE]{The effect of massive clusters on the mass of galaxies in their vicinity}
+\title[Mass content of infalling galaxies in EAGLE]{The effect of massive clusters on the mass of infalling galaxies in the EAGLE simulation}
 
 \author[C.\ Sif\'on]{Crist\'obal Sif\'on
 \\
@@ -81,11 +81,18 @@ Department of Astrophysical Sciences, Peyton Hall, Princeton University, Princet
 (Given in the order they came to my head)
 
 \begin{enumerate}
-  \item The distribution of distances to closest group makes a lot more sense than that within the host group. This may have to do with some satellites being ``2nd-order'' subhaloes, i.e., being part of a larger \emph{sub}halo. Explore this by exemplifying with the most massive cluster.
-  \item Explore what difference does it make where did the satellite come from, by binning as a function of cluster-centric distance but also, for galaxies not part of the cluster, by host mass (probably do not need groups less massive than $10^{12}\,h^{-1}\,\Msun$, as that's already the mass of the Milky Way)
+  \item Explore what difference does it make where did the satellite come from, by binning as a function of cluster-centric distance but also, for galaxies not part of the cluster, by host mass (probably do not need groups less massive than $10^{12}\,h^{-1}\,\Msun$, as that's already the mass of the Milky Way). Another way is, for galaxies not part of a massive cluster, to see how far they are to a massive cluster and what is their host mass. For a given distance to a massive cluster, does the mass relation change with host mass? We may need to control by distance from host center as well, and then it may become too noisy...
   \item try to find a good definition for subhalo size using the density profiles. Perhaps differences between our measurements and EAGLE are caused by a model error?
   \item Plot stellar-to-total mass \emph{ratios} as a function of cluster-centric distance.
+  \item When plotting ``distance to nearest cluster'' as opposed to distance to \emph{host} cluster, should 
 \end{enumerate}
+
+\subsection{Literature notes}
+
+\begin{enumerate}
+  \item \citet{rhee17}: weak preprocessing in general ($<30\%$ mass loss prior to entering cluster). Mass lost up to 1st pericenter $\sim$20-30\%, constant with time (Fig 4)
+\end{enumerate}
+
 
 
 \section{Introduction}
@@ -134,6 +141,7 @@ Caveats:
  \item Need to check how much of point (ii) may be caused by biases in subfind (compare to the curve of recovered versus true mass as a function of radius from Knebe+11).
  \item Remove centrals of massive groups from the coloured curves.
  \item Remember that Marco showed that the satellite fraction is really off in EAGLE (compared to GAMA), so should not mix centrals and satellites, nor take the satellite fraction seriously (?).
+ \item It seems like the subfind bias is pretty large and may be driving most if not all the changes we see as a function of $R$. Perhaps I could gauge this bias by comparing an EAGLE DM only sim with a DM only Rockstar catalog? Even then, baryonic effects on density profiles could conceivably change the comparison.
 \end{enumerate}
 
 

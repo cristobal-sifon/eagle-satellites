@@ -1,9 +1,9 @@
 data
 
-
 # Backup files
 *~
 *.save
+__pycache__
 
 # Python module files
 *.pyc
@@ -15,6 +15,7 @@ data
 *.aux
 *.blg
 *.log
+*.out
 
 # TeXnicle auxiliary files
 *.synctex.gz
