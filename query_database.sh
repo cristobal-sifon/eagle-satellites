@@ -5,8 +5,8 @@ for i in {1..5}; do echo; done
 user=csifon
 passwd=UWV21cdg
 
-Mstar_min=1E9
-Mass_min=1e10
+Mstar_min=1E7
+Mass_min=1e8
 
 ## Aliases
 # FoF
@@ -44,6 +44,8 @@ Velocity_y=vy
 Velocity_z=vz
 Vmax=vmax
 VmaxRadius=r_vmax
+## End aliases
+
 
 # ---
 
@@ -52,11 +54,13 @@ baseurl="http://galaxy-catalogue.dur.ac.uk:8080/Eagle?action=doQuery&SQL=select"
 ## actual code below
 
 simulation=L0100N1504
-# z = 0.18 ~ GAMA
-snapshot=26
 
-for physics in Ref DMONLY
+for snapshot in {0..28}
 do
+
+#for physics in Ref DMONLY
+#do
+physics=Ref
 
     if [[ $physics == DMONLY ]]; then
         table=$physics..$simulation
@@ -101,6 +105,7 @@ wget --http-user=$user --http-passwd=$passwd "$url" -O $output_dir/groups.txt
 ## ----
 
 columns_galaxy="GalaxyID, GroupID, \
+TopLeafID, LastProgID, DescendantID, \
 CentreOfMass_x as $CentreOfMass_x, \
 CentreOfMass_y as $CentreOfMass_y, \
 CentreOfMass_z as $CentreOfMass_z, \
@@ -129,7 +134,7 @@ from ${table}_Subhalo
 where SnapNum = $snapshot
 and Mass >= $Mass_min"
 if [ $physics != DMONLY ]; then
-    cuts_galaxy="$cuts_galaxy and Spurious = 0"
+    cuts_galaxy="$cuts_galaxy and Spurious = 0 and MassType_Star > $Mstar_min"
 fi
 
 url="$baseurl $columns_galaxy"
@@ -159,15 +164,8 @@ url_sat="$url
 wget --http-user=$user --http-passwd=$passwd "$url_sat" -O $output_dir/satellites.txt
 
 
-## ----
-## Merger history
-## ----
-
-url="$baseurl GalaxyID, LastProgID, TopLeafID, DescendantID
-$cuts_galaxy"
-
-wget --http-user=$user --http-passwd=$passwd "$url" -O $output_dir/history.txt
-
-
 # closes the physics loop
+#done
+
+# closes the snapshot loop
 done
