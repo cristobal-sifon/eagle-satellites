@@ -44,21 +44,36 @@ print('Recorded last isolation redshift in {0:.2f} minutes'.format(
 # snap = 365 --> z = 1.0
 
 # some plots to understand what's going on
-def make_hist_sub(column, ax, bins=50, log=):
+def make_hist_sub(column, ax, bins=50, log=False, log_hist=True):
     print('plotting {0} ...'.format(column))
-    ax.hist(subs[column], bins, histtype='step', lw=2, label='all')
-    ax.hist(subs[column][subs['Rank'] == 0], bins, histtype='step', lw=2,
-            label='centrals')
-    ax.hist(subs[column][subs['Rank'] > 0], bins, histtype='step', lw=2,
-            label='subhalos')
-    ax.legend()
-    ax.set_xlabel(column)
+    if log:
+        mask = (subs[column] > 0)
+        col = np.log10(subs[column])
+        xlabel = 'log({0})'.format(column)
+    else:
+        col = subs[column]
+        xlabel = column
+        mask = np.ones(col.size, dtype=bool)
+    if log_hist:
+        ylabel = '1+N'
+    else:
+        ylabel = 'N'
+    ax.hist(col[mask], bins, histtype='step', lw=2, label='all', log=log_hist,
+            bottom=1*log_hist)
+    ax.hist(col[mask & (subs['Rank'] == 0)], bins, histtype='step', lw=2,
+            log=log_hist, bottom=1*log_hist, label='centrals')
+    ax.hist(col[mask & (subs['Rank'] > 0)], bins, histtype='step', lw=2,
+            log=log_hist, bottom=1*log_hist, label='subhalos')
+    ax.legend(fontsize=13, loc='lower center')
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
 columns = ('Mbound', 'Nbound', 'LastMaxMass', 'SnapshotIndexOfLastMaxMass',
            'SnapshotIndexOfLastIsolation')
+log = (True, True, True, False, False)
 ncol = len(columns)
 fig, axes = plt.subplots(figsize=(5*ncol,4), ncols=ncol)
-for ax, column in zip(axes, columns):
-    make_hist_sub(column, ax)
+for ax, column, log_i in zip(axes, columns, log):
+    make_hist_sub(column, ax, log=log_i)
 savefig('plots/hist_subhalos.pdf', fig=fig)
 
 bins = {'Mbound': np.logspace(0, 2, 50),
