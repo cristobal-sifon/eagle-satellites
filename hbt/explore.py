@@ -77,6 +77,44 @@ for ax, column, log_i in zip(axes, columns, log):
     make_hist_sub(column, ax, log=log_i)
 savefig('plots/hist_subhalos.pdf', fig=fig)
 
+# now all the different mass types
+def make_hist_sub_mtypes(column, i, ax, bins=50, log=True, log_hist=True):
+    print(i, end=' ')
+    x = subs[column][:,i]
+    if log:
+        mask = (x > 0)
+        col = np.log10(x)
+        xlabel = 'log({0})'.format(column)
+    else:
+        col = x
+        xlabel = column
+        mask = np.ones(col.size, dtype=bool)
+    if log_hist:
+        ylabel = '1+N'
+    else:
+        ylabel = 'N'
+    color = 'C{0}'.format(i)
+    ns = np.histogram(col[mask & (subs['Rank'] > 0)], bins)[0]
+    nc = np.histogram(col[mask & (subs['Rank'] == 0)], bins)[0]
+    ax.hist(col[mask & (subs['Rank'] == 0)], bins, histtype='step', lw=0.5,
+            color=color, log=log_hist, bottom=1*log_hist)
+    ax.hist(col[mask & (subs['Rank'] > 0)], bins, histtype='stepfilled',
+            alpha=0.5, lw=0, color=color, log=log_hist, bottom=1*log_hist,
+            label='Type {0} ({1},{2})'.format(i+1,ns.sum(),nc.sum()))
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+fig, axes = plt.subplots(figsize=(12,5), ncols=2)
+ax = axes[0]
+for ax, name in zip(axes, ('MboundType','NboundType')):
+    print('plotting {0} ...'.format(name), end=' ')
+    for i in range(subs['MboundType'][0].size):
+        make_hist_sub_mtypes(name, i, ax)
+    ax.legend(fontsize=12, loc='upper right')
+    print()
+output = 'plots/hist_MNboundType.pdf'
+savefig(output, fig=fig)
+
+
 bins = {'Mbound': np.logspace(-4.3, 4, 100),
         'Nbound': np.logspace(-0.3, 8, 100),
         'SnapshotIndexOfLastIsolation': np.arange(0, reader.MaxSnap, 2),
@@ -123,6 +161,5 @@ for ax in axes:
     ax.xaxis.set_major_locator(ticker.FixedLocator(snaps))
     ax.xaxis.set_major_formatter(ticker.FixedFormatter(redshifts))
     ax.set_xlabel('Last isolation redshift')
-fig.tight_layout()
 output = 'plots/LastIsolation_Mbound.pdf'
 savefig(output, fig=fig)
