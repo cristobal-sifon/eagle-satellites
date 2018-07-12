@@ -15,8 +15,9 @@ print(HBTReader.__file__)
 from HBTReader import HBTReader
 
 
-#path_hbt = '/cosma/home/jvbq85/data/HBT/data/eagle/L0100N1504/subcat'
+path_hbt = '/cosma/home/jvbq85/data/HBT/data/eagle/L0100N1504/subcat'
 path_hbt = '/cosma/home/jvbq85/data/HBT/data/apostle/V1_LR/subcat'
+path_hbt = '/cosma/home/jvbq85/data/HBT/data/apostle/V1_MR/subcat'
 
 plot_path = os.path.join('plots', '_'.join(path_hbt.split('/')[-3:-1]))
 if not os.path.isdir(plot_path):

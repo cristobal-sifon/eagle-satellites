@@ -12,8 +12,9 @@ update_rcParams()
 from HBTReader import HBTReader
 
 
-path_hbt = '/cosma/home/jvbq85/data/HBT/data/eagle/L0100N1504/subcat'
+#path_hbt = '/cosma/home/jvbq85/data/HBT/data/eagle/L0100N1504/subcat'
 #path_hbt = '/cosma/home/jvbq85/data/HBT/data/apostle/V1_LR/subcat'
+path_hbt = '/cosma/home/jvbq85/data/HBT/data/apostle/V1_MR/subcat'
 
 plot_path = os.path.join('plots', '_'.join(path_hbt.split('/')[-3:-1]))
 if not os.path.isdir(plot_path):
@@ -172,18 +173,18 @@ cbar = plt.colorbar(img, ax=ax, format=LogFormatterMathtext())
 cbar.set_label('Number of subhalos')
 ax.set_ylabel('Nbound')
 # plot formatting
-#snaps = np.arange(0, 365, 60)
-#snaps = np.array([i.split('/')[-1].split('_')[1].split('.')[0]
-                  #for i in sorted(glob(os.path.join(path_hbt, 'SubSnap*')))],
-                 #dtype=int)
-snaps = []
-for i in sorted(os.listdir(path_hbt)):
-    try:
-        snaps.append(int(i))
-    except ValueError:
-        pass
-print('snaps =', snaps)
-snaps = np.linspace(0, max(snaps), 6)
+try:
+    snaps = np.array(
+        [i.split('/')[-1].split('_')[1].split('.')[0]
+         for i in sorted(glob(os.path.join(path_hbt, 'SubSnap*')))],
+         dtype=int)
+except IndexError:
+    snaps = []
+    for i in sorted(os.listdir(path_hbt)):
+        try:
+            snaps.append(int(i))
+        except ValueError:
+            pass
 scale_factor = np.array([reader.GetScaleFactor(snap) for snap in snaps])
 redshifts = 1/scale_factor - 1
 redshifts = ['{0:.2f}'.format(z) for z in redshifts]
