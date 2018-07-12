@@ -4,10 +4,8 @@ import os
 class Simulation:
 
     def __init__(self, label):
-        """
-        add snapshots list and redshifs (see explore.py lines 188,189)
-        """
         self.label = label
+        self._snapshots = None
         self.initialize()
 
     @property
@@ -33,6 +31,24 @@ class Simulation:
     @property
     def root(self):
         return '/cosma/home/jvbq85/data/HBT/data'
+
+    @property
+    def snapshots(self):
+        if self._snapshots is None:
+            try:
+                self._snapshots = np.array(
+                    [i.split('/')[-1].split('_')[1].split('.')[0]
+                     for i in sorted(glob(
+                         os.path.join(self.path,'SubSnap*')))])
+            except IndexError:
+                snaps = []
+                for i in sorted(os.listdir(self.path)):
+                    try:
+                        snaps.append(int(i))
+                    except ValueError:
+                        pass
+                self._snapshots = np.array(snaps)
+        return self._snapshots
 
     def initialize(self):
         if not os.path.isdir(self.plot_path):
