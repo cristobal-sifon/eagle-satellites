@@ -10,25 +10,21 @@ from time import time
 from plottools.plotutils import colorscale, savefig, update_rcParams
 update_rcParams()
 
-import HBTReader
-print(HBTReader.__file__)
 from HBTReader import HBTReader
 
+# local
+from core import Simulation
+import hbt_tools
 
-path_hbt = '/cosma/home/jvbq85/data/HBT/data/eagle/L0100N1504/subcat'
-path_hbt = '/cosma/home/jvbq85/data/HBT/data/apostle/V1_LR/subcat'
-path_hbt = '/cosma/home/jvbq85/data/HBT/data/apostle/V1_MR/subcat'
-
-plot_path = os.path.join('plots', '_'.join(path_hbt.split('/')[-3:-1]))
-if not os.path.isdir(plot_path):
-    os.makedirs(plot_path)
 
 def main():
 
-    to = time()
-    reader = HBTReader(path_hbt)
-    print('Loaded reader in {0:.1f} seconds'.format(time()-to))
+    args = hbt_tools.parse_args()
+    sim = Simulation(args.simulation)
 
+    to = time()
+    reader = HBTReader(sim.path)
+    print('Loaded reader in {0:.1f} seconds'.format(time()-to))
     to = time()
     subs = reader.LoadSubhalos(-1)
     print('Loaded subhalos in {0:.2f} minutes'.format((time()-to)/60))
@@ -46,13 +42,13 @@ def main():
     rank = {'Mbound': np.argsort(-subs['Mbound'][cent])}
     ids_cent = np.array([subs['HostHaloId'][cent][i] for i in rank['Mbound']])
 
-    plot_centrals(reader, subs[cent][rank['Mbound'][:20]])
-    plot_clusters(reader, subs, ids_cent)
+    plot_centrals(sim, reader, subs[cent][rank['Mbound'][:20]])
+    plot_clusters(sim, reader, subs, ids_cent)
 
     return
 
 
-def plot_centrals(reader, centrals):
+def plot_centrals(sim, reader, centrals):
     colspan = 6
     fig = plt.figure(figsize=(2*colspan+1,5))
     axes = [plt.subplot2grid((1,2*colspan+1), (0,0), colspan=colspan),
@@ -64,7 +60,7 @@ def plot_centrals(reader, centrals):
     cbar = plt.colorbar(cscale[1], cax=cax)
     cbar.ax.tick_params(labelsize=12, direction='out', which='both', pad=14)
     cbar.set_label('log Mbound (z=0)', fontsize=12)
-    output = os.path.join(plot_path, 'track_centrals.pdf')
+    output = os.path.join(sim.plot_path, 'track_centrals.pdf')
     savefig(output, fig=fig)
     return
 
@@ -85,10 +81,10 @@ def plot_cluster(reader, cat, hostid, axes, output='', fig=None):
     return
 
 
-def plot_clusters(reader, cat, ids_central):
+def plot_clusters(sim, reader, cat, ids_central):
     """plot the evolution of a few massive subhalos in the most massive
     clusters"""
-    output = os.path.join(plot_path, 'track_masses.pdf')
+    output = os.path.join(sim.plot_path, 'track_masses.pdf')
     ncl = 3
     fig, axes = plt.subplots(figsize=(12,5*ncl), ncols=2, nrows=ncl)
     for row, hostid in zip(axes, ids_central):
