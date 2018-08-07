@@ -1,3 +1,6 @@
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+
 import os
 
 
@@ -5,8 +8,24 @@ class Simulation:
 
     def __init__(self, label):
         self.label = label
+        self._formatted_name = None
         self._snapshots = None
         self.initialize()
+
+    @property
+    def formatted_name(self):
+        if self._formatted_name is None:
+            _name = self.name.split('/')
+            if self.name.startswith('apostle'):
+                _name[0] = _name[0].capitalize()
+            elif self.name.startswith('eagle'):
+                _name[0] = _name[0].upper()
+            self._formatted_name = '/'.join([_name[0], _name[1].upper()])
+        return self._formatted_name
+
+    @property
+    def masstypes(self):
+        return np.array(['gas', 'halo', 'disk', 'bulge', 'stars', 'boundary'])
 
     @property
     def mapping(self):
@@ -53,3 +72,9 @@ class Simulation:
     def initialize(self):
         if not os.path.isdir(self.plot_path):
             os.makedirs(self.plot_path)
+
+    def masstype_index(self, mtype):
+        rng = np.arange(self.masstypes.size, dtype=int)
+        return rng[self.masstypes == mtype.lower()][0]
+
+

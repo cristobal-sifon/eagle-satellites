@@ -1,5 +1,5 @@
 from glob import glob
-from matplotlib import pyplot as plt, ticker
+from matplotlib import pyplot as plt, ticker, rcParams
 from matplotlib.colors import LogNorm
 from matplotlib.ticker import LogFormatterMathtext
 import numpy as np
@@ -9,6 +9,7 @@ from time import time
 
 from plottools.plotutils import colorscale, savefig, update_rcParams
 update_rcParams()
+rcParams['text.latex.preamble'].append(r'\usepackage{color}')
 
 from HBTReader import HBTReader
 
@@ -39,24 +40,42 @@ def main():
     submstar = subs['MboundType'][:,1][sub]
 
     # sort host halos by mass
+    print('Sorting by mass...')
     rank = {'Mbound': np.argsort(-subs['Mbound'][cent])}
-    ids_cent = np.array([subs['HostHaloId'][cent][i] for i in rank['Mbound']])
+    #ids_cent = np.array([subs['HostHaloId'][cent][i] for i in rank['Mbound']])
+    ids_cent = subs['HostHaloId'][cent][rank['Mbound']]
 
-    plot_centrals(sim, reader, subs[cent][rank['Mbound'][:20]])
-    plot_clusters(sim, reader, subs, ids_cent)
-
+    n = 20
+    print('Plotting centrals...')
+    to = time()
+    plot_centrals(
+        sim, reader, subs[cent][rank['Mbound'][:n]],
+        title='{1}: {0} most massive central subhalos'.format(
+            n, sim.formatted_name))
+    print('Finished plot_centrals in {0:.2f} minutes'.format((time()-to)/60))
+    print('Plotting halos...')
+    to = time()
+    plot_halos(sim, reader, subs, ids_cent)
+    print('Finished plot_halos in {0:.2f} minutes'.format((time()-to)/60))
     return
 
 
-def plot_centrals(sim, reader, centrals):
-    colspan = 6
-    fig = plt.figure(figsize=(2*colspan+1,5))
-    axes = [plt.subplot2grid((1,2*colspan+1), (0,0), colspan=colspan),
-            plt.subplot2grid((1,2*colspan+1), (0,colspan), colspan=colspan)]
+def plot_centrals(sim, reader, centrals, title='Central subhalos'):
+    colspan = 7
+    fig = plt.figure(figsize=(2*colspan+1,7))
+    nrows = title_axis(title)
+    axes = [plt.subplot2grid(
+                (nrows,2*colspan+1), (1,0), colspan=colspan, rowspan=nrows-1),
+            plt.subplot2grid(
+                (nrows,2*colspan+1), (1,colspan), colspan=colspan,
+                rowspan=nrows-1)]
+    setup_track_axes(axes)
     cscale = colorscale(10+np.log10(centrals['Mbound']))
     for i, color in enumerate(cscale[0]):
+        #to = time()
         plot_track(reader, centrals, i, axes, color=color, verbose=(i%200==0))
-    cax = plt.subplot2grid((1,2*colspan+1), (0,2*colspan))
+        #print('{0:4d}) {1:6.2f} s'.format(i, time()-to))
+    cax = plt.subplot2grid((nrows,2*colspan+1), (1,2*colspan), rowspan=nrows-1)
     cbar = plt.colorbar(cscale[1], cax=cax)
     cbar.ax.tick_params(labelsize=12, direction='out', which='both', pad=14)
     cbar.set_label('log Mbound (z=0)', fontsize=12)
@@ -65,15 +84,15 @@ def plot_centrals(sim, reader, centrals):
     return
 
 
-def plot_cluster(reader, cat, hostid, axes, output='', fig=None):
-    cluster = (cat['HostHaloId'] == hostid)
-    print_cluster(cat[cluster])
-    ranked = np.argsort(-cat[cluster]['Mbound'])
+def plot_halo(reader, cat, hostid, axes, output='', fig=None):
+    halo = (cat['HostHaloId'] == hostid)
+    print_halo(cat[halo])
+    ranked = np.argsort(-cat[halo]['Mbound'])
     # central subhalo
-    plot_track(reader, cat[cluster], ranked[0], axes, color='k', lw=3)
+    plot_track(reader, cat[halo], ranked[0], axes, color='k', lw=3)
     # most massive satellite subhalos
     for i in ranked[1:6]:
-        plot_track(reader, cat[cluster], i, axes, lw=1)
+        plot_track(reader, cat[halo], i, axes, lw=1)
         if output:
             for ax in axes:
                 ax.legend(fontsize=12, loc='upper left')
@@ -81,27 +100,41 @@ def plot_cluster(reader, cat, hostid, axes, output='', fig=None):
     return
 
 
-def plot_clusters(sim, reader, cat, ids_central):
+def plot_halos(sim, reader, cat, ids_central, ncl=3):
     """plot the evolution of a few massive subhalos in the most massive
-    clusters"""
+    halos"""
     output = os.path.join(sim.plot_path, 'track_masses.pdf')
-    ncl = 3
-    fig, axes = plt.subplots(figsize=(12,5*ncl), ncols=2, nrows=ncl)
+    #fig, axes = plt.subplots(figsize=(12,5*ncl), ncols=2, nrows=ncl)
+    fig = plt.figure(figsize=(12,5*(ncl+0.5)))
+    title = '{0}: {1} most massive halos\n'.format(sim.formatted_name, ncl)
+    #title += r'$\bf{{Bold:}}$ Central --' \
+             #r' $\textcolor{{red}}{{Color:}}$ Satellite'
+    nrows = title_axis(title, rows=10)
+    #gridsize = ((nrows+1)*ncl, 2)
+    gridsize = (nrows, 2)
+    #print('gridsize =', gridsize)
+    rowspan = nrows // ncl
+    axloc = np.array(
+        [[(1+i*rowspan,j) for j in range(2)] for i in range(ncl)])
+    #print('axloc =', axloc)
+    axes = [[plt.subplot2grid(gridsize, (1+i*rowspan,j), rowspan=rowspan)
+             for j in range(2)] for i in range(ncl)]
     for row, hostid in zip(axes, ids_central):
         #row[1].yaxis.set_major_formatter(ticker.FormatStrFormatter('%s'))
-        plot_cluster(reader, cat, hostid, row, output=output, fig=fig)
+        setup_track_axes(row)
+        plot_halo(reader, cat, hostid, row, output=output, fig=fig)
     savefig(output, fig=fig)
     return
 
 
 def plot_track(reader, cat, index, axes, show_label=True, verbose=True,
-               **kwargs):
+               mtype='', **kwargs):
     trackid = cat['TrackId'][index]
     ti = time()
     track = reader.GetTrack(trackid)
     if verbose:
-        print('Loaded TrackID {0} in {1:.2f} minutes'.format(
-            trackid, (time()-ti)/60))
+        print('Loaded track #{2} (TrackID {0}) in {1:.2f} minutes'.format(
+            trackid, (time()-ti)/60, index))
     if show_label:
         label = '{0}: {1:.2f}'.format(
             trackid, np.log10(1e10*cat['Mbound'][index]))
@@ -111,28 +144,47 @@ def plot_track(reader, cat, index, axes, show_label=True, verbose=True,
     axes[0].plot(z, 1e10*track['Mbound'], label=label, **kwargs)
     axes[1].plot(
         z, track['Mbound']/track['Mbound'][-1], label=label, **kwargs)
-    axes[0].set_ylabel(r'$M(z)$')
-    axes[1].set_ylabel(r'$M(z)/M_0$')
-    for ax in axes:
-        ax.set_yscale('log')
-        ax.set_xlabel('Redshift')
-        ax.set_xlim(16, -0.8)
     return
 
 
-def print_cluster(cluster, mmin=10):
+def print_halo(halo, mmin=10):
     print()
-    print('The most massive halo has HostHaloId {0}'.format(
-        cluster['TrackId'][0]))
-    print('and a mass {0}'.format(cluster[cluster['Rank'] == 0]['Mbound'][0]))
+    print('HostHaloId {0}'.format(halo['TrackId'][0]))
+    print('has a total mass {0:.2e} Msun/h'.format(
+        1e10*halo[halo['Rank'] == 0]['Mbound'][0]))
     print('and {0} subhalos (including the central),'.format(
-        cluster['Rank'].size))
+        halo['Rank'].size))
     print('with')
-    print('    {0} disrupted subhalos'.format((cluster['Nbound'] == 1).sum()))
+    print('    {0} disrupted subhalos'.format((halo['Nbound'] == 1).sum()))
     for mmin in np.logspace(-2, 4, 7):
         print('    {0} having Mbound > {1:.2e} Msun/h'.format(
-            (cluster['Mbound'] > mmin).sum(), 1e10*mmin))
+            (halo['Mbound'] > mmin).sum(), 1e10*mmin))
     return
+
+
+def title_axis(title, rows=10):
+    """Title axis wrapper"""
+    tax = plt.subplot2grid((rows,1), (0,0))
+    tax.axis('off')
+    tax.text(0.5, 0.5, title, ha='center', va='center')
+    tax.set_xlim(0, 1)
+    tax.set_ylim(0, 1)
+    return rows
+
+
+def setup_track_axes(axes):
+    for ax in axes:
+        axes[0].set_ylabel(r'$M(z)$')
+        axes[1].set_ylabel(r'$M(z)/M_0$')
+        for ax in axes:
+            ax.set_yscale('log')
+            ax.set_xlim(16, -0.8)
+            if ax.is_last_row():
+                ax.set_xlabel('Redshift')
+            else:
+                ax.set_xticklabels([])
+    return
+
 
 main()
 
