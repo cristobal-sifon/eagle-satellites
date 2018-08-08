@@ -1,5 +1,6 @@
 from astropy.cosmology import FlatLambdaCDM
 from glob import glob
+from itertools import count
 from matplotlib import pyplot as plt, ticker, rcParams
 from matplotlib.colors import LogNorm
 from matplotlib.ticker import LogFormatterMathtext
@@ -99,11 +100,11 @@ def plot_halo(reader, cat, hostid, cosmo, axes, output='', nsub=5, fig=None):
     for i, n in enumerate(ranked[1:nsub+1]):
         plot_track(
             reader, cat[halo], n, cosmo, axes, lw=1, color='C{0}'.format(i))
-        if output:
-            axes[0].legend(fontsize=12, loc='upper left')
-            axes[1].legend(fontsize=12, bbox_to_anchor=(0.8,0.5))
-            plt.subplots_adjust(**adjust_kwargs)
-            savefig(output, fig=fig, close=False, tight=False)
+    #axes[0].legend(fontsize=12, loc='upper left')
+    axes[1].legend(fontsize=12, bbox_to_anchor=(0.8,0.5))
+    if output:
+        plt.subplots_adjust(**adjust_kwargs)
+        savefig(output, fig=fig, close=False, tight=False)
     return
 
 
@@ -126,11 +127,18 @@ def plot_halos(sim, reader, cat, ids_central, ncl=3):
     #print('axloc =', axloc)
     axes = [[plt.subplot2grid(gridsize, (1+i*rowspan,j), rowspan=rowspan)
              for j in range(2)] for i in range(ncl)]
-    for row, hostid in zip(axes, ids_central):
-        #row[1].yaxis.set_major_formatter(ticker.FormatStrFormatter('%s'))
+    for i, row, hostid in zip(count(), axes, ids_central):
         plot_halo(reader, cat, hostid, sim.cosmology, row, output=output,
                   fig=fig)
-        setup_track_axes(row, sim.cosmology)
+        setup_track_axes(row, sim.cosmology, is_last_row=(i==len(axes)-1))
+    # remove xticks
+    """
+    for i, row in enumerate(axes):
+        for j, ax in enumerate(row):
+            if i < len(axes)-1:
+                ax.set_xticklabels([])
+                ax.set_xlabel('')
+    """
     plt.subplots_adjust(**adjust_kwargs)
     savefig(output, fig=fig, tight=False)
     return
@@ -145,7 +153,7 @@ def plot_track(reader, cat, index, cosmo, axes, show_label=True, color='k',
         print('Loaded track #{2} (TrackID {0}) in {1:.2f} minutes'.format(
             trackid, (time()-ti)/60, index))
     if show_label:
-        label = '{0:5d}: {1:.2f}'.format(
+        label = '{0}: {1:.2f}'.format(
             trackid, np.log10(1e10*cat['Mbound'][index]))
     else:
         label = '_none_'
@@ -157,13 +165,22 @@ def plot_track(reader, cat, index, cosmo, axes, show_label=True, color='k',
     axes[1].plot(t, Mt/Mo, label=label, color=color, **kwargs)
     # if it's a satellite today
     if track['Rank'][-1] > 0:
-        isat = reader.GetSub(trackid)['SnapshotIndexOfLastIsolation']
-        asat = reader.GetScaleFactor(isat)
-        zsat = 1/asat - 1
-        tsat = cosmo.lookback_time(zsat)
-        x = np.argmin(np.abs(track['ScaleFactor']-asat))
+        # when it last was part of a different parent halo
+        print('Finding zinfall...')
+        host = track['HostHaloId']
+        i = track['Snapshot'][host != host[-1]][-1]
+        a = reader.GetScaleFactor(i)
+        tt = cosmo.lookback_time(1/a - 1)
+        x = np.argmin(np.abs(track['ScaleFactor']-a))
+        # when it last was a central
+        print('Finding zcentral...')
+        ic = reader.GetSub(trackid)['SnapshotIndexOfLastIsolation']
+        ac = reader.GetScaleFactor(ic)
+        tc = cosmo.lookback_time(1/ac - 1)
+        xc = np.argmin(np.abs(track['ScaleFactor']-ac))
         for ax, m in zip(axes, [Mt,Mt/Mo]):
-            ax.plot(tsat, m[x], 'o', color=color, ms=6, mec='k', mew=1)
+            ax.plot(tt, m[x], 'o', mfc='w', ms=6, mec=color, mew=2)
+            ax.plot(tc, m[xc], 'o', color=color, ms=6, mec='k', mew=1)
     return
 
 
@@ -192,30 +209,32 @@ def title_axis(title, rows=10):
     return rows
 
 
-def setup_track_axes(axes, lookback_cosmo=False, textcolor='0.3'):
+def setup_track_axes(axes, lookback_cosmo=False, textcolor='0.3',
+                     is_last_row=True):
     if isinstance(lookback_cosmo, FlatLambdaCDM):
         x = 't'
         xlabel = 'lookback time (Gyr)'
         xlim = (14.5, -0.5)
+        tickspace = 4
         zmark = [0.1, 0.5, 1, 5]
         tmark = [lookback_cosmo.lookback_time(z).value for z in zmark]
     else:
         x = 'z'
         xlabel = 'Redshift'
         xlim = (16, -0.5)
+        tickspace = 5
     axes[0].set_ylabel(r'$M({0})$'.format(x))
     axes[1].set_ylabel(r'$M({0})/M_0$'.format(x))
     for ax in axes:
         ax.set_yscale('log')
         ax.set_xlim(*xlim)
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(tickspace))
+        ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%d'))
         ytext = get_ytext(ax)
-        print('***')
-        print('ax.is_last_row() =', ax.is_last_row())
-        print('***')
-        #if ax.is_last_row():
-        ax.set_xlabel(xlabel)
-        #else:
-            #ax.set_xticklabels([])
+        if is_last_row:
+            ax.set_xlabel(xlabel)
+        else:
+            ax.set_xticklabels([])
         if lookback_cosmo:
             for z, t in zip(zmark, tmark):
                 ax.axvline(t, dashes=(4,4), lw=1, color=textcolor)
@@ -230,11 +249,7 @@ def get_ytext(ax, height=0.06):
     ylim = ax.get_ylim()
     if ax.get_yscale() == 'log':
         logy = np.log10(np.array(ylim))
-        print('ylim =', ylim)
-        logheight = logy[0] + height*(logy[1] - logy[0])
-        print('logheight =', logheight)
-        ytext = 10**logheight
-        print('ytext =', ytext)
+        ytext = 10**(logy[0] + height*(logy[1]-logy[0]))
     else:
         ytext = ylim[0] + height*(ylim[1]-ylim[0])
     return ytext
@@ -242,10 +257,6 @@ def get_ytext(ax, height=0.06):
 
 main()
 
-
-
-#print(track['ScaleFactor'])
-#print(1/track['ScaleFactor'] - 1)
 
 
 
