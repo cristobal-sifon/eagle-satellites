@@ -1,3 +1,4 @@
+from astropy.cosmology import FlatLambdaCDM
 from glob import glob
 from matplotlib import pyplot as plt, ticker, rcParams
 from matplotlib.colors import LogNorm
@@ -69,30 +70,32 @@ def plot_centrals(sim, reader, centrals, title='Central subhalos'):
             plt.subplot2grid(
                 (nrows,2*colspan+1), (1,colspan), colspan=colspan,
                 rowspan=nrows-1)]
-    setup_track_axes(axes)
     cscale = colorscale(10+np.log10(centrals['Mbound']))
     for i, color in enumerate(cscale[0]):
         #to = time()
-        plot_track(reader, centrals, i, axes, color=color, verbose=(i%200==0))
+        plot_track(
+            reader, centrals, i, sim.cosmology, axes, color=color,
+            verbose=(i%200==0))
         #print('{0:4d}) {1:6.2f} s'.format(i, time()-to))
     cax = plt.subplot2grid((nrows,2*colspan+1), (1,2*colspan), rowspan=nrows-1)
     cbar = plt.colorbar(cscale[1], cax=cax)
     cbar.ax.tick_params(labelsize=12, direction='out', which='both', pad=14)
     cbar.set_label('log Mbound (z=0)', fontsize=12)
+    setup_track_axes(axes, sim.cosmology)
     output = os.path.join(sim.plot_path, 'track_centrals.pdf')
     savefig(output, fig=fig)
     return
 
 
-def plot_halo(reader, cat, hostid, axes, output='', fig=None):
+def plot_halo(reader, cat, hostid, cosmo, axes, output='', nsub=5, fig=None):
     halo = (cat['HostHaloId'] == hostid)
     print_halo(cat[halo])
     ranked = np.argsort(-cat[halo]['Mbound'])
     # central subhalo
-    plot_track(reader, cat[halo], ranked[0], axes, color='k', lw=3)
+    plot_track(reader, cat[halo], ranked[0], cosmo, axes, color='k', lw=3)
     # most massive satellite subhalos
-    for i in ranked[1:6]:
-        plot_track(reader, cat[halo], i, axes, lw=1)
+    for i in ranked[1:nsub+1]:
+        plot_track(reader, cat[halo], i, cosmo, axes, lw=1)
         if output:
             for ax in axes:
                 ax.legend(fontsize=12, loc='upper left')
@@ -121,14 +124,15 @@ def plot_halos(sim, reader, cat, ids_central, ncl=3):
              for j in range(2)] for i in range(ncl)]
     for row, hostid in zip(axes, ids_central):
         #row[1].yaxis.set_major_formatter(ticker.FormatStrFormatter('%s'))
-        setup_track_axes(row)
-        plot_halo(reader, cat, hostid, row, output=output, fig=fig)
+        plot_halo(reader, cat, hostid, sim.cosmology, row, output=output,
+                  fig=fig)
+        setup_track_axes(row, sim.cosmology)
     savefig(output, fig=fig)
     return
 
 
-def plot_track(reader, cat, index, axes, show_label=True, verbose=True,
-               mtype='', **kwargs):
+def plot_track(reader, cat, index, cosmo, axes, show_label=True,
+               mtype='', verbose=True, **kwargs):
     trackid = cat['TrackId'][index]
     ti = time()
     track = reader.GetTrack(trackid)
@@ -141,9 +145,10 @@ def plot_track(reader, cat, index, axes, show_label=True, verbose=True,
     else:
         label = '_none_'
     z = 1/track['ScaleFactor'] - 1
-    axes[0].plot(z, 1e10*track['Mbound'], label=label, **kwargs)
+    t = cosmo.lookback_time(z)
+    axes[0].plot(t, 1e10*track['Mbound'], label=label, **kwargs)
     axes[1].plot(
-        z, track['Mbound']/track['Mbound'][-1], label=label, **kwargs)
+        t, track['Mbound']/track['Mbound'][-1], label=label, **kwargs)
     return
 
 
@@ -172,18 +177,49 @@ def title_axis(title, rows=10):
     return rows
 
 
-def setup_track_axes(axes):
+def setup_track_axes(axes, lookback_cosmo=False, textcolor='0.3'):
+    if isinstance(lookback_cosmo, FlatLambdaCDM):
+        x = 't'
+        xlabel = 'lookback time (Gyr)'
+        xlim = (14, -0.5)
+        zmark = [0.1, 0.5, 1, 5]
+        tmark = [lookback_cosmo.lookback_time(z).value for z in zmark]
+    else:
+        x = 'z'
+        xlabel = 'Redshift'
+        xlim = (16, -0.5)
+    axes[0].set_ylabel(r'$M({0})$'.format(x))
+    axes[1].set_ylabel(r'$M({0})/M_0$'.format(x))
     for ax in axes:
-        axes[0].set_ylabel(r'$M(z)$')
-        axes[1].set_ylabel(r'$M(z)/M_0$')
-        for ax in axes:
-            ax.set_yscale('log')
-            ax.set_xlim(16, -0.8)
-            if ax.is_last_row():
-                ax.set_xlabel('Redshift')
-            else:
-                ax.set_xticklabels([])
+        ax.set_yscale('log')
+        ax.set_xlim(*xlim)
+        ytext = get_ytext(ax)
+        #if ax.is_last_row():
+        ax.set_xlabel(xlabel)
+        #else:
+            #ax.set_xticklabels([])
+        if lookback_cosmo:
+            for z, t in zip(zmark, tmark):
+                ax.axvline(t, dashes=(4,4), lw=1, color=textcolor)
+                # in order to do this, need to know plot limits...
+                ax.annotate(
+                    'z={0:.1f}'.format(z), xy=(t-0.1,ytext), ha='left',
+                    va='center', fontsize=12, color=textcolor)
     return
+
+
+def get_ytext(ax, height=0.06):
+    ylim = ax.get_ylim()
+    if ax.get_yscale() == 'log':
+        logy = np.log10(np.array(ylim))
+        print('ylim =', ylim)
+        logheight = logy[0] + height*(logy[1] - logy[0])
+        print('logheight =', logheight)
+        ytext = 10**logheight
+        print('ytext =', ytext)
+    else:
+        ytext = ylim[0] + height*(ylim[1]-ylim[0])
+    return ytext
 
 
 main()

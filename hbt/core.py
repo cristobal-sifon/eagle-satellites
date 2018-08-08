@@ -1,6 +1,7 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
+from astropy.cosmology import FlatLambdaCDM
 import os
 
 
@@ -8,9 +9,27 @@ class Simulation:
 
     def __init__(self, label):
         self.label = label
+        self._cosmology = None
+        self._family = None
         self._formatted_name = None
         self._snapshots = None
-        self.initialize()
+        self.initialize_tree()
+
+    @property
+    def cosmology(self):
+        if self._cosmology is None:
+            cosmo = {
+                'apostle': FlatLambdaCDM(H0=70.4, Om0=0.272, Ob0=0.0455),
+                'eagle': FlatLambdaCDM(H0=67.77, Om0=0.307, Ob0=0.04825)
+                }
+            self._cosmology = cosmo[self.family]
+        return self._cosmology
+
+    @property
+    def family(self):
+        if self._family is None:
+            self._family = self.name.split('/')[0]
+        return self._family
 
     @property
     def formatted_name(self):
@@ -28,7 +47,7 @@ class Simulation:
         return np.array(['gas', 'halo', 'disk', 'bulge', 'stars', 'boundary'])
 
     @property
-    def mapping(self):
+    def _mapping(self):
         return {'LR': 'apostle/V1_LR',
                 'MR': 'apostle/V1_MR',
                 'HR': 'apostle/V1_HR',
@@ -37,7 +56,7 @@ class Simulation:
 
     @property
     def name(self):
-        return self.mapping[self.label]
+        return self._mapping[self.label]
 
     @property
     def path(self):
@@ -69,7 +88,7 @@ class Simulation:
                 self._snapshots = np.array(snaps)
         return self._snapshots
 
-    def initialize(self):
+    def initialize_tree(self):
         if not os.path.isdir(self.plot_path):
             os.makedirs(self.plot_path)
 
