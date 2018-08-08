@@ -18,6 +18,8 @@ from HBTReader import HBTReader
 from core import Simulation
 import hbt_tools
 
+adjust_kwargs = dict(
+    left=0.10, right=0.95, bottom=0.05, top=0.98, wspace=0.3, hspace=0.1)
 
 def main():
 
@@ -94,12 +96,14 @@ def plot_halo(reader, cat, hostid, cosmo, axes, output='', nsub=5, fig=None):
     # central subhalo
     plot_track(reader, cat[halo], ranked[0], cosmo, axes, color='k', lw=3)
     # most massive satellite subhalos
-    for i in ranked[1:nsub+1]:
-        plot_track(reader, cat[halo], i, cosmo, axes, lw=1)
+    for i, n in enumerate(ranked[1:nsub+1]):
+        plot_track(
+            reader, cat[halo], n, cosmo, axes, lw=1, color='C{0}'.format(i))
         if output:
-            for ax in axes:
-                ax.legend(fontsize=12, loc='upper left')
-            savefig(output, fig=fig, close=False)
+            axes[0].legend(fontsize=12, loc='upper left')
+            axes[1].legend(fontsize=12, bbox_to_anchor=(0.8,0.5))
+            plt.subplots_adjust(**adjust_kwargs)
+            savefig(output, fig=fig, close=False, tight=False)
     return
 
 
@@ -108,7 +112,7 @@ def plot_halos(sim, reader, cat, ids_central, ncl=3):
     halos"""
     output = os.path.join(sim.plot_path, 'track_masses.pdf')
     #fig, axes = plt.subplots(figsize=(12,5*ncl), ncols=2, nrows=ncl)
-    fig = plt.figure(figsize=(12,5*(ncl+0.5)))
+    fig = plt.figure(figsize=(14,5*(ncl+0.5)))
     title = '{0}: {1} most massive halos\n'.format(sim.formatted_name, ncl)
     #title += r'$\bf{{Bold:}}$ Central --' \
              #r' $\textcolor{{red}}{{Color:}}$ Satellite'
@@ -127,11 +131,12 @@ def plot_halos(sim, reader, cat, ids_central, ncl=3):
         plot_halo(reader, cat, hostid, sim.cosmology, row, output=output,
                   fig=fig)
         setup_track_axes(row, sim.cosmology)
-    savefig(output, fig=fig)
+    plt.subplots_adjust(**adjust_kwargs)
+    savefig(output, fig=fig, tight=False)
     return
 
 
-def plot_track(reader, cat, index, cosmo, axes, show_label=True,
+def plot_track(reader, cat, index, cosmo, axes, show_label=True, color='k',
                mtype='', verbose=True, **kwargs):
     trackid = cat['TrackId'][index]
     ti = time()
@@ -140,15 +145,25 @@ def plot_track(reader, cat, index, cosmo, axes, show_label=True,
         print('Loaded track #{2} (TrackID {0}) in {1:.2f} minutes'.format(
             trackid, (time()-ti)/60, index))
     if show_label:
-        label = '{0}: {1:.2f}'.format(
+        label = '{0:5d}: {1:.2f}'.format(
             trackid, np.log10(1e10*cat['Mbound'][index]))
     else:
         label = '_none_'
     z = 1/track['ScaleFactor'] - 1
     t = cosmo.lookback_time(z)
-    axes[0].plot(t, 1e10*track['Mbound'], label=label, **kwargs)
-    axes[1].plot(
-        t, track['Mbound']/track['Mbound'][-1], label=label, **kwargs)
+    Mt = 1e10 * track['Mbound']
+    Mo = Mt[-1]
+    axes[0].plot(t, Mt, label=label, color=color, **kwargs)
+    axes[1].plot(t, Mt/Mo, label=label, color=color, **kwargs)
+    # if it's a satellite today
+    if track['Rank'][-1] > 0:
+        isat = reader.GetSub(trackid)['SnapshotIndexOfLastIsolation']
+        asat = reader.GetScaleFactor(isat)
+        zsat = 1/asat - 1
+        tsat = cosmo.lookback_time(zsat)
+        x = np.argmin(np.abs(track['ScaleFactor']-asat))
+        for ax, m in zip(axes, [Mt,Mt/Mo]):
+            ax.plot(tsat, m[x], 'o', color=color, ms=6, mec='k', mew=1)
     return
 
 
@@ -181,7 +196,7 @@ def setup_track_axes(axes, lookback_cosmo=False, textcolor='0.3'):
     if isinstance(lookback_cosmo, FlatLambdaCDM):
         x = 't'
         xlabel = 'lookback time (Gyr)'
-        xlim = (14, -0.5)
+        xlim = (14.5, -0.5)
         zmark = [0.1, 0.5, 1, 5]
         tmark = [lookback_cosmo.lookback_time(z).value for z in zmark]
     else:
@@ -194,6 +209,9 @@ def setup_track_axes(axes, lookback_cosmo=False, textcolor='0.3'):
         ax.set_yscale('log')
         ax.set_xlim(*xlim)
         ytext = get_ytext(ax)
+        print('***')
+        print('ax.is_last_row() =', ax.is_last_row())
+        print('***')
         #if ax.is_last_row():
         ax.set_xlabel(xlabel)
         #else:
