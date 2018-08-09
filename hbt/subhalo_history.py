@@ -16,7 +16,8 @@ rcParams['text.latex.preamble'].append(r'\usepackage{color}')
 from HBTReader import HBTReader
 
 # local
-from core import Simulation
+from core.simulation import Simulation
+from core.track import Track
 import hbt_tools
 
 adjust_kwargs = dict(
@@ -77,7 +78,7 @@ def plot_centrals(sim, reader, centrals, title='Central subhalos'):
     for i, color in enumerate(cscale[0]):
         #to = time()
         plot_track(
-            reader, centrals, i, sim.cosmology, axes, color=color,
+            sim, reader, centrals, i, axes, color=color,
             verbose=(i%200==0))
         #print('{0:4d}) {1:6.2f} s'.format(i, time()-to))
     cax = plt.subplot2grid((nrows,2*colspan+1), (1,2*colspan), rowspan=nrows-1)
@@ -90,18 +91,18 @@ def plot_centrals(sim, reader, centrals, title='Central subhalos'):
     return
 
 
-def plot_halo(reader, cat, hostid, cosmo, axes, output='', nsub=5, fig=None):
+def plot_halo(sim, reader, cat, hostid, axes, output='', nsub=7, fig=None):
     halo = (cat['HostHaloId'] == hostid)
     print_halo(cat[halo])
     ranked = np.argsort(-cat[halo]['Mbound'])
     # central subhalo
-    plot_track(reader, cat[halo], ranked[0], cosmo, axes, color='k', lw=3)
+    plot_track(reader, cat[halo], ranked[0], sim, axes, color='k', lw=3)
     # most massive satellite subhalos
     for i, n in enumerate(ranked[1:nsub+1]):
         plot_track(
-            reader, cat[halo], n, cosmo, axes, lw=1, color='C{0}'.format(i))
+            sim, reader, cat[halo], n, axes, lw=1, color='C{0}'.format(i))
     #axes[0].legend(fontsize=12, loc='upper left')
-    axes[1].legend(fontsize=12, bbox_to_anchor=(0.8,0.5))
+    axes[1].legend(fontsize=12, bbox_to_anchor=(0.96,0.54), loc='upper right')
     if output:
         plt.subplots_adjust(**adjust_kwargs)
         savefig(output, fig=fig, close=False, tight=False)
@@ -128,7 +129,7 @@ def plot_halos(sim, reader, cat, ids_central, ncl=3):
     axes = [[plt.subplot2grid(gridsize, (1+i*rowspan,j), rowspan=rowspan)
              for j in range(2)] for i in range(ncl)]
     for i, row, hostid in zip(count(), axes, ids_central):
-        plot_halo(reader, cat, hostid, sim.cosmology, row, output=output,
+        plot_halo(sim, reader, cat, hostid, row, output=output,
                   fig=fig)
         setup_track_axes(row, sim.cosmology, is_last_row=(i==len(axes)-1))
     # remove xticks
@@ -144,11 +145,15 @@ def plot_halos(sim, reader, cat, ids_central, ncl=3):
     return
 
 
-def plot_track(reader, cat, index, cosmo, axes, show_label=True, color='k',
+def plot_track(sim, reader, cat, index, axes, show_label=True, color='k',
                mtype='', verbose=True, **kwargs):
+    """
+    Going to need to pass Simulation object to load a Track object
+    """
     trackid = cat['TrackId'][index]
     ti = time()
-    track = reader.GetTrack(trackid)
+    #track = reader.GetTrack(trackid)
+    track = Track(trackid, sim)
     if verbose:
         print('Loaded track #{2} (TrackID {0}) in {1:.2f} minutes'.format(
             trackid, (time()-ti)/60, index))
@@ -165,22 +170,22 @@ def plot_track(reader, cat, index, cosmo, axes, show_label=True, color='k',
     axes[1].plot(t, Mt/Mo, label=label, color=color, **kwargs)
     # if it's a satellite today
     if track['Rank'][-1] > 0:
+        """
         # when it last was part of a different parent halo
-        print('Finding zinfall...')
         host = track['HostHaloId']
         i = track['Snapshot'][host != host[-1]][-1]
         a = reader.GetScaleFactor(i)
         tt = cosmo.lookback_time(1/a - 1)
         x = np.argmin(np.abs(track['ScaleFactor']-a))
         # when it last was a central
-        print('Finding zcentral...')
         ic = reader.GetSub(trackid)['SnapshotIndexOfLastIsolation']
         ac = reader.GetScaleFactor(ic)
         tc = cosmo.lookback_time(1/ac - 1)
         xc = np.argmin(np.abs(track['ScaleFactor']-ac))
+        """
         for ax, m in zip(axes, [Mt,Mt/Mo]):
-            ax.plot(tt, m[x], 'o', mfc='w', ms=6, mec=color, mew=2)
-            ax.plot(tc, m[xc], 'o', color=color, ms=6, mec='k', mew=1)
+            ax.plot(tt, m[x], 'o', mfc='w', ms=10, mec=color, mew=1.5)
+            ax.plot(tc, m[xc], 'o', color=color, ms=10, mec=color, mew=1.5)
     return
 
 

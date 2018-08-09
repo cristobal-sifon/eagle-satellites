@@ -92,6 +92,9 @@ class Simulation:
         if not os.path.isdir(self.plot_path):
             os.makedirs(self.plot_path)
 
+    def lookback_time(self, z):
+        return self.cosmo.lookback_time(z)
+
     def masstype_index(self, mtype):
         rng = np.arange(self.masstypes.size, dtype=int)
         return rng[self.masstypes == mtype.lower()][0]
