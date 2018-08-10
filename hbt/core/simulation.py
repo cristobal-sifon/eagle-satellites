@@ -2,6 +2,7 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 from astropy.cosmology import FlatLambdaCDM
+import numpy as np
 import os
 
 
@@ -92,10 +93,42 @@ class Simulation:
         if not os.path.isdir(self.plot_path):
             os.makedirs(self.plot_path)
 
-    def lookback_time(self, z):
-        return self.cosmo.lookback_time(z)
+    def masslabel(self, latex=True, **kwargs):
+        """Return label of a given mass type
 
-    def masstype_index(self, mtype):
+        Paramters
+        ---------
+        mtype : str, optional
+            name of the mass type. Must be one of ``self.masstypes`` or
+            'total'
+        index : int, optional
+            index of the mass type. An index of -1 corresponds to total
+            mass. Otherwise see ``self.masstypes``
+        latex : bool, optional
+            whether the label should be in latex or plain text format
+
+        Returns
+        -------
+        label : str
+            mass label in latex format
+        """
+        if latex:
+            return r'$M_\mathrm{{{0}}}$'.format(self.masstype(**kwargs))
+        else:
+            return 'M{0}'.format(self.masstype(**kwargs))
+
+    def masstype(self, mtype=None, index=None):
+        assert mtype is not None or index is not None, \
+            'must provide either ``mtype`` or ``index``'
+        if mtype is not None:
+            if mtype.lower() in ('total', 'mbound'):
+                return 'total'
+            return self.masstypes[self._masstype_index(mtype)][0]
+        if index == -1:
+            return 'total'
+        return self.masstypes[index]
+
+    def _masstype_index(self, mtype):
         rng = np.arange(self.masstypes.size, dtype=int)
         return rng[self.masstypes == mtype.lower()][0]
 

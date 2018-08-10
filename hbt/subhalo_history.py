@@ -60,7 +60,9 @@ def main():
     print('Finished plot_centrals in {0:.2f} minutes'.format((time()-to)/60))
     print('Plotting halos...')
     to = time()
-    plot_halos(sim, reader, subs, ids_cent)
+    # total, gas, halo, stars
+    for massindex in range(-1, 6):
+        plot_halos(sim, reader, subs, ids_cent, massindex=massindex)
     print('Finished plot_halos in {0:.2f} minutes'.format((time()-to)/60))
     return
 
@@ -78,7 +80,7 @@ def plot_centrals(sim, reader, centrals, title='Central subhalos'):
     for i, color in enumerate(cscale[0]):
         #to = time()
         plot_track(
-            sim, reader, centrals, i, axes, color=color,
+            sim, reader, centrals, i, axes, color=color, label_host=False,
             verbose=(i%200==0))
         #print('{0:4d}) {1:6.2f} s'.format(i, time()-to))
     cax = plt.subplot2grid((nrows,2*colspan+1), (1,2*colspan), rowspan=nrows-1)
@@ -91,16 +93,19 @@ def plot_centrals(sim, reader, centrals, title='Central subhalos'):
     return
 
 
-def plot_halo(sim, reader, cat, hostid, axes, output='', nsub=7, fig=None):
+def plot_halo(sim, reader, cat, hostid, axes, massindex=-1, output='',
+              nsub=7, fig=None):
     halo = (cat['HostHaloId'] == hostid)
     print_halo(cat[halo])
     ranked = np.argsort(-cat[halo]['Mbound'])
     # central subhalo
-    plot_track(reader, cat[halo], ranked[0], sim, axes, color='k', lw=3)
+    plot_track(sim, reader, cat[halo], ranked[0], axes, color='k', lw=3,
+               massindex=massindex)
     # most massive satellite subhalos
     for i, n in enumerate(ranked[1:nsub+1]):
         plot_track(
-            sim, reader, cat[halo], n, axes, lw=1, color='C{0}'.format(i))
+            sim, reader, cat[halo], n, axes, massindex=massindex, lw=1,
+            color='C{0}'.format(i))
     #axes[0].legend(fontsize=12, loc='upper left')
     axes[1].legend(fontsize=12, bbox_to_anchor=(0.96,0.54), loc='upper right')
     if output:
@@ -109,19 +114,19 @@ def plot_halo(sim, reader, cat, hostid, axes, output='', nsub=7, fig=None):
     return
 
 
-def plot_halos(sim, reader, cat, ids_central, ncl=3):
-    """plot the evolution of a few massive subhalos in the most massive
+def plot_halos(sim, reader, cat, ids_central, massindex=-1, ncl=3):
+    """Plot the evolution of a few massive subhalos in the most massive
     halos"""
-    output = os.path.join(sim.plot_path, 'track_masses.pdf')
-    #fig, axes = plt.subplots(figsize=(12,5*ncl), ncols=2, nrows=ncl)
+    mname = sim.masslabel(index=massindex, latex=False)
+    output = 'track_{0}.pdf'.format(mname)
+    output = os.path.join(sim.plot_path, output)
     fig = plt.figure(figsize=(14,5*(ncl+0.5)))
     title = '{0}: {1} most massive halos\n'.format(sim.formatted_name, ncl)
-    #title += r'$\bf{{Bold:}}$ Central --' \
-             #r' $\textcolor{{red}}{{Color:}}$ Satellite'
+    title += 'Mass: {0}\n'.format(mname)
+    title += 'Bold: central subhalo\n'
+    title += 'Legend format: TrackID: log{0} (Depth/HostHaloID)'.format(mname)
     nrows = title_axis(title, rows=10)
-    #gridsize = ((nrows+1)*ncl, 2)
     gridsize = (nrows, 2)
-    #print('gridsize =', gridsize)
     rowspan = nrows // ncl
     axloc = np.array(
         [[(1+i*rowspan,j) for j in range(2)] for i in range(ncl)])
@@ -130,62 +135,61 @@ def plot_halos(sim, reader, cat, ids_central, ncl=3):
              for j in range(2)] for i in range(ncl)]
     for i, row, hostid in zip(count(), axes, ids_central):
         plot_halo(sim, reader, cat, hostid, row, output=output,
-                  fig=fig)
-        setup_track_axes(row, sim.cosmology, is_last_row=(i==len(axes)-1))
-    # remove xticks
-    """
-    for i, row in enumerate(axes):
-        for j, ax in enumerate(row):
-            if i < len(axes)-1:
-                ax.set_xticklabels([])
-                ax.set_xlabel('')
-    """
+                  massindex=massindex, fig=fig)
+        setup_track_axes(
+            row, sim.cosmology, is_last_row=(i==len(axes)-1),
+            masslabel=sim.masslabel(index=massindex, latex=True))
     plt.subplots_adjust(**adjust_kwargs)
     savefig(output, fig=fig, tight=False)
     return
 
 
 def plot_track(sim, reader, cat, index, axes, show_label=True, color='k',
-               mtype='', verbose=True, **kwargs):
-    """
-    Going to need to pass Simulation object to load a Track object
-    """
+               massindex=-1, show_history=True, label_host=True, verbose=True,
+               **kwargs):
     trackid = cat['TrackId'][index]
     ti = time()
-    #track = reader.GetTrack(trackid)
     track = Track(trackid, sim)
+    Mt = track.mass(index=massindex)
+    Mo = Mt[-1]
     if verbose:
         print('Loaded track #{2} (TrackID {0}) in {1:.2f} minutes'.format(
             trackid, (time()-ti)/60, index))
     if show_label:
-        label = '{0}: {1:.2f}'.format(
-            trackid, np.log10(1e10*cat['Mbound'][index]))
+        label = '{0}: {1:.2f} ({2}/{3})'.format(
+            trackid, np.log10(Mt[-1]), track.track['Depth'][-1],
+            track.current_host)
     else:
         label = '_none_'
-    z = 1/track['ScaleFactor'] - 1
-    t = cosmo.lookback_time(z)
-    Mt = 1e10 * track['Mbound']
-    Mo = Mt[-1]
+    t = track.lookback_time()
     axes[0].plot(t, Mt, label=label, color=color, **kwargs)
     axes[1].plot(t, Mt/Mo, label=label, color=color, **kwargs)
+
     # if it's a satellite today
-    if track['Rank'][-1] > 0:
-        """
-        # when it last was part of a different parent halo
-        host = track['HostHaloId']
-        i = track['Snapshot'][host != host[-1]][-1]
-        a = reader.GetScaleFactor(i)
-        tt = cosmo.lookback_time(1/a - 1)
-        x = np.argmin(np.abs(track['ScaleFactor']-a))
-        # when it last was a central
-        ic = reader.GetSub(trackid)['SnapshotIndexOfLastIsolation']
-        ac = reader.GetScaleFactor(ic)
-        tc = cosmo.lookback_time(1/ac - 1)
-        xc = np.argmin(np.abs(track['ScaleFactor']-ac))
-        """
-        for ax, m in zip(axes, [Mt,Mt/Mo]):
-            ax.plot(tt, m[x], 'o', mfc='w', ms=10, mec=color, mew=1.5)
-            ax.plot(tc, m[xc], 'o', color=color, ms=10, mec=color, mew=1.5)
+    #if track.track['Rank'][-1] > 0:
+    iinf = track.infall_snapshot_index
+    icent = track.last_central_snapshot_index
+    for ax, m in zip(axes, [Mt,Mt/Mo]):
+        ax.plot(t[iinf], m[iinf], 'o', mfc='w', ms=10, mec=color, mew=1.5)
+        ax.plot(t[icent], m[icent], 'o', color=color, ms=10, mec=color,
+                mew=1.5)
+
+    # the main host halo - just plot when looking at the central
+    # subhalo
+    if track.track['Rank'][-1] == 0 and show_history:
+        host = Track(track.current_host, sim)
+        th = host.lookback_time()
+        host_kwargs = dict(dashes=(6,6), color='k', lw=1.5)
+        #axes[0].plot(th, 1e10*host.track[mkey], **host_kwargs)
+        #axes[1].plot(th, host.track[mkey]/host.track[mkey][-1], **host_kwargs)
+        # some information on the host halo
+        if label_host:
+            text = 'Host ID: {0}\nlog M = {1:.2f}'.format(
+                track.current_host, np.log10(host.Mbound[-1]))
+            txt = axes[0].text(
+                0.95, 0.80, text, ha='right', va='center', fontsize=16,
+                transform=axes[0].transAxes)
+            txt.set_bbox(dict(facecolor='w', edgecolor='w', alpha=0.5))
     return
 
 
@@ -215,7 +219,7 @@ def title_axis(title, rows=10):
 
 
 def setup_track_axes(axes, lookback_cosmo=False, textcolor='0.3',
-                     is_last_row=True):
+                     masslabel=r'$M_\mathrm{total}$', is_last_row=True):
     if isinstance(lookback_cosmo, FlatLambdaCDM):
         x = 't'
         xlabel = 'lookback time (Gyr)'
@@ -228,8 +232,8 @@ def setup_track_axes(axes, lookback_cosmo=False, textcolor='0.3',
         xlabel = 'Redshift'
         xlim = (16, -0.5)
         tickspace = 5
-    axes[0].set_ylabel(r'$M({0})$'.format(x))
-    axes[1].set_ylabel(r'$M({0})/M_0$'.format(x))
+    axes[0].set_ylabel(r'{1}$({0})$'.format(x, masslabel))
+    axes[1].set_ylabel(r'{1}$({0})/${1}$_{{,0}}$'.format(x, masslabel))
     for ax in axes:
         ax.set_yscale('log')
         ax.set_xlim(*xlim)
@@ -250,7 +254,7 @@ def setup_track_axes(axes, lookback_cosmo=False, textcolor='0.3',
     return
 
 
-def get_ytext(ax, height=0.06):
+def get_ytext(ax, height=0.05):
     ylim = ax.get_ylim()
     if ax.get_yscale() == 'log':
         logy = np.log10(np.array(ylim))
