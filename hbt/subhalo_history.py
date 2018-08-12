@@ -16,9 +16,9 @@ rcParams['text.latex.preamble'].append(r'\usepackage{color}')
 from HBTReader import HBTReader
 
 # local
+from core import hbt_tools
 from core.simulation import Simulation
 from core.track import Track
-import hbt_tools
 
 adjust_kwargs = dict(
     left=0.10, right=0.95, bottom=0.05, top=0.98, wspace=0.3, hspace=0.1)
@@ -40,14 +40,9 @@ def main():
     print('In total there are {0} central and {1} satellite subhalos'.format(
         cent.sum(), sub.sum()))
 
-    submass = subs['Mbound'][sub]
-    subdm = subs['MboundType'][:,0][sub]
-    submstar = subs['MboundType'][:,1][sub]
-
     # sort host halos by mass
     print('Sorting by mass...')
     rank = {'Mbound': np.argsort(-subs['Mbound'][cent])}
-    #ids_cent = np.array([subs['HostHaloId'][cent][i] for i in rank['Mbound']])
     ids_cent = subs['HostHaloId'][cent][rank['Mbound']]
 
     n = 20
@@ -184,10 +179,12 @@ def plot_track(sim, reader, cat, index, axes, show_label=True, color='k',
         #axes[1].plot(th, host.track[mkey]/host.track[mkey][-1], **host_kwargs)
         # some information on the host halo
         if label_host:
-            text = 'Host ID: {0}\nlog M = {1:.2f}'.format(
-                track.current_host, np.log10(host.Mbound[-1]))
+            text = r'log {1}$_\mathrm{{,host}} = {0:.2f}$'.format(
+                np.log10(host.mass(index=massindex)[-1]),
+                sim.masslabel(index=massindex, latex=True))
+            text += '\nHost ID = {0}'.format(track.current_host)
             txt = axes[0].text(
-                0.95, 0.80, text, ha='right', va='center', fontsize=16,
+                0.04, 0.97, text, ha='left', va='top', fontsize=16,
                 transform=axes[0].transAxes)
             txt.set_bbox(dict(facecolor='w', edgecolor='w', alpha=0.5))
     return
