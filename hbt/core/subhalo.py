@@ -9,20 +9,19 @@ from HBTReader import HBTReader
 from .simulation import Simulation
 
 
-class BaseSubhaloSample():
+class BaseSubhalo():
 
     def __init__(self, catalog, sim):
         """
         Parameters
         ----------
-        catalog : ``Track.track`` or ``SubhaloSample.data``
+        catalog : ``Track.track`` or ``Subhalo.data``
         sim : ``Simulation``
         """
         self.catalog = catalog
         self.sim = sim
         self._Mbound = None
         self._MboundType = None
-        self.hosts = self.catalog['HostHaloId']
         # private attributes
         self.__range = None
 
@@ -31,6 +30,10 @@ class BaseSubhaloSample():
         if self.__range is None:
             self.__range = np.arange(self.catalog.size, dtype=int)
         return self.__range
+
+    @property
+    def hosts(self):
+        return self.catalog['HostHaloId']
 
     @property
     def Mbound(self):
@@ -56,89 +59,12 @@ class BaseSubhaloSample():
         return self.MboundType[:,index]
 
 
-class SubhaloSample(BaseSubhaloSample):
+class Subhalo(BaseSubhalo):
     """Class to manage a sample of subhalos at a given snapshot
 
     """
 
-    def __init__(self, data, sim):
-        """Define a SubhaloSample object
-
-        Note that a ``SubhaloSample`` object is defined within the
-        snapshot where the subhalo catalog was defined, and contains
-        information about that snapshot only
-
-        Parameters
-        ----------
-        data : output of ``reader.LoadSubhalos``
-        sim : ``Simulation``
-        """
-        self.data = data
-        # load simulation
-        if isinstance(sim, six.string_types):
-            self.sim = Simulation(sim)
-        else:
-            self.sim = sim
-        super(SubhaloSample, self).__init__(self.data, self.sim)
-
-    def host_track(self, subtrackid):
-        """Return the TrackId of the host halo
-
-        Parameters
-        ----------
-        subtrackid : int
-            subhalo track ID, for which to find the host
-
-        Returns
-        -------
-        host_track : int
-            track ID of the host halo
-        """
-        return self.data['TrackId'][self.siblings(subtrackid) \
-                                    & (self.data['Rank'] == 0)][0]
-
-    def index(self, trackid):
-        """Index of a given trackid in the subhalo catalog"""
-        return self._range[self.data['TrackId'] == trackid][0]
-
-    def siblings(self, trackid, same_depth=False):
-        """Siblings of a given subhalo
-
-        Find all subhalos hosted by the same halo as a given subhalo by
-        matching their HostHaloId.
-
-        Parameters
-        ----------
-        trackid : int
-            TrackId of the reference subhalo
-        same_depth : bool, optional
-            Whether to only return subhalos of the same depth as the
-            reference, or all subhalos regardless of their depth
-
-        Returns
-        -------
-        siblings : array of int
-            Indices of siblings in ``self.data``
-
-        Examples
-        --------
-        To idenfity all the siblings of a ``Track`` object at snapshot
-        ``isnap``, do:
-        >>> track = Track(trackid, sim)
-        >>> subs = Subhalo(reader.LoadSubhalos(isnap), sim)
-        >>> isiblings = subs.siblings(track.trackid)
-        >>> sibling_tracks = subs.data['TrackId'][isiblings]
-        """
-        idx = self.index(trackid)
-        mask = (self.hosts == self.hosts[idx])
-        if same_depth:
-            mask = mask & (self.data['Depth'] == self.data['Depth'][idx])
-        return self._range[mask][0]
-
-
-class Track(BaseSubhaloSample):
-
-    def __init__(self, trackid, sim):
+    def __init__(self, trackid, sim, isnap=-1):
         """
         Parameters
         ----------
@@ -147,30 +73,25 @@ class Track(BaseSubhaloSample):
         sim : ``Simulation`` object or ``str``
             simulation containing the track. If ``str``, should be
             simulation label (see ``Simulation.mapping``)
+        isnap : int, optional
+            snapshot index. Default is -1, which refers to the last
+            snapshot. All time-specific quantities are calculated at,
+            or relative to, snapshot ``isnap``
 
-        To load a track from Aspotle/V1_LR, do
-        >>> track = Track(trackid, 'LR')
+        To load a subhalo and its track from Aspotle/V1_LR, do
+        >>> track = Subhalo(trackid, 'LR')
         or
-        >>> track = Track(trackid, Simulation('LR'))
-
-        Maybe I could change this to ``Subhalo``, given that I'm loading
-        the track through the reader anyway. Then I could work both within
-        a snapshot and across them by merging ``Track`` with ``SubhaloSample``
+        >>> track = Subhalo(trackid, Simulation('LR'))
         """
-        self.trackid = trackid
-        # load simulation
-        if isinstance(sim, six.string_types):
-            self.sim = Simulation(sim)
-        else:
-            self.sim = sim
+        self._isnap = isnap
+        # without the underscore so that the reader is defined as well
+        # (which happens in the setter)
+        self.sim = sim
         # load reader and track
-        self.reader = HBTReader(self.sim.path)
-        self.track = self.reader.GetTrack(self.trackid)
-        super(Track, self).__init__(self.track, self.sim)
+        self.trackid = trackid
+        super(Subhalo, self).__init__(self.track, self.sim)
         # other attributes
-        self.current_host = self.hosts[-1]
-        self.scale = self.track['ScaleFactor']
-        self.z = 1/self.scale - 1
+        #self.current_host = self.hosts[-1]
         self._infall_snapshot = None
         self._infall_snapshot_index = None
         self._last_central_snapshot = None
@@ -178,6 +99,103 @@ class Track(BaseSubhaloSample):
         self._zcentral = None
         self._zinfall = None
 
+    @property
+    def future(self):
+        """All snapshots in the future of ``self.isnap``
+
+        If ``self.isnap=-1``, returns ``None``
+        """
+        if self.isnap == -1:
+            return None
+        return self.track[self.isnap+1:]
+
+    @property
+    def host_halo_id(self):
+        """HostHaloId"""
+        return self.present['HostHaloId']
+
+    @property
+    def host_track_id(self):
+        return self.track['TrackId'][self.siblings['Rank'] == 0][0]
+
+    @property
+    def isnap(self):
+        return self._isnap
+
+    @isnap.setter
+    def isnap(self, isnap):
+        self._isnap = isnap
+
+    @property
+    def icent(self):
+        """Index of the last snapshot up to ``self.isnap`` when the
+        subhalo was a central subhalo"""
+        if self.track['Rank'][self.isnap] == 0:
+            return self.isnap
+        return self.past['Rank'][self.past['Rank'] == 0][-1]
+
+    @property
+    def past(self):
+        return self.track[:self.isnap]
+
+    @property
+    def present(self):
+        return self.track[self.isnap]
+
+    @property
+    def scale(self):
+        return self.track['ScaleFactor']
+
+    @property
+    def siblings(self):
+        """Track IDs of all subhalos hosted by the same halo at
+        present"""
+        return self.present['TrackId'][self.present['HostHaloId'] \
+                                       == self.current_host][0]
+
+    @property
+    def sim(self):
+        return self._sim
+
+    @sim.setter
+    def sim(self, sim):
+        if isinstance(sim, six.string_types):
+            self._sim = Simulation(sim)
+        else:
+            self._sim = sim
+        # update the reader for consistency
+        self.reader = HBTReader(self._sim.path)
+
+    @property
+    def trackid(self):
+        return self._trackid
+
+    @trackid.setter
+    def trackid(self, trackid):
+        self._trackid = trackid
+        self.track = self.reader.GetTrack(self._trackid)
+
+    @property
+    def z(self):
+        return 1/self.scale - 1
+
+    @property
+    def zcent(self):
+        if self.is_central():
+            return self.z[self.isnap]
+        else:
+            return self.z[:self.isnap][self.icent]
+
+    def is_central(self):
+        return (self.track[self.isnap]['Rank'] == 0)
+
+
+    def index(self, trackid):
+        """Index of a given trackid in the subhalo catalog"""
+        return self._range[self.data['TrackId'] == trackid][0]
+
+
+class Track(BaseSubhalo):
     """
     @property
     def infall_snapshot(self):
@@ -194,31 +212,6 @@ class Track(BaseSubhaloSample):
             
         return self._infall_snapshot_index
     """
-
-    @property
-    def last_central_snapshot(self):
-        if self._last_central_snapshot is None:
-            self._last_central_snapshot = \
-                self.track['Snapshot'][self.track['Rank'] == 0][-1]
-        return self._last_central_snapshot
-
-    @property
-    def last_central_snapshot_index(self):
-        if self._last_central_snapshot_index is None:
-            self._last_central_snapshot_index = \
-                self._range[self.track['Rank'] == 0][-1]
-        return self._last_central_snapshot_index
-
-    @property
-    def zcentral(self):
-        if self._zcentral is None:
-            if self.track['Rank'][-1] == 0:
-                self._zcentral = self.z[-1]
-            else:
-                self._zcentral = \
-                    1/self.track['ScaleFactor']\
-                        [self._last_central_snapshot_index] - 1
-        return self._zcentral
 
     """
     @property
