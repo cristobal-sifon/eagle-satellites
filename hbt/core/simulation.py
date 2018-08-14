@@ -16,6 +16,8 @@ class Simulation:
         self._snapshots = None
         self.initialize_tree()
 
+    ### attributes ###
+
     @property
     def cosmology(self):
         if self._cosmology is None:
@@ -89,6 +91,8 @@ class Simulation:
                 self._snapshots = np.array(snaps)
         return self._snapshots
 
+    ### methods ###
+
     def initialize_tree(self):
         if not os.path.isdir(self.plot_path):
             os.makedirs(self.plot_path)
@@ -127,6 +131,8 @@ class Simulation:
         if index == -1:
             return 'total'
         return self.masstypes[index]
+
+    ### private methods ###
 
     def _masstype_index(self, mtype):
         rng = np.arange(self.masstypes.size, dtype=int)
