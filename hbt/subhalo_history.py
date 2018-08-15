@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 from astropy.cosmology import FlatLambdaCDM
 from glob import glob
 from itertools import count
@@ -18,7 +19,8 @@ from HBTReader import HBTReader
 # local
 from core import hbt_tools
 from core.simulation import Simulation
-from core.track import Track
+from core.subhalo import Subhalos, Track
+#from core.subhalo_new import Subhalos, Track
 
 adjust_kwargs = dict(
     left=0.10, right=0.95, bottom=0.05, top=0.98, wspace=0.3, hspace=0.1)
@@ -32,24 +34,26 @@ def main():
     reader = HBTReader(sim.path)
     print('Loaded reader in {0:.1f} seconds'.format(time()-to))
     to = time()
-    subs = reader.LoadSubhalos(-1)
+    subs = Subhalos(reader.LoadSubhalos(-1), sim)
     print('Loaded subhalos in {0:.2f} minutes'.format((time()-to)/60))
 
-    cent = (subs['Rank'] == 0)
-    sub = (subs['Rank'] > 0)
     print('In total there are {0} central and {1} satellite subhalos'.format(
-        cent.sum(), sub.sum()))
+        subs.centrals.size, subs.satellites.size))
+
+    centrals = Subhalos(subs.centrals, sim)
+    satellites = Subhalos(subs.satellites, sim)
 
     # sort host halos by mass
     print('Sorting by mass...')
-    rank = {'Mbound': np.argsort(-subs['Mbound'][cent])}
-    ids_cent = subs['HostHaloId'][cent][rank['Mbound']]
+    rank = {'Mbound': np.argsort(-centrals.Mbound)}
+    #ids_cent = centrals.subhalos['TrackId'][rank['Mbound']]
+    ids_cent = subs.centrals['TrackId'][rank['Mbound']]
 
     n = 20
     print('Plotting centrals...')
     to = time()
     plot_centrals(
-        sim, reader, subs[cent][rank['Mbound'][:n]],
+        sim, reader, subs.centrals[rank['Mbound'][:n]],
         title='{1}: {0} most massive central subhalos'.format(
             n, sim.formatted_name))
     print('Finished plot_centrals in {0:.2f} minutes'.format((time()-to)/60))
@@ -88,8 +92,9 @@ def plot_centrals(sim, reader, centrals, title='Central subhalos'):
     return
 
 
-def plot_halo(sim, reader, cat, hostid, axes, massindex=-1, output='',
+def plot_halo(sim, reader, subcat, hostid, axes, massindex=-1, output='',
               nsub=7, fig=None):
+    cat = subcat.catalog
     halo = (cat['HostHaloId'] == hostid)
     print_halo(cat[halo])
     ranked = np.argsort(-cat[halo]['Mbound'])
@@ -109,7 +114,7 @@ def plot_halo(sim, reader, cat, hostid, axes, massindex=-1, output='',
     return
 
 
-def plot_halos(sim, reader, cat, ids_central, massindex=-1, ncl=3):
+def plot_halos(sim, reader, subcat, ids_central, massindex=-1, ncl=3):
     """Plot the evolution of a few massive subhalos in the most massive
     halos"""
     mname = sim.masslabel(index=massindex, latex=False)
@@ -129,7 +134,7 @@ def plot_halos(sim, reader, cat, ids_central, massindex=-1, ncl=3):
     axes = [[plt.subplot2grid(gridsize, (1+i*rowspan,j), rowspan=rowspan)
              for j in range(2)] for i in range(ncl)]
     for i, row, hostid in zip(count(), axes, ids_central):
-        plot_halo(sim, reader, cat, hostid, row, output=output,
+        plot_halo(sim, reader, subcat, hostid, row, output=output,
                   massindex=massindex, fig=fig)
         setup_track_axes(
             row, sim.cosmology, is_last_row=(i==len(axes)-1),
@@ -144,7 +149,7 @@ def plot_track(sim, reader, cat, index, axes, show_label=True, color='k',
                **kwargs):
     trackid = cat['TrackId'][index]
     ti = time()
-    track = Track(trackid, sim)
+    track = Track(reader.GetTrack(trackid), sim)
     Mt = track.mass(index=massindex)
     Mo = Mt[-1]
     if verbose:
@@ -153,7 +158,7 @@ def plot_track(sim, reader, cat, index, axes, show_label=True, color='k',
     if show_label:
         label = '{0}: {1:.2f} ({2}/{3})'.format(
             trackid, np.log10(Mt[-1]), track.track['Depth'][-1],
-            track.current_host)
+            track.track['HostHaloId'][-1])
     else:
         label = '_none_'
     t = track.lookback_time()
@@ -162,17 +167,18 @@ def plot_track(sim, reader, cat, index, axes, show_label=True, color='k',
 
     # if it's a satellite today
     #if track.track['Rank'][-1] > 0:
-    iinf = track.infall_snapshot_index
+    #iinf = track.infall_snapshot_index
     icent = track.last_central_snapshot_index
     for ax, m in zip(axes, [Mt,Mt/Mo]):
-        ax.plot(t[iinf], m[iinf], 'o', mfc='w', ms=10, mec=color, mew=1.5)
+        #ax.plot(t[iinf], m[iinf], 'o', mfc='w', ms=10, mec=color, mew=1.5)
         ax.plot(t[icent], m[icent], 'o', color=color, ms=10, mec=color,
                 mew=1.5)
 
     # the main host halo - just plot when looking at the central
     # subhalo
     if track.track['Rank'][-1] == 0 and show_history:
-        host = Track(track.current_host, sim)
+        host = track.host(-1, return_value='track')
+        host = Track(host, sim)
         th = host.lookback_time()
         host_kwargs = dict(dashes=(6,6), color='k', lw=1.5)
         #axes[0].plot(th, 1e10*host.track[mkey], **host_kwargs)
@@ -182,7 +188,7 @@ def plot_track(sim, reader, cat, index, axes, show_label=True, color='k',
             text = r'log {1}$_\mathrm{{,host}} = {0:.2f}$'.format(
                 np.log10(host.mass(index=massindex)[-1]),
                 sim.masslabel(index=massindex, latex=True))
-            text += '\nHost ID = {0}'.format(track.current_host)
+            text += '\nHost ID = {0}'.format(host.trackid)
             txt = axes[0].text(
                 0.04, 0.97, text, ha='left', va='top', fontsize=16,
                 transform=axes[0].transAxes)

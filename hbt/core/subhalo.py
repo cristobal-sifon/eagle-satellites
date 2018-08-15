@@ -9,7 +9,7 @@ from HBTReader import HBTReader
 from .simulation import Simulation
 
 
-class BaseSubhalo():
+class BaseSubhalo(object):
     """BaseSubhalo class
 
     NOTES
@@ -29,11 +29,10 @@ class BaseSubhalo():
         # initialize simulation and reader. This cannot be modified
         # within the same instance
         if isinstance(sim, six.string_types):
-            self._sim = Simulation(sim)
+            self.sim = Simulation(sim)
         else:
-            self._sim = sim
-        # update the reader for consistency
-        self.reader = HBTReader(self._sim.path)
+            self.sim = sim
+        self.reader = HBTReader(self.sim.path)
         # lazy initialize properties
         self._Mbound = None
         self._MboundType = None
@@ -170,7 +169,7 @@ class Subhalos(BaseSubhalo):
         see ``return_value``
         """
         assert trackid // 1 == trackid, 'trackid must be an int'
-        _valid_return = ('index','mask','table')
+        _valid_return = ('index','mask','table','trackid')
         assert return_value in _valid_return, \
             'return_value must be one of {0}'.format(_valid_return)
         idx = self.index(trackid)
@@ -178,36 +177,50 @@ class Subhalos(BaseSubhalo):
                         == self.subhalos['HostHaloId'][idx])
         if return_value == 'mask':
             return sibling_mask
+        if return_value == 'track':
+            return self.subhalos['TrackId'][sibling_mask]
         if return_value == 'index':
             return self._range[sibling_mask]
         return self.subhalos[sibling_mask]
 
-    def host(self, trackid, return_index=True):
+    def host(self, trackid, return_value='index'):
         """Host halo of a given trackid
 
         Parameters
         ----------
         trackid : int
             track ID
-        return_value : {'index', 'mask', 'table'}, optional
+        return_value : {'index', 'mask', 'trackid', 'table'}, optional
             whether to return the index, a boolean mask, or the full
             table containing properties of siblings only
 
         Returns
         -------
-        host :
-            -int if ``return_value='index'``
-            -boolean mask if ``return_value='mask'``
-            -np.struct_array if ``return_value='table'``
+        The returned value will depend on ``return_value``:
+            -if ``return_value='index'``:
+                int corresponding to the index of the host in
+                ``self.track``
+            -if ``return_value='trackid'``:
+                int corresponding to the host's track ID
+            -if ``return_value='mask'``:
+                boolean mask to be applied to ``self.track``
+            -if ``return_value='table'``:
+                np.struct_array corresponding to the full entry for the
+                host in ``self.table``
         """
         assert trackid // 1 == trackid, 'trackid must be an int'
-        _valid_return = ('index','mask','table')
+        _valid_return = ('index','mask','table','track','trackid')
         assert return_value in _valid_return, \
             'return_value must be one of {0}'.format(_valid_return)
         sib = self.siblings(trackid, return_value='mask')
         host_mask = sib & (self.subhalos['Rank'] == 0)
         if return_value == 'mask':
             return host_mask
+        if return_value == 'track':
+            return self.reader.GetTrack(
+                self.subhalos['TrackId'][host_mask][0])
+        if return_value == 'trackid':
+            return self.subhalos['TrackId'][host_mask][0]
         if return_value == 'index':
             return self._range[host_mask][0]
         return self.subhalos[host_mask]
@@ -223,8 +236,8 @@ class Subhalos(BaseSubhalo):
         assert trackid // 1 == trackid, \
             'trackid must be an int or an array of int'
         if hasattr(trackid, '__iter__'):
-            return self._range[self.data['TrackId'] == trackid]
-        return self._range[self.data['TrackId'] == trackid][0]
+            return self._range[self.subhalos['TrackId'] == trackid]
+        return self._range[self.subhalos['TrackId'] == trackid][0]
 
     def is_central(self, trackid):
         """Whether a given subhalo is a central subhalo
@@ -253,8 +266,6 @@ class Track(BaseSubhalo):
         """
         Parameters
         ----------
-        #trackid : ``int``
-            #track ID
         track : output of ``reader.GetTrack``
             track
         sim : ``Simulation`` object or ``str``
@@ -269,8 +280,10 @@ class Track(BaseSubhalo):
         >>> track = Subhalo(trackid, Simulation('LR'))
         """
         self.track = track
-        self.trackid = self.track['TrackId'][0]
+        self._trackid = self.track['TrackId']
         super(Track, self).__init__(self.track, sim)
+        self.hostid = self.track['HostHaloId']
+        self.current_hostid = self.hostid[-1]
         self._infall_snapshot = None
         self._infall_snapshot_index = None
         self._last_central_snapshot = None
@@ -279,16 +292,6 @@ class Track(BaseSubhalo):
         self._zinfall = None
 
     ### attributes ###
-
-    @property
-    def future(self):
-        """All snapshots in the future of ``self.isnap``
-
-        If ``self.isnap=-1``, returns ``None``
-        """
-        if self.isnap == -1:
-            return None
-        return self.track[self.isnap+1:]
 
     @property
     def icent(self):
@@ -310,16 +313,14 @@ class Track(BaseSubhalo):
         return self._last_central_snapshot_index
 
     @property
-    def past(self):
-        return self.track[:self.isnap]
-
-    @property
-    def present(self):
-        return self.track[self.isnap]
-
-    @property
     def scale(self):
         return self.track['ScaleFactor']
+
+    @property
+    def trackid(self):
+        if hasattr(self._trackid, '__iter__'):
+            self._trackid = self._trackid[0]
+        return self._trackid
 
     @property
     def z(self):
@@ -343,6 +344,53 @@ class Track(BaseSubhalo):
     """
 
     ### methods ###
+
+    def host(self, isnap=-1, return_value='trackid'):
+        """Host halo (i.e., central subhalo) information at a given
+        snapshot
+
+        Parameters
+        ----------
+        isnap : int, optional
+            snapshot number at which the host is to be identified
+
+        Returns
+        -------
+        host : int
+            track ID of the host halo
+
+        Usage
+        -----
+        The host halo may be loaded as a Track with:
+        >>> track = Track(trackid, sim)
+        >>> host_track = track.host(isnap)
+        >>> host = Track(host_track, sim)
+        """
+        _valid_return = ('index','mask','table','track','trackid')
+        assert return_value in _valid_return, \
+            'return_value must be one of {0}'.format(_valid_return)
+        hostid = self.hostid[isnap]
+        # Rank is necessary for the definition of the Subhalos object
+        snap = Subhalos(
+            self.reader.LoadSubhalos(
+                isnap, ['TrackId','HostHaloId','Rank']),
+            self.sim)
+        #hostid = snap.host(self.trackid, return_value='trackid')
+        return snap.host(self.trackid, return_value=return_value)
+        return self.reader.GetTrack(hostid)
+
+        sib = self.siblings(trackid, return_value='mask')
+        host_mask = sib & (self.subhalos['Rank'] == 0)
+        if return_value == 'mask':
+            return host_mask
+        if return_value == 'track':
+            return self.reader.GetTrack(
+                self.subhalos['TrackId'][host_mask][0])
+        if return_value == 'trackid':
+            return self.subhalos['TrackId'][host_mask][0]
+        if return_value == 'index':
+            return self._range[host_mask][0]
+        return self.subhalos[host_mask]
 
     def is_central(self, isnap):
         """Whether the subhalo is a central at a given moment
