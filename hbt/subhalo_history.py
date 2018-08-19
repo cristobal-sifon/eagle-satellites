@@ -46,8 +46,8 @@ def main():
     # sort host halos by mass
     print('Sorting by mass...')
     rank = {'Mbound': np.argsort(-centrals.Mbound)}
-    #ids_cent = centrals.subhalos['TrackId'][rank['Mbound']]
-    ids_cent = subs.centrals['TrackId'][rank['Mbound']]
+    # should not count on them being sorted by mass
+    ids_cent = subs.centrals['TrackId']
 
     n = 20
     print('Plotting centrals...')
@@ -61,7 +61,10 @@ def main():
     to = time()
     # total, gas, halo, stars
     for massindex in range(-1, 6):
-        plot_halos(sim, reader, subs, ids_cent, massindex=massindex)
+        plot_halos(
+            sim, reader, subs, subs.centrals['TrackId'][rank['Mbound']],
+            massindex=massindex)
+        break
     print('Finished plot_halos in {0:.2f} minutes'.format((time()-to)/60))
     return
 
@@ -77,11 +80,9 @@ def plot_centrals(sim, reader, centrals, title='Central subhalos'):
                 rowspan=nrows-1)]
     cscale = colorscale(10+np.log10(centrals['Mbound']))
     for i, color in enumerate(cscale[0]):
-        #to = time()
         plot_track(
             sim, reader, centrals, i, axes, color=color, label_host=False,
             verbose=(i%200==0))
-        #print('{0:4d}) {1:6.2f} s'.format(i, time()-to))
     cax = plt.subplot2grid((nrows,2*colspan+1), (1,2*colspan), rowspan=nrows-1)
     cbar = plt.colorbar(cscale[1], cax=cax)
     cbar.ax.tick_params(labelsize=12, direction='out', which='both', pad=14)
@@ -95,7 +96,10 @@ def plot_centrals(sim, reader, centrals, title='Central subhalos'):
 def plot_halo(sim, reader, subcat, hostid, axes, massindex=-1, output='',
               nsub=7, fig=None):
     cat = subcat.catalog
-    halo = (cat['HostHaloId'] == hostid)
+    # find all subhalos in the same halo
+    central = (cat['TrackId'] == hostid)
+    central_hostid = cat['HostHaloId'][central]
+    halo = (cat['HostHaloId'] == central_hostid)
     print_halo(cat[halo])
     ranked = np.argsort(-cat[halo]['Mbound'])
     # central subhalo
@@ -130,7 +134,6 @@ def plot_halos(sim, reader, subcat, ids_central, massindex=-1, ncl=3):
     rowspan = nrows // ncl
     axloc = np.array(
         [[(1+i*rowspan,j) for j in range(2)] for i in range(ncl)])
-    #print('axloc =', axloc)
     axes = [[plt.subplot2grid(gridsize, (1+i*rowspan,j), rowspan=rowspan)
              for j in range(2)] for i in range(ncl)]
     for i, row, hostid in zip(count(), axes, ids_central):
@@ -167,10 +170,10 @@ def plot_track(sim, reader, cat, index, axes, show_label=True, color='k',
 
     # if it's a satellite today
     #if track.track['Rank'][-1] > 0:
-    #iinf = track.infall_snapshot_index
+    iinf = track.infall_snapshot_index
     icent = track.last_central_snapshot_index
     for ax, m in zip(axes, [Mt,Mt/Mo]):
-        #ax.plot(t[iinf], m[iinf], 'o', mfc='w', ms=10, mec=color, mew=1.5)
+        hax.plot(t[iinf], m[iinf], 'o', mfc='w', ms=10, mec=color, mew=1.5)
         ax.plot(t[icent], m[icent], 'o', color=color, ms=10, mec=color,
                 mew=1.5)
 
@@ -198,9 +201,10 @@ def plot_track(sim, reader, cat, index, axes, show_label=True, color='k',
 
 def print_halo(halo, mmin=10):
     print()
-    print('HostHaloId {0}'.format(halo['TrackId'][0]))
+    print('HostHaloId {0}'.format(halo['TrackId']))
+    print(halo['Mbound'], (halo['Rank'] == 0).sum())
     print('has a total mass {0:.2e} Msun/h'.format(
-        1e10*halo[halo['Rank'] == 0]['Mbound'][0]))
+        1e10*halo['Mbound'][halo['Rank'] == 0][0]))
     print('and {0} subhalos (including the central),'.format(
         halo['Rank'].size))
     print('with')
