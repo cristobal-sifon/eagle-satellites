@@ -2,6 +2,7 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 from astropy.cosmology import FlatLambdaCDM
+from glob import glob
 import numpy as np
 import os
 
@@ -77,10 +78,9 @@ class Simulation:
     def snapshots(self):
         if self._snapshots is None:
             try:
-                self._snapshots = np.array(
-                    [i.split('/')[-1].split('_')[1].split('.')[0]
-                     for i in sorted(glob(
-                         os.path.join(self.path,'SubSnap*')))])
+                snaps = [
+                    i.split('/')[-1].split('_')[1].split('.')[0]
+                    for i in sorted(glob(os.path.join(self.path,'SubSnap*')))]
             except IndexError:
                 snaps = []
                 for i in sorted(os.listdir(self.path)):
@@ -88,7 +88,7 @@ class Simulation:
                         snaps.append(int(i))
                     except ValueError:
                         pass
-                self._snapshots = np.array(snaps)
+            self._snapshots = np.array(snaps, dtype=int)
         return self._snapshots
 
     ### methods ###
