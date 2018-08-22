@@ -35,6 +35,7 @@ def main():
     print('Loaded reader in {0:.1f} seconds'.format(time()-to))
     to = time()
     subs = Subhalos(reader.LoadSubhalos(-1), sim)
+    #subs.sort(order='Mbound')
     print('Loaded subhalos in {0:.2f} minutes'.format((time()-to)/60))
 
     print('In total there are {0} central and {1} satellite subhalos'.format(
@@ -53,7 +54,7 @@ def main():
     print('Plotting centrals...')
     to = time()
     plot_centrals(
-        sim, reader, subs.centrals[rank['Mbound'][:n]],
+        sim, reader, subs, subs.centrals[rank['Mbound'][:n]],
         title='{1}: {0} most massive central subhalos'.format(
             n, sim.formatted_name))
     print('Finished plot_centrals in {0:.2f} minutes'.format((time()-to)/60))
@@ -69,7 +70,7 @@ def main():
     return
 
 
-def plot_centrals(sim, reader, centrals, title='Central subhalos'):
+def plot_centrals(sim, reader, subcat, centrals, title='Central subhalos'):
     colspan = 7
     fig = plt.figure(figsize=(2*colspan+1,7))
     nrows = title_axis(title)
@@ -81,8 +82,8 @@ def plot_centrals(sim, reader, centrals, title='Central subhalos'):
     cscale = colorscale(10+np.log10(centrals['Mbound']))
     for i, color in enumerate(cscale[0]):
         plot_track(
-            sim, reader, centrals, i, axes, color=color, label_host=False,
-            verbose=(i%200==0))
+            sim, reader, subcat, centrals, i, axes, color=color,
+            label_host=False, verbose=(i%200==0), show_history=False)
     cax = plt.subplot2grid((nrows,2*colspan+1), (1,2*colspan), rowspan=nrows-1)
     cbar = plt.colorbar(cscale[1], cax=cax)
     cbar.ax.tick_params(labelsize=12, direction='out', which='both', pad=14)
@@ -94,7 +95,7 @@ def plot_centrals(sim, reader, centrals, title='Central subhalos'):
 
 
 def plot_halo(sim, reader, subcat, hostid, axes, massindex=-1, output='',
-              nsub=7, fig=None):
+              nsub=10, fig=None, show_label=False):
     cat = subcat.catalog
     # find all subhalos in the same halo
     central = (cat['TrackId'] == hostid)
@@ -103,15 +104,16 @@ def plot_halo(sim, reader, subcat, hostid, axes, massindex=-1, output='',
     print_halo(cat[halo])
     ranked = np.argsort(-cat[halo]['Mbound'])
     # central subhalo
-    plot_track(sim, reader, cat[halo], ranked[0], axes, color='k', lw=3,
-               massindex=massindex)
+    plot_track(sim, reader, subcat, cat[halo], ranked[0], axes, color='k',
+               lw=3, massindex=massindex, show_label=show_label)
     # most massive satellite subhalos
     for i, n in enumerate(ranked[1:nsub+1]):
         plot_track(
-            sim, reader, cat[halo], n, axes, massindex=massindex, lw=1,
-            color='C{0}'.format(i))
-    #axes[0].legend(fontsize=12, loc='upper left')
-    axes[1].legend(fontsize=12, bbox_to_anchor=(0.96,0.54), loc='upper right')
+            sim, reader, subcat, cat[halo], n, axes, massindex=massindex,
+            lw=1, color='C{0}'.format(i), show_label=show_label)
+    if show_label:
+        axes[1].legend(
+            fontsize=12, bbox_to_anchor=(0.96,0.54), loc='upper right')
     if output:
         plt.subplots_adjust(**adjust_kwargs)
         savefig(output, fig=fig, close=False, tight=False)
@@ -126,8 +128,10 @@ def plot_halos(sim, reader, subcat, ids_central, massindex=-1, ncl=3):
     output = os.path.join(sim.plot_path, output)
     fig = plt.figure(figsize=(14,5*(ncl+0.5)))
     title = '{0}: {1} most massive halos\n'.format(sim.formatted_name, ncl)
-    title += 'Mass: {0}\n'.format(mname)
-    title += 'Bold: central subhalo\n'
+    #title += 'Mass: {0}\n'.format(mname)
+    #title += 'Bold: central subhalo\n'
+    #title += r'Plus sign: $t_\mathrm{cent}$ Cross: $t_\mathrm{infall}$' + '\n'
+    title += r'Empty: $t_\mathrm{cent}$ Filled: $t_\mathrm{infall}$' + '\n'
     title += 'Legend format: TrackID: log{0} (Depth/HostHaloID)'.format(mname)
     nrows = title_axis(title, rows=10)
     gridsize = (nrows, 2)
@@ -147,9 +151,9 @@ def plot_halos(sim, reader, subcat, ids_central, massindex=-1, ncl=3):
     return
 
 
-def plot_track(sim, reader, cat, index, axes, show_label=True, color='k',
-               massindex=-1, show_history=True, label_host=True, verbose=True,
-               **kwargs):
+def plot_track(sim, reader, subhalos, cat, index, axes, show_label=True,
+               color='k', massindex=-1, show_history=True, label_host=True,
+               verbose=True, **kwargs):
     trackid = cat['TrackId'][index]
     ti = time()
     track = Track(reader.GetTrack(trackid), sim)
@@ -168,14 +172,14 @@ def plot_track(sim, reader, cat, index, axes, show_label=True, color='k',
     axes[0].plot(t, Mt, label=label, color=color, **kwargs)
     axes[1].plot(t, Mt/Mo, label=label, color=color, **kwargs)
 
-    # if it's a satellite today
-    #if track.track['Rank'][-1] > 0:
-    iinf = track.infall_snapshot_index
-    icent = track.last_central_snapshot_index
-    for ax, m in zip(axes, [Mt,Mt/Mo]):
-        hax.plot(t[iinf], m[iinf], 'o', mfc='w', ms=10, mec=color, mew=1.5)
-        ax.plot(t[icent], m[icent], 'o', color=color, ms=10, mec=color,
-                mew=1.5)
+    if show_history:
+        # las moment it was a central
+        icent = track.last_central_snapshot_index
+        # infall
+        iinf = track.infall('index')
+        for ax, m in zip(axes, [Mt,Mt/Mo]):
+            ax.plot(t[icent], m[icent], 'wo', mec=color, ms=12, mew=1.5)
+            ax.plot(t[iinf], m[iinf], 'o', ms=7, color=color, mew=1.5)
 
     # the main host halo - just plot when looking at the central
     # subhalo
@@ -212,6 +216,12 @@ def print_halo(halo, mmin=10):
     for mmin in np.logspace(-2, 4, 7):
         print('    {0} having Mbound > {1:.2e} Msun/h'.format(
             (halo['Mbound'] > mmin).sum(), 1e10*mmin))
+    return
+
+
+def summarize_array(array, name, **kwargs):
+    print('{0}: (min,max)=({1},{2}); size={3}'.format(
+        name, array.min(), array.max(), array.size), **kwargs)
     return
 
 

@@ -15,6 +15,7 @@ class Simulation:
         self._family = None
         self._formatted_name = None
         self._snapshots = None
+        self._snapshot_indices = None
         self.initialize_tree()
 
     ### attributes ###
@@ -91,7 +92,31 @@ class Simulation:
             self._snapshots = np.array(snaps, dtype=int)
         return self._snapshots
 
+    @property
+    def snapshot_indices(self):
+        if self._snapshot_indices is None:
+            self._snapshot_indices = np.arange(
+                self.snapshots.size, dtype=int)
+        return self._snapshot_indices
+
     ### methods ###
+
+    def snapshot_index(self, snap):
+        """Given a snapshot number, return the index to which it
+        corresponds
+
+        Parameters
+        ----------
+        snap : int
+            snapshot number
+
+        Returns
+        -------
+        isnap : int
+            snapshot index
+        """
+        return self.snapshot_indices[self.snapshots == snap][0]
+
 
     def initialize_tree(self):
         if not os.path.isdir(self.plot_path):

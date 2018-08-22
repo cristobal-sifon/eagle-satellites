@@ -172,9 +172,14 @@ class Subhalos(BaseSubhalo):
         _valid_return = ('index','mask','table','trackid')
         assert return_value in _valid_return, \
             'return_value must be one of {0}'.format(_valid_return)
-        idx = self.index(trackid)
+        try:
+            idx = self.index(trackid)
+        except IndexError:
+            return None
         sibling_mask = (self.subhalos['HostHaloId'] \
                         == self.subhalos['HostHaloId'][idx])
+        if sibling_mask.sum() == 0:
+            return None
         if return_value == 'mask':
             return sibling_mask
         if return_value == 'track':
@@ -335,14 +340,6 @@ class Track(BaseSubhalo):
                 self._zcentral = self.z[self.icent]
         return self._zcentral
 
-    """
-    @property
-    def zinfall(self):
-        if self._zinfall is None:
-            self._zinfall = self.z[self.host != self.current_host][-1]
-        return self._zinfall
-    """
-
     ### methods ###
 
     def host(self, isnap=-1, return_value='trackid'):
@@ -408,7 +405,6 @@ class Track(BaseSubhalo):
         return (self.data['Rank'][isnap] == 0)
 
     def lookback_time(self, z=None, scale=None, isnap=None):
-        """This should probably be in Simulation"""
         if z is not None:
             return self.sim.cosmology.lookback_time(z)
         if scale is not None:
@@ -430,3 +426,36 @@ class Track(BaseSubhalo):
 
         """
         return
+
+    def infall(self, return_value='index'):
+        """Last redshift at which the subhalo was not in its present
+        host
+
+        Parameters
+        ----------
+        return_value : {'index', 'tlookback', 'redshift'}, optional
+            output value. Options are:
+        """
+        valid_outputs = ('index', 'redshift', 'tlookback')
+        assert return_value in valid_outputs, \
+            'return_value must be one of {0}. Got {1} instead'.format(
+                valid_outputs, return_value)
+        hostid = self.host(isnap=-1, return_value='trackid')
+        # Running backwards because in HBT+ all tracks exist today,
+        # at least as 'orphan' galaxies with Nbound=1
+        for isnap in self.sim.snapshots[::-1]:
+            snapcat = Subhalos(self.reader.LoadSubhalos(isnap), self.sim)
+            sib = snapcat.siblings(hostid, 'trackid')
+            # this means we reached the beginning of the track
+            if sib is None:
+                iinf = 0
+                break
+            if self.trackid not in sib['TrackId']:
+                iinf_backward = isnap - self.sim.snapshots.max() - 1
+                iinf =  self._range[iinf_backward]
+                break
+        if return_value == 'tlookback':
+            return self.lookback_time(isnap=iinf)
+        if return_value == 'redshift':
+            return self.z[iinf]
+        return iinf
