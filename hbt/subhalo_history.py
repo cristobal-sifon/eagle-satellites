@@ -65,7 +65,6 @@ def main():
         plot_halos(
             sim, reader, subs, subs.centrals['TrackId'][rank['Mbound']],
             massindex=massindex)
-        break
     print('Finished plot_halos in {0:.2f} minutes'.format((time()-to)/60))
     return
 

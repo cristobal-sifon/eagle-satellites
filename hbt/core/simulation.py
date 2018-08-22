@@ -49,7 +49,11 @@ class Simulation:
 
     @property
     def masstypes(self):
-        return np.array(['gas', 'halo', 'disk', 'bulge', 'stars', 'boundary'])
+        return np.array(['gas', 'dm', 'disk', 'bulge', 'stars', 'bh'])
+
+    @property
+    def masstype_labels(self):
+        return np.array(['gas', 'DM', 'disk', 'bulge', 'stars', 'BH'])
 
     @property
     def _mapping(self):
@@ -144,7 +148,7 @@ class Simulation:
         if latex:
             return r'$M_\mathrm{{{0}}}$'.format(self.masstype(**kwargs))
         else:
-            return 'M{0}'.format(self.masstype(**kwargs))
+            return 'M{0}'.format(self.masstype(**kwargs).lower())
 
     def masstype(self, mtype=None, index=None):
         assert mtype is not None or index is not None, \
@@ -152,10 +156,10 @@ class Simulation:
         if mtype is not None:
             if mtype.lower() in ('total', 'mbound'):
                 return 'total'
-            return self.masstypes[self._masstype_index(mtype)][0]
+            return self.masstype_labels[self._masstype_index(mtype)]
         if index == -1:
             return 'total'
-        return self.masstypes[index]
+        return self.masstype_labels[index]
 
     ### private methods ###
 

@@ -2,6 +2,8 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 import numpy as np
+from numpy.lib.recfunctions import append_fields
+import pandas as pd
 import six
 
 from HBTReader import HBTReader
@@ -36,6 +38,8 @@ class BaseSubhalo(object):
         # lazy initialize properties
         self._Mbound = None
         self._MboundType = None
+        self._Nbound = None
+        self._NboundType = None
         # private attributes
         self.__range = None
 
@@ -60,6 +64,18 @@ class BaseSubhalo(object):
         if self._MboundType is None:
             self._MboundType = 1e10 * self.catalog['MboundType']
         return self._MboundType
+
+    @property
+    def Nbound(self):
+        if self._Nbound is None:
+            self._Nbound = self.catalog['Nbound']
+        return self._Nbound
+
+    @property
+    def NboundType(self):
+        if self._NboundType is None:
+            self._NboundType = self.catalog['NboundType']
+        return self._NboundType
 
     ### methods ###
 
@@ -121,6 +137,7 @@ class Subhalos(BaseSubhalo):
         self._central_idx = None
         self._central_mask = None
         self._centrals = None
+        self._orphan = None
         self._satellite_idx = None
         self._satellite_mask = None
         self._satellites = None
@@ -146,12 +163,30 @@ class Subhalos(BaseSubhalo):
         return self._central_mask
 
     @property
+    def orphan(self):
+        """boolean mask, True if object is orphan"""
+        if self._orphan is None:
+            self._orphan = (self.subhalos['Nbound'] == 1)
+        return self._orphan
+
+    @property
     def satellites(self):
         if self._satellites is None:
             self._satellites = self.subhalos[self.subhalos['Rank'] > 0]
         return self._satellites
 
     ### methods ###
+
+    def DataFrame(self):
+        df = {}
+        for dtype in self.subhalos.dtype.descr:
+            name = dtype[0]
+            if len(self.subhalos[name].shape) == 1:
+                df[name] = self.subhalos[name]
+            else:
+                for i in range(self.subhalos[name].shape[1]):
+                    df['{0}{1}'.format(name, i+1)] = self.subhalos[name][:,i]
+        return pd.DataFrame(df)
 
     def siblings(self, trackid, return_value='index'):
         """All subhalos hosted by the same halo at present
@@ -263,6 +298,38 @@ class Subhalos(BaseSubhalo):
         if hasattr(trackid, '__iter__'):
             return cent
         return cent[0]
+
+    def distance2host(self, hostid, projection=None):
+        """Calculate the distance of all subhalos to the center of
+        their host
+
+        Parameters
+        ----------
+        hostid : int
+            trackID of the host subhalo
+        projection : str, optional
+            projection along which to calculate distances. Must be a
+            combination of two of {'xyz'}
+
+        Returns
+        -------
+        dist2host : float array
+            distances to host in Mpc, in 3d or along the given
+            projection
+        """
+        from time import time
+        to = time()
+        df = self.DataFrame()
+        print('created data frame in {0:.1f} s'.format(time()-to))
+        axes = 'xyz'
+        subs = self.siblings(hostid, return_value='index')
+        host = self.host(hostid, return_value='index')
+        x = self.subhalos['ComovingMostBoundPosition'][subs]
+        xo = self.subhalos['ComovingMostBoudnPosition'][host]
+        if projection is not None:
+            x = np.array(
+                [x[axes.index(projection[0])],x[axes.index(projection[1])]])
+        return np.sum((x-xo)**2, axis=0)**0.5
 
 
 class Track(BaseSubhalo):
@@ -441,6 +508,7 @@ class Track(BaseSubhalo):
             'return_value must be one of {0}. Got {1} instead'.format(
                 valid_outputs, return_value)
         hostid = self.host(isnap=-1, return_value='trackid')
+        iinf = 0
         # Running backwards because in HBT+ all tracks exist today,
         # at least as 'orphan' galaxies with Nbound=1
         for isnap in self.sim.snapshots[::-1]:
