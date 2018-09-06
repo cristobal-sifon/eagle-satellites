@@ -7,7 +7,7 @@ import numpy as np
 import os
 
 
-class Simulation:
+class Simulation(object):
 
     def __init__(self, label):
         self.label = label
@@ -17,6 +17,7 @@ class Simulation:
         self._snapshots = None
         self._snapshot_indices = None
         self.initialize_tree()
+        print('Loaded {0} from {1}'.format(self.formatted_name, self.path))
 
     ### attributes ###
 

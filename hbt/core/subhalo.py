@@ -20,7 +20,7 @@ class BaseSubhalo(object):
          depend on simulation
     """
 
-    def __init__(self, catalog, sim):
+    def __init__(self, catalog, sim, as_dataframe=True):
         """
         Parameters
         ----------
@@ -28,6 +28,8 @@ class BaseSubhalo(object):
         sim : ``Simulation``
         """
         self.catalog = catalog
+        self.dtype = catalog.dtype
+        self._as_dataframe = as_dataframe
         # initialize simulation and reader. This cannot be modified
         # within the same instance
         if isinstance(sim, six.string_types):
@@ -54,6 +56,15 @@ class BaseSubhalo(object):
     ### public properties ###
 
     @property
+    def as_dataframe(self):
+        return self._as_dataframe
+
+    @as_dataframe.setter
+    def as_dataframe(self, as_df):
+        assert isinstance(as_df, bool), 'as_dataframe must be boolean'
+        self._as_dataframe = as_df
+
+    @property
     def Mbound(self):
         if self._Mbound is None:
             self._Mbound = 1e10 * self.catalog['Mbound']
@@ -78,6 +89,18 @@ class BaseSubhalo(object):
         return self._NboundType
 
     ### methods ###
+
+    def DataFrame(self, recarray):
+        """Return a ``pandas.DataFrame`` object"""
+        df = {}
+        for dtype in recarray.dtype.descr:
+            name = dtype[0]
+            if len(recarray[name].shape) == 1:
+                df[name] = recarray[name]
+            else:
+                for i in range(recarray[name].shape[1]):
+                    df['{0}{1}'.format(name, i+1)] = recarray[name][:,i]
+        return pd.DataFrame(df)
 
     def mass(self, mtype=None, index=None):
         assert mtype is not None or index is not None, \
@@ -122,7 +145,7 @@ class Subhalos(BaseSubhalo):
 
     """
 
-    def __init__(self, subhalos, sim):
+    def __init__(self, subhalos, sim, as_dataframe=True):
         """
         Parameters
         ----------
@@ -132,8 +155,9 @@ class Subhalos(BaseSubhalo):
             simulation containing the track. If ``str``, should be
             simulation label (see ``Simulation.mapping``)
         """
-        self.subhalos = subhalos
-        super(Subhalos, self).__init__(self.subhalos, sim)
+        super(Subhalos, self).__init__(
+            subhalos, sim, as_dataframe=as_dataframe)
+        self._subhalos = subhalos
         self._central_idx = None
         self._central_mask = None
         self._centrals = None
@@ -146,9 +170,7 @@ class Subhalos(BaseSubhalo):
 
     @property
     def centrals(self):
-        if self._centrals is None:
-            self._centrals = self.subhalos[self.central_mask]
-        return self._centrals
+        return self.subhalos[self.central_mask]
 
     @property
     def central_idx(self):
@@ -171,22 +193,31 @@ class Subhalos(BaseSubhalo):
 
     @property
     def satellites(self):
-        if self._satellites is None:
-            self._satellites = self.subhalos[self.subhalos['Rank'] > 0]
-        return self._satellites
+        return self.subhalos[self.satellite_mask]
+
+    @property
+    def satellite_idx(self):
+        if self._satellite_idx is None:
+            self._satellite_idx =  self._range[self.satellite_mask]
+        return self._satellite_idx
+
+    @property
+    def satellite_mask(self):
+        if self._satellite_mask is None:
+            self._satellite_mask = (self.subhalos['Rank'] > 0)
+        return self._satellite_mask
+
+    @property
+    def subhalos(self):
+        if self.as_dataframe and isinstance(self._subhalos, np.ndarray):
+            self._subhalos = self.DataFrame(self._subhalos)
+        elif not self.as_dataframe \
+                and isinstance(self._subhalos, pd.DataFrame):
+            self._subhalos = self._subhalos.to_records()
+        self._subhalos = self._subhalos[self._subhalos['HostHaloId'] > -1]
+        return self._subhalos
 
     ### methods ###
-
-    def DataFrame(self):
-        df = {}
-        for dtype in self.subhalos.dtype.descr:
-            name = dtype[0]
-            if len(self.subhalos[name].shape) == 1:
-                df[name] = self.subhalos[name]
-            else:
-                for i in range(self.subhalos[name].shape[1]):
-                    df['{0}{1}'.format(name, i+1)] = self.subhalos[name][:,i]
-        return pd.DataFrame(df)
 
     def siblings(self, trackid, return_value='index'):
         """All subhalos hosted by the same halo at present
@@ -253,7 +284,10 @@ class Subhalos(BaseSubhalo):
         assert return_value in _valid_return, \
             'return_value must be one of {0}'.format(_valid_return)
         sib = self.siblings(trackid, return_value='mask')
-        host_mask = sib & (self.subhalos['Rank'] == 0)
+        if sib is None:
+            return None
+        else:
+            host_mask = sib & (self.subhalos['Rank'] == 0)
         if return_value == 'mask':
             return host_mask
         if return_value == 'track':
@@ -299,7 +333,12 @@ class Subhalos(BaseSubhalo):
             return cent
         return cent[0]
 
-    def distance2host(self, hostid, projection=None):
+    def _distance(self, group, axes='xyz', rank_key='Rank'):
+        xyz = np.array([group[i] for i in axes]).T
+        return np.sum((xyz-xyz[group[rank_key] == 0])**2, axis=1)**0.5
+
+    def distance2host(self, projection='xyz', append_key='HostHaloDistance',
+                      position_name='ComovingMostBoundPosition', read=True):
         """Calculate the distance of all subhalos to the center of
         their host
 
@@ -310,6 +349,13 @@ class Subhalos(BaseSubhalo):
         projection : str, optional
             projection along which to calculate distances. Must be a
             combination of two of {'xyz'}
+        append : bool, optional
+            whether to add the result as a new column to
+            ``self.subhalos``
+        read : bool, optional -- NOT IMPLEMENTED
+            whether to read the distances stored in a file, if it
+            exists, rather than calculating them again. The file path
+            is constructed automatically from the simulation details.
 
         Returns
         -------
@@ -317,24 +363,32 @@ class Subhalos(BaseSubhalo):
             distances to host in Mpc, in 3d or along the given
             projection
         """
-        from time import time
-        to = time()
-        df = self.DataFrame()
-        print('created data frame in {0:.1f} s'.format(time()-to))
-        axes = 'xyz'
-        subs = self.siblings(hostid, return_value='index')
-        host = self.host(hostid, return_value='index')
-        x = self.subhalos['ComovingMostBoundPosition'][subs]
-        xo = self.subhalos['ComovingMostBoudnPosition'][host]
-        if projection is not None:
-            x = np.array(
-                [x[axes.index(projection[0])],x[axes.index(projection[1])]])
-        return np.sum((x-xo)**2, axis=0)**0.5
+        axes = ' xyz'
+        self.as_dataframe = True
+        columns = [
+            '{0}{1}'.format(position_name, axes.index(i))
+            for i in projection]
+        # this is how the columns will be in aux
+        auxcols = ['{0}_h'.format(c) for c in columns]
+        columns.append('HostHaloId')
+        # alias
+        sub = self.subhalos
+        aux = sub.join(
+            sub[sub['Rank'] == 0][columns].set_index('HostHaloId'),
+            on='HostHaloId', rsuffix='_h')
+        #self.subhalos['HostHaloDistance'] = np.sum(
+        dist = np.sum(
+            (aux[columns[:-1]].values - aux[auxcols].values)**2, axis=1)**0.5
+        if append_key:
+            self.subhalos[append_key] = dist
+        else:
+            return dist
+
 
 
 class Track(BaseSubhalo):
 
-    def __init__(self, track, sim):
+    def __init__(self, track, sim, as_dataframe=True):
         """
         Parameters
         ----------
@@ -351,9 +405,10 @@ class Track(BaseSubhalo):
         or
         >>> track = Subhalo(trackid, Simulation('LR'))
         """
-        self.track = track
+        super(Track, self).__init__(
+            track, sim, as_dataframe=as_dataframe)
+        self._track = track
         self._trackid = self.track['TrackId']
-        super(Track, self).__init__(self.track, sim)
         self.hostid = self.track['HostHaloId']
         self.current_hostid = self.hostid[-1]
         self._infall_snapshot = None
@@ -387,6 +442,15 @@ class Track(BaseSubhalo):
     @property
     def scale(self):
         return self.track['ScaleFactor']
+
+    @property
+    def track(self):
+        if self.as_dataframe and isinstance(self._track, np.ndarray):
+            self._track = self.DataFrame(self._track)
+        elif not self.as_dataframe \
+                and isinstance(self._track, pd.DataFrame):
+            self._track = self._track.to_records()
+        return self._track
 
     @property
     def trackid(self):
