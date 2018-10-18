@@ -5,6 +5,27 @@ from astropy.cosmology import FlatLambdaCDM
 from glob import glob
 import numpy as np
 import os
+import six
+
+from HBTReader import HBTReader
+
+
+class BaseSimulation(object):
+    """
+    This class is imported by external objects such as Subhalo or
+    Track. For now, it only provides the capability to load a
+    Simulation object
+
+    """
+
+    def __init__(self, sim):
+        # initialize simulation and reader. This cannot be modified
+        # within the same instance
+        if isinstance(sim, six.string_types):
+            self.sim = Simulation(sim)
+        else:
+            self.sim = sim
+        self.reader = HBTReader(self.sim.path)
 
 
 class Simulation(object):
@@ -16,6 +37,7 @@ class Simulation(object):
         self._formatted_name = None
         self._snapshots = None
         self._snapshot_indices = None
+        self._virial_snapshots = None
         self.initialize_tree()
         print('Loaded {0} from {1}'.format(self.formatted_name, self.path))
 
@@ -53,6 +75,11 @@ class Simulation(object):
         return np.array(['gas', 'dm', 'disk', 'bulge', 'stars', 'bh'])
 
     @property
+    def masstype_pandas_columns(self):
+        return np.array(['MboundType{0}'.format(self._masstype_index(i))
+                         for i in self.masstypes])
+
+    @property
     def masstype_labels(self):
         return np.array(['gas', 'DM', 'disk', 'bulge', 'stars', 'BH'])
 
@@ -78,7 +105,7 @@ class Simulation(object):
 
     @property
     def root(self):
-        return '/cosma/home/jvbq85/data/HBT/data'
+        return '/cosma/home/durham/jvbq85/data/HBT/data'
 
     @property
     def snapshots(self):
@@ -104,7 +131,38 @@ class Simulation(object):
                 self.snapshots.size, dtype=int)
         return self._snapshot_indices
 
+    @property
+    def virial_path(self):
+        return os.path.join(self.path, 'HaloSize')
+
+    @property
+    def virial_snapshots(self):
+        if self._virial_snapshots is None:
+            lsdir = glob(os.path.join(self.virial_path, 'HaloSize_*.hdf5'))
+            print(lsdir[0])
+            print(lsdir[0].split('/')[-1].split('.')[0].split('_')[1])
+            self._virial_snapshots = np.sort(
+                [int(i.split('/')[-1].split('.')[0].split('_')[1])
+                 for i in glob(os.path.join(
+                    self.virial_path, 'HaloSize_*.hdf5'))])
+        return self._virial_snapshots
+
     ### methods ###
+
+    def masstype_pandas_column(self, mtype):
+        """Name of the column containing requested mass type
+
+        Parameters
+        ----------
+        mtype : str
+            mass type. See ``self.masstypes``
+
+        Returns
+        -------
+        column : str
+            column name
+        """
+        return self.masstype_pandas_columns[self._masstype_index(mtype)]
 
     def snapshot_index(self, snap):
         """Given a snapshot number, return the index to which it
@@ -121,7 +179,6 @@ class Simulation(object):
             snapshot index
         """
         return self.snapshot_indices[self.snapshots == snap][0]
-
 
     def initialize_tree(self):
         if not os.path.isdir(self.plot_path):
