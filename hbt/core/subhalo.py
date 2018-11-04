@@ -2,7 +2,7 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 import h5py
-from itertools import count
+from itertools import combinations, count
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.lib.recfunctions import append_fields
@@ -60,9 +60,9 @@ class BaseDataSet(object):
             self._catalog = self._catalog.to_records()
         return self._catalog
 
-    @catalog.setter
-    def catalog(self, cat):
-        self._catalog = cat
+    #@catalog.setter
+    #def catalog(self, cat):
+        #self._catalog = cat
 
     ### methods ###
 
@@ -82,13 +82,14 @@ class BaseDataSet(object):
 class BaseSubhalo(BaseDataSet):
     """BaseSubhalo class"""
 
-    def __init__(self, catalog, sim, as_dataframe=True):
+    def __init__(self, catalog, sim, as_dataframe=True, pvref='MostBound'):
         """
         Parameters
         ----------
         catalog : ``Track.track`` or ``Subhalos.data``
         sim : ``Simulation``
         """
+        assert pvref in ('Average', 'MostBound')
         # setting to False here to load the Mbounds and Nbounds below
         # (easier to load from hdf5 than DataFrame)
         super(BaseSubhalo, self).__init__(catalog, as_dataframe=False)
@@ -98,6 +99,7 @@ class BaseSubhalo(BaseDataSet):
         self.Nbound = self.catalog['Nbound']
         self.NboundType = self.catalog['NboundType']
         self.as_dataframe = as_dataframe
+        self.pvref = pvref
 
     ### methods ###
 
@@ -111,6 +113,83 @@ class BaseSubhalo(BaseDataSet):
         if index == -1:
             return self.Mbound
         return self.MboundType[:,index]
+
+    ## easy access to positions, distances and velocities ##
+
+    def column(self, value, ax):
+        # consider moving `ref` to a class attribute
+        value = value.lower()
+        acceptable = ('distance', 'position', 'velocity')
+        assert value in acceptable, \
+            '`value` must be one of {0}'.format(acceptable)
+        if value == 'distance':
+            return dcol(ax)
+        if value == 'position':
+            return pcol(ax)
+        if value == 'velocity':
+            return vcol(ax)
+
+    def dcol(self, ax=''):
+        """Distance column name
+
+        Parameters
+        ----------
+        ax : {'0', '1', '2', '01', '02', '12'}, optional
+            distance axis or plane. If not given, will return
+            3-dimenional distance column
+
+        Returns
+        -------
+        dcol : str
+            distance column name
+        """
+        return 'Comoving{0}Distance{1}'.format(self.pvref, ax)
+
+    def dcols(self, ndim=1):
+        """Distance column names
+
+        Parameters
+        ----------
+        ndim : int {1,2, 3}, optional
+            number of dimensions over which distances are desired
+        """
+        assert ndim in (1, 2, 3)
+        if ndim == 3:
+            return self.dcol()
+        return [self.dcol(''.join(plane))
+                for plane in combinations('012', ndim)]
+
+    def distance(self, ax=''):
+        return self.catalog[self.dcol(ax=ax)]
+
+    def pcol(self, ax):
+        return 'Comoving{0}Position{1}'.format(self.pvref, ax)
+
+    def pcols(self):
+        """All position column names"""
+        return [self.pcol(i) for i in range(3)]
+
+    def position(self, ax):
+        return self.catalog[self.pcol(ax)]
+
+    def scol(self, ax=''):
+        return 'Physical{0}Velocity{1}'.format(self.pvref, ax)
+
+    def scols1d(self):
+        return [self.scol(i) for i in range(3)]
+
+    def sigma(self, ax=''):
+        """Velocity dispersion"""
+        return self.catalog[self.scol(ax)]
+
+    def vcol(self, ax=''):
+        return 'Physical{0}Velocity{1}'.format(self.pvref, ax)
+
+    def vcols1d(self):
+        return [self.vcol(i) for i in range(3)]
+
+    def velocity(self, ax=''):
+        return self.catalog[self.vcol(ax=ax)]
 
 
 class HostHalos(BaseDataSet, BaseSimulation):
@@ -196,7 +275,8 @@ class Subhalos(BaseSubhalo):
     """
 
     def __init__(self, catalog, sim, isnap, exclude_non_FoF=False,
-                 as_dataframe=True):
+                 logMmin=8.5, as_dataframe=True, load_distances=True,
+                 load_velocities=True):
         """
         Parameters
         ----------
@@ -213,15 +293,29 @@ class Subhalos(BaseSubhalo):
             (i.e., those with HostHaloId=-1). Some attributes or
             methods may not work if set to False.
         """
+        assert isinstance(load_distances, bool)
+        assert isinstance(load_velocities, bool)
         super(Subhalos, self).__init__(
             catalog, sim, as_dataframe=as_dataframe)
+        print('{0} objects in the full catalog'.format(
+            catalog['TrackId'].size))
         self.exclude_non_FoF = exclude_non_FoF
         self.non_FoF = (self.catalog['HostHaloId'] == -1)
         if self.exclude_non_FoF:
             print('Excluding {0} non-FoF subhalos'.format(self.non_FoF.sum()))
-            self.catalog = self.catalog[~self.non_FoF]
-            print('catalog size =', self.catalog['Rank'].size)
+            self._catalog = self.catalog[~self.non_FoF]
+        self.logMmin = logMmin
+        self._catalog = self.catalog[self.mass('total') > 10**self.logMmin]
         self.isnap = isnap
+        self._has_host_properties = False
+        self._has_distances = False
+        self._has_velocities = []
+        self.load_distances = load_distances
+        self.load_velocities = load_velocities
+        if self.load_distances:
+            self.distance2host()
+        if self.load_velocities:
+            self.host_velocities()
         self._central_idx = None
         self._central_mask = None
         self._centrals = None
@@ -229,8 +323,6 @@ class Subhalos(BaseSubhalo):
         self._satellite_idx = None
         self._satellite_mask = None
         self._satellites = None
-        self._has_host_properties = False
-        self._has_velocities = False
 
     ### attributes ###
 
@@ -275,26 +367,16 @@ class Subhalos(BaseSubhalo):
 
     ### methods ###
 
-    def distance2host(self, projection='xyz', append_key='HostHaloDistance',
-                      position_name='ComovingMostBoundPosition', read=True,
-                      verbose=True):
+    def distance2host(self, verbose=True):
         """Calculate the distance of all subhalos to the center of
         their host
 
+        rewrite so that this is called at __init__, generating all
+        combinations for 2d and 3d distances. Then do the same with
+        the velocities (but just do 1d and 3d)
+
         Parameters
         ----------
-        hostid : int
-            trackID of the host subhalo
-        projection : str, optional
-            projection along which to calculate distances. Must be a
-            combination of two of {'xyz'}
-        append : bool, optional
-            whether to add the result as a new column to
-            ``self.catalog``
-        read : bool, optional -- NOT IMPLEMENTED
-            whether to read the distances stored in a file, if it
-            exists, rather than calculating them again. The file path
-            is constructed automatically from the simulation details.
 
         Returns
         -------
@@ -302,28 +384,43 @@ class Subhalos(BaseSubhalo):
             distances to host in Mpc, in 3d or along the given
             projection
         """
-        axes = ' xyz'
+        if self._has_distances:
+            print('Distances already calculated')
+            return
+        print('Calculating distances...')
+        input_fmt = self.as_dataframe
         self.as_dataframe = True
-        columns = [
-            '{0}{1}'.format(position_name, axes.index(i))
-            for i in projection]
-        # this is how the columns will be in aux
-        auxcols = ['{0}_h'.format(c) for c in columns]
-        columns.append('HostHaloId')
         # alias
         sub = self.catalog
+        print('N =', sub['HostHaloId'].size)
+        columns = list(np.append(self.pcols(), 'HostHaloId'))
         to = time()
-        aux = sub.join(
-            sub[sub['Rank'] == 0][columns].set_index('HostHaloId'),
+        hosts = sub[columns].join(
+            sub[columns][sub['Rank'] == 0],#.set_index('HostHaloId'),
             on='HostHaloId', rsuffix='_h')
-        dist = np.sum(
-            (aux[columns[:-1]].values - aux[auxcols].values)**2, axis=1)**0.5
+        print('Joined hosts in {0:.2f} min'.format((time()-to)/60))
+        # 1d
+        ti = time()
+        for dcol, pcol in zip(self.dcols(1), self.pcols()):
+            self.catalog[dcol] = np.absolute(hosts[pcol] - hosts[pcol+'_h'])
+        print('1d distances in {0:.2f} s'.format(time()-ti))
+        # 2d
+        ti = time()
+        for dcol in self.dcols(2):
+            dcols = [self.dcol(dcol[-i]) for i in (2,1)]
+            self.catalog[dcol] = np.sum(
+                self.catalog[dcols]**2, axis=1)**0.5
+        print('2d distances in {0:.2f} s'.format(time()-ti))
+        # 3d
+        ti = time()
+        self.catalog[self.dcol()] = np.sum(
+            self.catalog[self.dcols()]**2, axis=1)**0.5
+        print('3d distances in {0:.2f} s'.format(time()-ti))
         if verbose:
             print('Calculated distances in {0:.2f} s'.format(time()-to))
-        if append_key:
-            self.catalog[append_key] = dist
-        else:
-            return dist
+        self.as_dataframe = input_fmt
+        self._has_distances = True
+        return
 
     def host(self, trackid, return_value='index'):
         """Host halo of a given trackid
@@ -430,81 +527,85 @@ class Subhalos(BaseSubhalo):
         return self._mass_weighted_stat(
             sigma_xyz, np.array(x[mcol]), label)**0.5
 
-    def host_velocities(self, ref='Average', mass_weighting='stars'):
+    def host_velocities(self, mass_weighting=None):
+        if mass_weighting in self._has_velocities:
+            print('velocities already loaded')
+            return
         if not self._has_host_properties:
             self.load_hosts()
+        print('Calculating velocities...')
+        to = time()
         # alias
         cx = self.catalog.copy()
-        fig, ax = plt.subplots(figsize=(8,7))
-        mbins = np.logspace(3, 11, 31)
-        for i in range(6):
-            m = 1e10 * cx['MboundType{0}'.format(i)]
-            n = (m >= mbins[0]) & (m <= mbins[-1])
-            ax.hist(m, mbins, histtype='step', bottom=1,
-                    label='Type {0} ({1})'.format(i, n.sum()))
-        ax.set_xscale('log')
-        ax.set_yscale('log')
-        ax.legend()
-        fig.savefig(os.path.join(self.sim.plot_path, 'Mhist.pdf'))
-        plt.close()
         axes = 'xyz'
-        vcols = ['Physical{1}Velocity{0}'.format(i, ref) for i in range(3)]
-        mcol = self.sim.masstype_pandas_column(mass_weighting) \
-            if isinstance(mass_weighting, six.string_types) else None
-        mweight = cx[mcol]
+        vcols = ['Physical{1}Velocity{0}'.format(i, self.pvref)
+                 for i in range(3)]
+        if mass_weighting is None:
+            mweight = 1
+        else:
+            mcol = self.sim.masstype_pandas_column(mass_weighting)
+            mweight = cx[mcol]
         keys = list(cx)
         # mean velocities
         grcols = ['HostHaloId', 'Nsat']
         skip = len(grcols)
         mvcols = []
-        if mcol is not None:
-            print('mass:\n', mweight.describe())
-        print()
-        for ax, vcol in zip(axes, vcols):
-            mvcols.append('mv{0}'.format(ax))
-            cx[mvcols[-1]] = cx[vcol] if mcol is None else cx[vcol] * mweight
+        for i, vcol in enumerate(vcols):
+            mvcols.append('mv{0}'.format(i))
+            cx[mvcols[-1]] = cx[vcol] * mweight
         grcols = np.append(grcols, mvcols)
-        print('grcols =', grcols)
+        print(np.sort(list(cx)))
+        print()
+        print('grouping...')
+        ti = time()
         group = cx.groupby('HostHaloId')
-        wmean = group[mvcols].sum()
-        msum = group[mcol].sum()
-        #msum[msum == 0] = 1
-        print('velocity:\n', cx[vcols[0]].describe())
-        print()
-        print('wmean:\n', wmean[mvcols[0]].describe())
-        print()
-        #print('msum:\n', np.sort(np.unique(msum)))
-        print('msum:\n', msum.describe())
-        print()
-        print('cx: ', np.sort(list(cx)))
-        #print('cx =', cx)
-        print()
-        # these should be discarded at some other point
-        #msum[msum == 0] = 1
+        print('grouped in {0:.2f} min'.format((time()-ti)/60))
+        ti = time()
+        if mass_weighting is None:
+            wmean = group[mvcols].mean()
+        else:
+            wmean = group[mvcols].sum()
+        print('wmean in {0:.2f} min'.format((time()-ti)/60))
+        ti = time()
+        if mass_weighting is None:
+            msum = 1
+        else:
+            msum = group[mcol].sum()
+        print('msum in {0:.2f} min'.format((time()-ti)/60))
         vcl = pd.DataFrame({})
-        vcol = 'Physical{0}HostMeanVelocity'.format(ref)
+        vcol = 'Physical{0}HostMeanVelocity'.format(self.pvref)
+        # peculiar velocities
+        vpcol = 'Physical{0}PeculiarVelocity'.format(self.pvref)
+        vpcols = [vpcol+str(i) for i in range(3)]
+        print('peculiar velocities...')
+        ti = time()
         for i, mvcol in enumerate(mvcols):
             vcl[vcol+str(i)] = wmean[mvcol] / msum
+            vcl[vpcol+str(i)] = \
+                vcl['Physical{0}HostMeanVelocity{1}'.format(self.pvref, i)] \
+                - vcl[vcol+str(i)]
+        print('peculiar velocities in {0:.2f} min'.format((time()-ti)/60))
+        # 3d
         vcl[vcol] = np.sum(wmean[mvcols]**2, axis=1)**0.5
-        print('vcl =', np.sort(list(vcl)))
-        vnan = np.isnan(vcl['Physical{0}HostMeanVelocity'.format(ref)]) \
-            | ~np.isfinite(vcl['Physical{0}HostMeanVelocity'.format(ref)])
-        print('vcol:', vcol, 'size:', vcl[vcol].size, 'nan:', vnan.sum(),
-              'finite:', (1-vnan).sum())
+        vpcols = [vpcol+str(i) for i in range(3)]
+        vcl[vpcol] = np.sum(vcl[vpcols]**2, axis=1)**0.5 \
+            * np.sign(np.sum(vcl[vpcols]**2, axis=1))
+        print(np.sort(list(vcl)))
+        print()
+        print('velocity dispersions...')
         # velocity dispersions
         to = time()
-        for i, ax, vcol in zip(count(), axes, vcols):
+        for i, vcol in enumerate(vcols):
             vdiff = cx[vcol] \
-                - vcl['Physical{0}HostMeanVelocity{1}'.format(ref, i)]
+                - vcl['Physical{0}HostMeanVelocity{1}'.format(self.pvref, i)]
             cx[mvcols[i]] = mweight * vdiff**2
         print('weighted differences in {0:.2f} seconds'.format(time()-to))
         # can I do the above without the loop?
-        #cx[
         to = time()
         group = cx.groupby('HostHaloId')
         wstd = group[mvcols].sum()
         print('grouped in {0:.1f} seconds'.format(time()-to))
-        scol = 'Physical{0}HostVelocityDispersion'.format(ref)
+        scol = 'Physical{0}HostVelocityDispersion'.format(self.pvref)
         scols = []
         to = time()
         for i, mvcol in enumerate(mvcols):
@@ -517,7 +618,7 @@ class Subhalos(BaseSubhalo):
         print('scol:', scol, 'size:', vcl[scol].size, 'nan:', snan.sum(),
               'finite:', (1-snan).sum())
         #sys.exit()
-        self.catalog = self.catalog[keys].join(
+        self._catalog = self.catalog[keys].join(
             vcl, on='HostHaloId', rsuffix='')
         printcols = ['HostHaloId','Nsat',#'PhysicalMostBoundHostMeanVelocity1',
                      'PhysicalMostBoundHostMeanVelocity']
@@ -553,6 +654,8 @@ class Subhalos(BaseSubhalo):
         tbl.write('test_vinf.fits', format='fits', overwrite=True)
         #sys.exit()
         """
+        self._has_velocities.append(mass_weighting)
+        print('Calculated velocities in {0:.2f} min'.format((time()-to)/60))
         return
 
 
@@ -581,7 +684,6 @@ class Subhalos(BaseSubhalo):
         Returns
         -------
         is_central : bool or array of bool
-            ``True`` if ``Rank=0``, else ``False``
         """
         assert trackid // 1 == trackid, \
             'trackid must be an int or an array of int'
@@ -597,20 +699,26 @@ class Subhalos(BaseSubhalo):
 
         See `HostHalos` for details
         """
+        if self._has_host_properties:
+            print('Hosts already loaded')
+            return
+        print('Loading hosts...')
+        to = time()
         if self.isnap not in self.sim.virial_snapshots:
             hosts = HostHalos(self.sim, self.isnap, force_isnap=force_isnap)
-            #print('hosts =', np.sort(hosts.colnames))
             to = time()
             grouped = self.catalog[['HostHaloId']].groupby('HostHaloId')
             nm = pd.DataFrame({'Nsat': grouped['HostHaloId'].count()-1})
-            self.catalog = self.catalog.join(nm, on='HostHaloId', rsuffix='')
-            self.catalog = self.catalog.join(
-                hosts.catalog.set_index('HaloId'), on='HostHaloId',
+            self._catalog = self.catalog.join(nm, on='HostHaloId', rsuffix='')
+            self._catalog = self.catalog.join(
+                hosts.catalog, on='HostHaloId',
+                #hosts.catalog.set_index('HaloId'), on='HostHaloId',
                 rsuffix='_h')
             if verbose:
                 print('Joined hosts in {0:.2f} s'.format(time()-to))
             del hosts
         self._has_host_properties = True
+        print('Loaded in {0:.2f} s'.format(time()-to))
         return
 
     def siblings(self, trackid, return_value='index'):
