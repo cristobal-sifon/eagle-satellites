@@ -16,6 +16,9 @@ from HBTReader import HBTReader
 
 from .simulation import BaseSimulation, Simulation
 
+# my code
+from stattools import Cbi, Sbi
+
 
 class BaseDataSet(object):
 
@@ -94,12 +97,56 @@ class BaseSubhalo(BaseDataSet):
         # (easier to load from hdf5 than DataFrame)
         super(BaseSubhalo, self).__init__(catalog, as_dataframe=False)
         BaseSimulation.__init__(self, sim)
-        self.Mbound = 1e10 * self.catalog['Mbound']
-        self.MboundType = 1e10 * self.catalog['MboundType']
-        self.Nbound = self.catalog['Nbound']
-        self.NboundType = self.catalog['NboundType']
+        #self.Mbound = 1e10 * self.catalog['Mbound']
+        #self.MboundType = 1e10 * self.catalog['MboundType']
+        #self.Nbound = self.catalog['Nbound']
+        #self.NboundType = self.catalog['NboundType']
         self.as_dataframe = as_dataframe
         self.pvref = pvref
+
+    ### hidden properties ###
+
+    @property
+    def _valid_axes(self):
+        return ('', '0', '1', '2', '01', '02', '12')
+
+    ### properties ###
+
+    @property
+    def Mbound(self):
+        return 1e10 * self.catalog['Mbound']
+
+    @property
+    def MboundType(self):
+        adf = self.as_dataframe
+        self.as_dataframe = False
+        mbt = 1e10 * self.catalog['MboundType']
+        self.as_dataframe = adf
+        return mbt
+
+    @property
+    def Nbound(self):
+        return self.catalog['Nbound']
+
+    @property
+    def MboundType(self):
+        adf = self.as_dataframe
+        self.as_dataframe = False
+        nbt = self.catalog['NboundType']
+        self.as_dataframe = adf
+        return nbt
+
+
+    ### hidden methods ###
+
+    def _get_ax1d_label(self, ax):
+        try:
+            ax = int(ax)
+        except ValueError as err:
+            msg = 'ax must be an int, 0 <= ax <= 2'
+            raise ValueError(err)
+        assert ax in [0, 1, 2]
+        return 'xyz'[[0, 1, 2].index(ax)]
 
     ### methods ###
 
@@ -159,34 +206,63 @@ class BaseSubhalo(BaseDataSet):
         return [self.dcol(''.join(plane))
                 for plane in combinations('012', ndim)]
 
+    def dlabel(self, ax=''):
+        ax = str(ax)
+        assert ax in self._valid_axes, \
+            'ax must be one of {0}'.format(self._valid_axes)
+        if ax != 0 and not ax:
+            return 'r_\mathrm{3D}'
+        return 'r_{{{0}}}'.format(
+            ''.join([self._get_ax1d_label(i) for i in ax]))
+
     def distance(self, ax=''):
         return self.catalog[self.dcol(ax=ax)]
 
     def pcol(self, ax):
+        assert int(ax) in [0,1,2]
         return 'Comoving{0}Position{1}'.format(self.pvref, ax)
 
     def pcols(self):
         """All position column names"""
         return [self.pcol(i) for i in range(3)]
 
+    def plabel(self, ax):
+        return self._get_ax1d_label(ax)
+
     def position(self, ax):
         return self.catalog[self.pcol(ax)]
 
     def scol(self, ax=''):
-        return 'Physical{0}Velocity{1}'.format(self.pvref, ax)
+        assert not ax or int(ax) in [0,1,2]
+        return 'Physical{0}HostVelocityDispersion{1}'.format(self.pvref, ax)
 
     def scols1d(self):
         return [self.scol(i) for i in range(3)]
+
+    def slabel(self, ax=''):
+        assert not ax or int(ax) in [0,1,2]
+        if ax != 0 and not ax:
+            return r'\sigma_\mathrm{3D}'
+        return r'\sigma_{0}'.format(self._get_ax1d_label(ax))
 
     def sigma(self, ax=''):
         """Velocity dispersion"""
         return self.catalog[self.scol(ax)]
 
-    def vcol(self, ax=''):
+    def vcol(self, ax='', peculiar=True):
+        assert not ax or int(ax) in [0,1,2]
+        if peculiar:
+            return 'Physical{0}PeculiarVelocity{1}'.format(self.pvref, ax)
         return 'Physical{0}Velocity{1}'.format(self.pvref, ax)
 
     def vcols1d(self):
         return [self.vcol(i) for i in range(3)]
+
+    def vlabel(self, ax):
+        assert not ax or int(ax) in [0,1,2]
+        if ax != 0 and not ax:
+            return r'v_\mathrm{3D}'
+        return r'v_{0}'.format(self._get_ax1d_label(ax))
 
     def velocity(self, ax=''):
         return self.catalog[self.vcol(ax=ax)]
@@ -296,7 +372,7 @@ class Subhalos(BaseSubhalo):
         assert isinstance(load_distances, bool)
         assert isinstance(load_velocities, bool)
         super(Subhalos, self).__init__(
-            catalog, sim, as_dataframe=as_dataframe)
+              catalog, sim, as_dataframe=as_dataframe)
         print('{0} objects in the full catalog'.format(
             catalog['TrackId'].size))
         self.exclude_non_FoF = exclude_non_FoF
@@ -307,6 +383,7 @@ class Subhalos(BaseSubhalo):
         self.logMmin = logMmin
         self._catalog = self.catalog[self.mass('total') > 10**self.logMmin]
         self.isnap = isnap
+        #self.redshift = self.redshift[self.isnap]
         self._has_host_properties = False
         self._has_distances = False
         self._has_velocities = []
@@ -528,6 +605,7 @@ class Subhalos(BaseSubhalo):
             sigma_xyz, np.array(x[mcol]), label)**0.5
 
     def host_velocities(self, mass_weighting=None):
+        # note that this screws things up if self.pvref changes
         if mass_weighting in self._has_velocities:
             print('velocities already loaded')
             return
@@ -536,7 +614,7 @@ class Subhalos(BaseSubhalo):
         print('Calculating velocities...')
         to = time()
         # alias
-        cx = self.catalog.copy()
+        cx = self.catalog
         axes = 'xyz'
         vcols = ['Physical{1}Velocity{0}'.format(i, self.pvref)
                  for i in range(3)]
@@ -546,6 +624,7 @@ class Subhalos(BaseSubhalo):
             mcol = self.sim.masstype_pandas_column(mass_weighting)
             mweight = cx[mcol]
         keys = list(cx)
+        new_keys = []
         # mean velocities
         grcols = ['HostHaloId', 'Nsat']
         skip = len(grcols)
@@ -558,7 +637,7 @@ class Subhalos(BaseSubhalo):
         print()
         print('grouping...')
         ti = time()
-        group = cx.groupby('HostHaloId')
+        group = cx[grcols].groupby('HostHaloId')
         print('grouped in {0:.2f} min'.format((time()-ti)/60))
         ti = time()
         if mass_weighting is None:
@@ -568,94 +647,79 @@ class Subhalos(BaseSubhalo):
         print('wmean in {0:.2f} min'.format((time()-ti)/60))
         ti = time()
         if mass_weighting is None:
+            #msum = group['Nsat']
             msum = 1
         else:
             msum = group[mcol].sum()
         print('msum in {0:.2f} min'.format((time()-ti)/60))
-        vcl = pd.DataFrame({})
-        vcol = 'Physical{0}HostMeanVelocity'.format(self.pvref)
-        # peculiar velocities
+        ## host mean velocities
+        print('mean velocities...')
+        hosts = pd.DataFrame({'HostHaloId': np.array(group.size().index)})
+        vhcol = 'Physical{0}HostMeanVelocity'.format(self.pvref)
+        vhcols = [vhcol+str(i) for i in range(3)]
         vpcol = 'Physical{0}PeculiarVelocity'.format(self.pvref)
         vpcols = [vpcol+str(i) for i in range(3)]
-        print('peculiar velocities...')
-        ti = time()
         for i, mvcol in enumerate(mvcols):
-            vcl[vcol+str(i)] = wmean[mvcol] / msum
-            vcl[vpcol+str(i)] = \
-                vcl['Physical{0}HostMeanVelocity{1}'.format(self.pvref, i)] \
-                - vcl[vcol+str(i)]
-        print('peculiar velocities in {0:.2f} min'.format((time()-ti)/60))
-        # 3d
-        vcl[vcol] = np.sum(wmean[mvcols]**2, axis=1)**0.5
-        vpcols = [vpcol+str(i) for i in range(3)]
-        vcl[vpcol] = np.sum(vcl[vpcols]**2, axis=1)**0.5 \
-            * np.sign(np.sum(vcl[vpcols]**2, axis=1))
-        print(np.sort(list(vcl)))
-        print()
+            hosts[vhcol+str(i)] = wmean[mvcol] / msum
+        hosts[vhcol] = np.sum(wmean[mvcols]**2, axis=1)**0.5
+        print('hosts =', np.sort(list(hosts)))
+        ## velocity dispersions
         print('velocity dispersions...')
-        # velocity dispersions
         to = time()
+        hostkeys = np.append(['HostHaloId', vhcol], vhcols)
+        cx = cx.join(hosts[hostkeys].set_index('HostHaloId'), on='HostHaloId')
         for i, vcol in enumerate(vcols):
             vdiff = cx[vcol] \
-                - vcl['Physical{0}HostMeanVelocity{1}'.format(self.pvref, i)]
+                - cx['Physical{0}HostMeanVelocity{1}'.format(self.pvref, i)]
             cx[mvcols[i]] = mweight * vdiff**2
         print('weighted differences in {0:.2f} seconds'.format(time()-to))
-        # can I do the above without the loop?
+        # group again because I want the new mvcols grouped as well
         to = time()
         group = cx.groupby('HostHaloId')
-        wstd = group[mvcols].sum()
         print('grouped in {0:.1f} seconds'.format(time()-to))
+        ti = time()
+        wvar = group[mvcols].sum()
+        print('wvar in {0:.1f} seconds'.format(time()-ti))
         scol = 'Physical{0}HostVelocityDispersion'.format(self.pvref)
         scols = []
         to = time()
         for i, mvcol in enumerate(mvcols):
             scols.append(scol+str(i))
-            vcl[scols[-1]] = (wstd[mvcol] / msum)**0.5
-        vcl[scol] = np.sum(wstd, axis=1)**0.5
+            hosts[scols[-1]] = (wvar[mvcol] / msum)**0.5
+        hosts[scol] = np.sum(wvar/msum, axis=1)**0.5
+        new_keys = np.append(['HostHaloId', scol], scols)
+        cx = cx.join(hosts[new_keys].set_index('HostHaloId'), on='HostHaloId')
+        # -1 or not?
+        for col in np.append(scol, scols):
+            cx[col] = cx[col] / (cx['Nsat']-1)**0.5
         print('dispersions in {0:.1f} seconds'.format(time()-to))
-        #vcl[scol][msum == 0] = 0
-        snan = np.isnan(vcl[scol]) | ~np.isfinite(vcl[scol])
-        print('scol:', scol, 'size:', vcl[scol].size, 'nan:', snan.sum(),
-              'finite:', (1-snan).sum())
-        #sys.exit()
-        self._catalog = self.catalog[keys].join(
-            vcl, on='HostHaloId', rsuffix='')
-        printcols = ['HostHaloId','Nsat',#'PhysicalMostBoundHostMeanVelocity1',
-                     'PhysicalMostBoundHostMeanVelocity']
-        isolated = (self.catalog['Nsat'] == 0)
-        vinf = ~np.isfinite(self.catalog[vcol])
-        sinf = ~np.isfinite(self.catalog[scol])
-        #
-        """
-        jhost = np.sort(np.unique(self.catalog['HostHaloId'][vinf]))
-        print('jhost =', jhost.size)
-        nprinted = 0
-        for j in jhost:
-            jj = (self.catalog['HostHaloId'] == j)
-            nsat = np.unique(self.catalog['Nsat'][jj])[0]
-            if 0 < nsat < 20:
-                print(j, nsat)
-                nprinted += 1
-            if nprinted == 20:
-                break
-        print(np.sort(np.unique(self.catalog['Nsat'][vinf])))
-        print('vinf:', vinf.size, isolated.sum(), vinf.sum(),
-              (isolated & vinf).sum(), np.array_equal(isolated, vinf))
-        print('sinf:', sinf.size, sinf.sum(), (sinf == 0).sum(),
-              (msum == 0).sum())
-        massive = (self.catalog['Mbound'] > 1)
-        print('massive:', massive.sum(), (massive & sinf).sum(),
-              (massive & vinf).sum())
+        # peculiar velocities
+        print('peculiar velocities...')
+        for col in (vhcol, vhcols, scol, scols):
+            new_keys = np.append(new_keys, col)
+        print('hosts:')
+        print(np.sort(list(hosts)))
         print()
-        from astropy.io import fits
-        from astropy.table import Table
-        cat = self.catalog[jj]
-        tbl = Table.from_pandas(cat)
-        tbl.write('test_vinf.fits', format='fits', overwrite=True)
-        #sys.exit()
-        """
+        for i in range(3):
+            cx[vpcol+str(i)] = \
+                cx['Physical{0}Velocity{1}'.format(self.pvref, i)] \
+                - cx['Physical{0}HostMeanVelocity{1}'.format(self.pvref, i)]
+        # 3d
+        cx['Physical{0}Velocity'.format(self.pvref)] = \
+            np.sum(cx[self.vcols1d()]**2, axis=1)**0.5 \
+            * np.sign(np.sum(cx[self.vcols1d()], axis=1))
+        cx[vpcol] = cx['Physical{0}Velocity'.format(self.pvref)] \
+            - cx['Physical{0}HostMeanVelocity'.format(self.pvref)]
+        print('peculiar velocities in {0:.2f} min'.format((time()-ti)/60))
+        print()
+        cx.drop(columns=mvcols)
+        self._catalog = cx
+        print('self.catalog:')
+        print(np.sort(list(self.catalog)))
+        print()
         self._has_velocities.append(mass_weighting)
         print('Calculated velocities in {0:.2f} min'.format((time()-to)/60))
+        print()
         return
 
 

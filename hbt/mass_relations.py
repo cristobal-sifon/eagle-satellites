@@ -1,7 +1,9 @@
+from astropy import units as u
 from matplotlib import pyplot as plt
 import numpy as np
 import os
 import pandas as pd
+from scipy.stats import binned_statistic as binnedstat
 import sys
 from time import time
 if sys.version_info[0] == 2:
@@ -16,6 +18,7 @@ from core.simulation import Simulation
 from core.subhalo import HostHalos, Subhalos, Track
 
 
+
 def main(debug=True):
 
     args = hbt_tools.parse_args()
@@ -27,17 +30,6 @@ def main(debug=True):
 
     isnap = -1
     subs = reader.LoadSubhalos(isnap)
-
-    # testing inf velocities
-    vavg = subs['PhysicalAverageVelocity']
-    vbound = subs['PhysicalMostBoundVelocity']
-    bad_avg = (np.sum(1-np.isfinite(vavg), axis=1) > 0)
-    bad_bound = (np.sum(1-np.isfinite(vbound), axis=1) > 0)
-    print('bad_avg: {0:.0f}/{1} ({2:.1f}%)'.format(
-        bad_avg.sum(), bad_avg.size, 100*bad_avg.sum()/bad_avg.size))
-    print('bad_bound: {0:.0f}/{1} ({2:.1f}%)'.format(
-        bad_bound.sum(), bad_bound.size, 100*bad_bound.sum()/bad_bound.size))
-    #return
 
     wrap_plot(sim, subs, isnap)
 
@@ -52,62 +44,165 @@ def wrap_plot(sim, subs, isnap, debug=True):
     #print(halos.dtype)
     #print(halos.colnames)
 
-    sat = Subhalos(subs[subs['Rank'] > 0], sim, isnap)
-    cen = Subhalos(subs[subs['Rank'] == 0], sim, isnap)
-    print('{2}: {0} centrals and {1} satellites'.format(
-        (subs['Rank'] == 0).sum(), (subs['Rank'] > 0).sum(),
-        subs['Rank'].size))
+    #sat = Subhalos(subs[subs['Rank'] > 0], sim, isnap)
+    #cen = Subhalos(subs[subs['Rank'] == 0], sim, isnap)
+    #print('{2}: {0} centrals and {1} satellites'.format(
+        #(subs['Rank'] == 0).sum(), (subs['Rank'] > 0).sum(),
+        #subs['Rank'].size))
 
     #sat.load_hosts(verbose=True)
 
     subs = Subhalos(subs, sim, isnap)
-    subs.load_hosts(verbose=True)
-    #subs.distance2host(projection='xyz', append_key='distance_xyz')
+    #subs.load_hosts(verbose=True)
+    #subs.host_velocities()
     subhalos = subs.catalog
     print(np.sort(subs.colnames))
+    #sys.exit()
 
     # plot phase-space
-    norm = True
-    fig, axes = plt.subplots(figsize=(14,10), ncols=2, nrows=2)
-    axes = np.reshape(axes, -1)
-    projections = ['xyz', 'xy', 'yz', 'xz']
-    to = time()
-    xyz = np.array(
-         [subhalos['ComovingMostBoundPosition{0}'.format(i)]
-          - subhalos['CenterComoving{0}'.format(i)]
-         for i in range(3)])
-    print('Calculated cluster-centric distances in {0:.2f} s'.format(time()-to))
-    # note that for the velocities I want to use the direction I'm
-    # *not* using for the positions
-    # this is 3d for now
-    to = time()
-    vref = 'MostBound'
-    #subs.host_velocities(ref='Average', mass_weighting='stars')
-    #subs.host_velocities(ref='Average', mass_weighting=None)
-    subs.host_velocities(ref=vref, mass_weighting='stars')
-    print('Calculated host velocities in {0:.2f} s'.format(time()-to))
-    print()
-    #view_velocities(subs, sim, vref)
-    print(np.sort(list(subs.catalog)))
+    #norm = True
+    #fig, axes = plt.subplots(figsize=(14,10), ncols=2, nrows=2)
+    #axes = np.reshape(axes, -1)
+    #axes[0].set_title('3d')
+    #axes[0].plot(subs.distance(), 
 
-    to = time()
-    v = np.array(
-        [subhalos['Physical{1}Velocity{0}'.format(i, vref)]
-         for i in range(3)])
-    print('Stored velocities in {0:.2f} s'.format(time()-to))
+    fig, axes = plt.subplots(figsize=(12,5), ncols=2)
+    bins = [np.linspace(0, 10000, 100), np.logspace(-1, 4, 100)]
+    for ax, b in zip(axes, bins):
+        ax.hist(subs.velocity(), b, histtype='step', label='3d', bottom=1)
+        for i, x in enumerate('xyz'):
+            ax.hist(subs.velocity(i), b, histtype='step', label=x, bottom=1)
+        ax.legend(loc='upper right')
+        ax.set_xlabel('Peculiar velocity (km/s)')
+        ax.set_yscale('log')
+    axes[0].set_title('Linear binning')
+    axes[1].set_title('Log-scale binning')
+    output = 'vpeculiar'
+    save_plot(fig, output, sim)
+
+    mass_sigma_host(sim, subs)
+    #mass_sigma_subs(sim, subs)
+    return
 
     #test_velocities(subs)
 
     if norm:
         print('xyz =', xyz.shape, subhalos['R200MeanComoving'].shape)
-        print(xyz[:,0], subhalos['R200MeanComoving'][0])
         xyz = xyz / np.array(subhalos['R200MeanComoving'])
-        print('xyz =', xyz.shape)
-        #v = v / np.array(subhalos['
+        vhostkey = 'Physical{0}HostVelocityDispersion'.format(vref)
+        v = v / np.array(subhalos[vhostkey])
     #for ax, projection in zip(projections):
 
     plot_relation(sim, subs, cen, sat, mstarbins, debug=debug)
 
+    return
+
+
+def mass_sigma_host(sim, subs):
+    # mass bins (defined this way so that central values are
+    # equally spaced in log space)
+    mbins = np.linspace(10, 15, 20)
+    m = 10**((mbins[:-1]+mbins[1:]) / 2)
+    mbins = 10**mbins
+    fig, axes = plt.subplots(figsize=(15,5), ncols=2)
+    #fig = plt.figure(figsize=(12,5))
+    #axes = [plt.subplot2grid((1,15), (0,0), colspan=7),
+            #plt.subplot2grid((1,15), (0,7), colspan=8)]
+    h = (subs.catalog['Rank'] == 0) & (subs.catalog['Nsat'] > 20)
+    print('Using {0} halos'.format(h.sum()))
+    ax = axes[0]
+    sigma3d = subs.sigma()[h]
+    mtot = subs.mass('total')[h]
+    nsat = subs.catalog['Nsat'][h]
+    sigma_mean = binnedstat(mtot, sigma3d, 'mean', mbins)[0]
+    sigma_median = binnedstat(mtot, sigma3d, 'median', mbins)[0]
+    c = ax.scatter(
+        mtot, sigma3d, marker=',', s=1, c=np.log10(nsat), cmap='viridis',
+        label='_none_')
+    plt.colorbar(c, ax=ax, label=r'log $N_\mathrm{sat}$')
+    ax.plot(m, sigma_mean, 'C0-', label='Mean')
+    ax.plot(m, sigma_median, 'C1--', label='Median')
+    ax.set_ylabel('${0}$ (km/s)'.format(subs.slabel()))
+    ax.legend()
+    ax = axes[1]
+    c = ax.scatter(
+        mtot, subs.sigma(0)[h], marker=',', s=2, c=np.log10(nsat),
+        cmap='viridis')
+    plt.colorbar(c, ax=ax, label=r'log $N_\mathrm{sat}$')
+    ax.plot(m, sigma_mean/3**0.5, 'C0-')
+    ax.plot(m, sigma_median/3**0.5, 'C1--')
+    # by hand for now, while isnap=-1 in eagle (shouldn't be too
+    # different in other sims)
+    ax.plot(m, munari13(m, sim.cosmology, z=0), 'C2-', lw=3,
+            label='Munari+13')
+    ax.set_ylabel('${0}$ (km/s)'.format(subs.slabel(0)))
+    for ax in axes:
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.set_xlabel('${0}$ (M$_\odot$)'.format(
+            sim.masslabel(mtype='total')))
+    output = 'mass_sigma'
+    out = os.path.join(sim.plot_path, '{0}.pdf'.format(output))
+    savefig(out, fig=fig)
+    return
+
+
+
+def plot_relation(sim, subs, cen, sat, bins, rbins, xname='stars',
+                  yname='total', ccolor='C0', scolor='C1', debug=False):
+    sgood = ~sat.orphan
+    # centrals should all be "good" but you never know
+    cgood = ~cen.orphan
+    x = (bins[:-1]+bins[1:]) / 2
+    msat = average(sat, bins, mask=sgood, debug=debug)
+    mcen = average(cen, bins, mask=cgood, debug=debug)
+    fig, ax = plt.subplots(figsize=(8,6))
+    # plot all objects
+    # downsample if too many objects
+    if sim.family == 'apostle':
+        ax.plot(cen.mass(xname)[cgood], cen.mass(yname)[cgood], 'o',
+                color=ccolor, ms=4, label='_none_')
+        ax.plot(sat.mass(xname)[sgood], sat.mass(yname)[sgood], 's',
+                color=scolor, ms=4, label='_none_')
+    ax.plot(x, mcen, '-', color=ccolor, lw=3, label='Centrals')
+    ax.plot(x, msat, '-', color=scolor, lw=3, label='Satellites')
+    # satellites at varying distances
+    
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.set_xlabel(axlabel(sim, xname))
+    ax.set_ylabel(axlabel(sim, yname))
+    ax.annotate(
+        sim.formatted_name, xy=(0.05,0.92), xycoords='axes fraction',
+        ha='left', va='top', fontsize=16)
+    ax.legend(loc='lower right')
+    out = os.path.join(
+        sim.plot_path, '{0}.pdf'.format(output(sim, xname, yname)))
+    savefig(out, fig=fig)
+    return
+
+
+def average(sample, xbins, xname='stars', yname='total', mask=None,
+            debug=False):
+    if mask is None:
+        mask = np.ones(sample.mass('total').size, dtype=bool)
+    if debug:
+        print('n =', np.histogram(sample.mass(xname), xbins)[0])
+    yavg = np.histogram(
+        sample.mass(xname)[mask], xbins,
+        weights=sample.mass(yname)[mask])[0]
+    yavg = yavg / np.histogram(sample.mass(xname)[mask], xbins)[0]
+    return yavg
+
+
+def munari13(m, cosmo, z=0):
+    hz = (cosmo.H(z) / (100*u.km/u.s/u.Mpc)).value
+    return 1177 * (hz*m/1e15)**0.364 
+
+
+def save_plot(fig, output, sim):
+    out = os.path.join(sim.plot_path, '{0}.pdf'.format(output))
+    savefig(out, fig=fig)
     return
 
 
@@ -182,40 +277,6 @@ def test_velocities(subs):
     return
 
 
-def plot_relation(sim, subs, cen, sat, bins, rbins, xname='stars',
-                  yname='total', ccolor='C0', scolor='C1', debug=False):
-    sgood = ~sat.orphan
-    # centrals should all be "good" but you never know
-    cgood = ~cen.orphan
-    x = (bins[:-1]+bins[1:]) / 2
-    msat = average(sat, bins, mask=sgood, debug=debug)
-    mcen = average(cen, bins, mask=cgood, debug=debug)
-    fig, ax = plt.subplots(figsize=(8,6))
-    # plot all objects
-    # downsample if too many objects
-    if sim.family == 'apostle':
-        ax.plot(cen.mass(xname)[cgood], cen.mass(yname)[cgood], 'o',
-                color=ccolor, ms=4, label='_none_')
-        ax.plot(sat.mass(xname)[sgood], sat.mass(yname)[sgood], 's',
-                color=scolor, ms=4, label='_none_')
-    ax.plot(x, mcen, '-', color=ccolor, lw=3, label='Centrals')
-    ax.plot(x, msat, '-', color=scolor, lw=3, label='Satellites')
-    # satellites at varying distances
-    
-    ax.set_xscale('log')
-    ax.set_yscale('log')
-    ax.set_xlabel(axlabel(sim, xname))
-    ax.set_ylabel(axlabel(sim, yname))
-    ax.annotate(
-        sim.formatted_name, xy=(0.05,0.92), xycoords='axes fraction',
-        ha='left', va='top', fontsize=16)
-    ax.legend(loc='lower right')
-    out = os.path.join(
-        sim.plot_path, '{0}.pdf'.format(output(sim, xname, yname)))
-    savefig(out, fig=fig)
-    return
-
-
 def view_velocities(subs, sim, vref='MostBound'):
     # note that I just want to look at hosts here
     cat = np.array(subs.catalog['Rank'] == 0)
@@ -248,18 +309,6 @@ def view_velocities(subs, sim, vref='MostBound'):
     savefig(out, fig=fig)
     return
 
-
-def average(sample, xbins, xname='stars', yname='total', mask=None,
-            debug=False):
-    if mask is None:
-        mask = np.ones(sample.mass('total').size, dtype=bool)
-    if debug:
-        print('n =', np.histogram(sample.mass(xname), xbins)[0])
-    yavg = np.histogram(
-        sample.mass(xname)[mask], xbins,
-        weights=sample.mass(yname)[mask])[0]
-    yavg = yavg / np.histogram(sample.mass(xname)[mask], xbins)[0]
-    return yavg
 
 ##
 ## Auxiliary functions
