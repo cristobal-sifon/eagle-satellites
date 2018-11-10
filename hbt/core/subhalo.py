@@ -118,23 +118,25 @@ class BaseSubhalo(BaseDataSet):
 
     @property
     def MboundType(self):
-        adf = self.as_dataframe
-        self.as_dataframe = False
-        mbt = 1e10 * self.catalog['MboundType']
-        self.as_dataframe = adf
-        return mbt
+        if self.as_dataframe:
+            cols = ['MboundType{0}'.format(i) for i in range(6)]
+            return 1e10 * np.array(self.catalog[cols])
+        return 1e10 * self.catalog['MboundType']
+
+    @property
+    def mvir(self):
+        return 1e10 * self.catalog['MVir']
 
     @property
     def Nbound(self):
         return self.catalog['Nbound']
 
     @property
-    def MboundType(self):
-        adf = self.as_dataframe
-        self.as_dataframe = False
-        nbt = self.catalog['NboundType']
-        self.as_dataframe = adf
-        return nbt
+    def NboundType(self):
+        if self.as_dataframe:
+            cols = ['NboundType{0}'.format(i) for i in range(6)]
+            return np.array(self.catalog[cols])
+        return self.catalog['NboundType']
 
 
     ### hidden methods ###
@@ -160,6 +162,17 @@ class BaseSubhalo(BaseDataSet):
         if index == -1:
             return self.Mbound
         return self.MboundType[:,index]
+
+    def nbound(self, mtype=None, index=None):
+        assert mtype is not None or index is not None, \
+            'must provide either ``mtype`` or ``index``'
+        if mtype is not None:
+            if mtype.lower() in ('total', 'nbound'):
+                return self.Nbound
+            return self.NboundType[:,self.sim._masstype_index(mtype)]
+        if index == -1:
+            return self.Nbound
+        return self.NboundType[:,index]
 
     ## easy access to positions, distances and velocities ##
 
@@ -380,6 +393,7 @@ class Subhalos(BaseSubhalo):
         if self.exclude_non_FoF:
             print('Excluding {0} non-FoF subhalos'.format(self.non_FoF.sum()))
             self._catalog = self.catalog[~self.non_FoF]
+        self.catalog['IsDark'] = (self.nbound('stars') == 0)
         self.logMmin = logMmin
         self._catalog = self.catalog[self.mass('total') > 10**self.logMmin]
         self.isnap = isnap
@@ -442,15 +456,13 @@ class Subhalos(BaseSubhalo):
             self._satellite_mask = (self.catalog['Rank'] > 0)
         return self._satellite_mask
 
+    ### hidden methods ###
+
     ### methods ###
 
     def distance2host(self, verbose=True):
         """Calculate the distance of all subhalos to the center of
         their host
-
-        rewrite so that this is called at __init__, generating all
-        combinations for 2d and 3d distances. Then do the same with
-        the velocities (but just do 1d and 3d)
 
         Parameters
         ----------
@@ -762,6 +774,11 @@ class Subhalos(BaseSubhalo):
         """Load halo masses and sizes into the subhalo data
 
         See `HostHalos` for details
+
+        Creates two new attributes:
+            -`Nsat`: number of satellite subhalos
+            -`Ndark`: number of dark subhalos. Note that this includes
+                the central subhalo
         """
         if self._has_host_properties:
             print('Hosts already loaded')
@@ -770,14 +787,20 @@ class Subhalos(BaseSubhalo):
         to = time()
         if self.isnap not in self.sim.virial_snapshots:
             hosts = HostHalos(self.sim, self.isnap, force_isnap=force_isnap)
-            to = time()
-            grouped = self.catalog[['HostHaloId']].groupby('HostHaloId')
-            nm = pd.DataFrame({'Nsat': grouped['HostHaloId'].count()-1})
+            ti = time()
+            # number of star particles, to identify dark subhalos
+            cols = ['HostHaloId', 'IsDark']
+            grouped = self.catalog[cols].groupby('HostHaloId')
+            nm = pd.DataFrame(
+                {'Nsat': grouped.size()-1,
+                 'Ndark': grouped['IsDark'].sum()})
             self._catalog = self.catalog.join(nm, on='HostHaloId', rsuffix='')
             self._catalog = self.catalog.join(
-                hosts.catalog, on='HostHaloId',
-                #hosts.catalog.set_index('HaloId'), on='HostHaloId',
-                rsuffix='_h')
+                hosts.catalog, on='HostHaloId', rsuffix='_h')
+            # update host masses
+            for col in list(self.catalog):
+                if 'M200' in col or col == 'MVir':
+                    self.catalog[col] = 1e10 * self.catalog[col]
             if verbose:
                 print('Joined hosts in {0:.2f} s'.format(time()-to))
             del hosts
