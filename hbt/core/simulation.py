@@ -1,6 +1,7 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
+from astropy.io import ascii
 from astropy.cosmology import FlatLambdaCDM
 from glob import glob
 import numpy as np
@@ -104,6 +105,14 @@ class Simulation(object):
         return os.path.join('plots', self.name.replace('/', '_'))
 
     @property
+    def redshift(self):
+        snaplist = os.path.join(self.root, 'subcat', 'snapshotlist.txt')
+        snaplist = ascii.read(snaplist)
+        return np.array(
+            [x.split('_')[2][1:].replace('p', '.') for x in snaplist],
+            dtype=float)
+
+    @property
     def root(self):
         return '/cosma/home/durham/jvbq85/data/HBT/data'
 
@@ -204,7 +213,7 @@ class Simulation(object):
             mass label in latex format
         """
         if latex:
-            return r'$M_\mathrm{{{0}}}$'.format(self.masstype(**kwargs))
+            return r'M_\mathrm{{{0}}}'.format(self.masstype(**kwargs))
         else:
             return 'M{0}'.format(self.masstype(**kwargs).lower())
 
