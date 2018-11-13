@@ -158,6 +158,18 @@ class Simulation(object):
 
     ### methods ###
 
+    def mass_to_sim_h(self, m, h, mtype='total', log=False):
+        """Correction to mass measurement to account for different h
+
+        the result of this is to be *added* to the reported mass
+        """
+        hcor = h / self.cosmology.h
+        if mtype == 'stars':
+            hcor = hcor**2
+        if log:
+            return m + np.log10(hcor)
+        return m * hcor
+
     def masstype_pandas_column(self, mtype):
         """Name of the column containing requested mass type
 
@@ -199,8 +211,8 @@ class Simulation(object):
         Paramters
         ---------
         mtype : str, optional
-            name of the mass type. Must be one of ``self.masstypes`` or
-            'total'
+            name of the mass type. Must be one of ``self.masstypes``, or
+            either 'total' or 'host'
         index : int, optional
             index of the mass type. An index of -1 corresponds to total
             mass. Otherwise see ``self.masstypes``
@@ -223,6 +235,8 @@ class Simulation(object):
         if mtype is not None:
             if mtype.lower() in ('total', 'mbound'):
                 return 'total'
+            if mtype.lower() == 'host':
+                return 'host'
             return self.masstype_labels[self._masstype_index(mtype)]
         if index == -1:
             return 'total'
