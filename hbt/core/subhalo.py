@@ -645,27 +645,17 @@ class Subhalos(BaseSubhalo):
             mvcols.append('mv{0}'.format(i))
             cx[mvcols[-1]] = cx[vcol] * mweight
         grcols = np.append(grcols, mvcols)
-        print(np.sort(list(cx)))
-        print()
-        print('grouping...')
-        ti = time()
         group = cx[grcols].groupby('HostHaloId')
-        print('grouped in {0:.2f} min'.format((time()-ti)/60))
-        ti = time()
         if mass_weighting is None:
             wmean = group[mvcols].mean()
         else:
             wmean = group[mvcols].sum()
-        print('wmean in {0:.2f} min'.format((time()-ti)/60))
-        ti = time()
         if mass_weighting is None:
             #msum = group['Nsat']
             msum = 1
         else:
             msum = group[mcol].sum()
-        print('msum in {0:.2f} min'.format((time()-ti)/60))
         ## host mean velocities
-        print('mean velocities...')
         hosts = pd.DataFrame({'HostHaloId': np.array(group.size().index)})
         vhcol = 'Physical{0}HostMeanVelocity'.format(self.pvref)
         vhcols = [vhcol+str(i) for i in range(3)]
@@ -674,27 +664,20 @@ class Subhalos(BaseSubhalo):
         for i, mvcol in enumerate(mvcols):
             hosts[vhcol+str(i)] = wmean[mvcol] / msum
         hosts[vhcol] = np.sum(wmean[mvcols]**2, axis=1)**0.5
-        print('hosts =', np.sort(list(hosts)))
         ## velocity dispersions
         print('velocity dispersions...')
-        to = time()
+        ti = time()
         hostkeys = np.append(['HostHaloId', vhcol], vhcols)
         cx = cx.join(hosts[hostkeys].set_index('HostHaloId'), on='HostHaloId')
         for i, vcol in enumerate(vcols):
             vdiff = cx[vcol] \
                 - cx['Physical{0}HostMeanVelocity{1}'.format(self.pvref, i)]
             cx[mvcols[i]] = mweight * vdiff**2
-        print('weighted differences in {0:.2f} seconds'.format(time()-to))
         # group again because I want the new mvcols grouped as well
-        to = time()
         group = cx.groupby('HostHaloId')
-        print('grouped in {0:.1f} seconds'.format(time()-to))
-        ti = time()
         wvar = group[mvcols].sum()
-        print('wvar in {0:.1f} seconds'.format(time()-ti))
         scol = 'Physical{0}HostVelocityDispersion'.format(self.pvref)
         scols = []
-        to = time()
         for i, mvcol in enumerate(mvcols):
             scols.append(scol+str(i))
             hosts[scols[-1]] = (wvar[mvcol] / msum)**0.5
@@ -704,14 +687,11 @@ class Subhalos(BaseSubhalo):
         # -1 or not?
         for col in np.append(scol, scols):
             cx[col] = cx[col] / (cx['Nsat']-1)**0.5
-        print('dispersions in {0:.1f} seconds'.format(time()-to))
+        print('dispersions in {0:.1f} seconds'.format(time()-ti))
         # peculiar velocities
-        print('peculiar velocities...')
+        ti = time()
         for col in (vhcol, vhcols, scol, scols):
             new_keys = np.append(new_keys, col)
-        print('hosts:')
-        print(np.sort(list(hosts)))
-        print()
         for i in range(3):
             cx[vpcol+str(i)] = \
                 cx['Physical{0}Velocity{1}'.format(self.pvref, i)] \
@@ -723,12 +703,8 @@ class Subhalos(BaseSubhalo):
         cx[vpcol] = cx['Physical{0}Velocity'.format(self.pvref)] \
             - cx['Physical{0}HostMeanVelocity'.format(self.pvref)]
         print('peculiar velocities in {0:.2f} min'.format((time()-ti)/60))
-        print()
         cx.drop(columns=mvcols)
         self._catalog = cx
-        print('self.catalog:')
-        print(np.sort(list(self.catalog)))
-        print()
         self._has_velocities.append(mass_weighting)
         print('Calculated velocities in {0:.2f} min'.format((time()-to)/60))
         print()

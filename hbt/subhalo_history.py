@@ -34,15 +34,15 @@ def main():
     reader = HBTReader(sim.path)
     print('Loaded reader in {0:.1f} seconds'.format(time()-to))
     to = time()
-    subs = Subhalos(reader.LoadSubhalos(-1), sim)
+    subs = Subhalos(reader.LoadSubhalos(-1), sim, -1)
     #subs.sort(order='Mbound')
     print('Loaded subhalos in {0:.2f} minutes'.format((time()-to)/60))
 
     print('In total there are {0} central and {1} satellite subhalos'.format(
         subs.centrals.size, subs.satellites.size))
 
-    centrals = Subhalos(subs.centrals, sim)
-    satellites = Subhalos(subs.satellites, sim)
+    centrals = Subhalos(subs.centrals, sim, -1)
+    satellites = Subhalos(subs.satellites, sim, -1)
 
     # sort host halos by mass
     print('Sorting by mass...')

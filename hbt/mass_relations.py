@@ -1,3 +1,4 @@
+from astropy.io import ascii
 from astropy import units as u
 from matplotlib import pyplot as plt
 import numpy as np
@@ -9,6 +10,7 @@ from time import time
 if sys.version_info[0] == 2:
     range = xrange
 
+import lnr
 from plottools.plotutils import savefig, update_rcParams
 update_rcParams()
 
@@ -40,22 +42,9 @@ def wrap_plot(sim, subs, isnap, debug=True):
     # this applies to apostle
     mstarbins = mbins(sim, 'stars')
 
-    #halos = HostHalos(sim, isnap)
-    #print(halos.dtype)
-    #print(halos.colnames)
-
-    #sat = Subhalos(subs[subs['Rank'] > 0], sim, isnap)
-    #cen = Subhalos(subs[subs['Rank'] == 0], sim, isnap)
-    #print('{2}: {0} centrals and {1} satellites'.format(
-        #(subs['Rank'] == 0).sum(), (subs['Rank'] > 0).sum(),
-        #subs['Rank'].size))
-
-    #sat.load_hosts(verbose=True)
-
-    subs = Subhalos(subs, sim, isnap)
-    #subs.load_hosts(verbose=True)
-    #subs.host_velocities()
+    subs = Subhalos(subs, sim, isnap, exclude_non_FoF=True)
     subhalos = subs.catalog
+    print('subs.catalog:')
     print(np.sort(subs.colnames))
     #sys.exit()
 
@@ -65,20 +54,6 @@ def wrap_plot(sim, subs, isnap, debug=True):
     #axes = np.reshape(axes, -1)
     #axes[0].set_title('3d')
     #axes[0].plot(subs.distance(), 
-
-    fig, axes = plt.subplots(figsize=(12,5), ncols=2)
-    bins = [np.linspace(0, 10000, 100), np.logspace(-1, 4, 100)]
-    for ax, b in zip(axes, bins):
-        ax.hist(subs.velocity(), b, histtype='step', label='3d', bottom=1)
-        for i, x in enumerate('xyz'):
-            ax.hist(subs.velocity(i), b, histtype='step', label=x, bottom=1)
-        ax.legend(loc='upper right')
-        ax.set_xlabel('Peculiar velocity (km/s)')
-        ax.set_yscale('log')
-    axes[0].set_title('Linear binning')
-    axes[1].set_title('Log-scale binning')
-    output = 'vpeculiar'
-    save_plot(fig, output, sim)
 
     mass_sigma_host(sim, subs)
 
@@ -147,19 +122,12 @@ def mass_sigma_host(sim, subs):
     return
 
 
-def plot_occupation(sim, subs, hostmass='M200Mean'):
-    # quick test
-    #plt.
+def plot_massfunction(sim, subs):
     cen = (subs.catalog['Rank'] == 0)
     sat = ~cen
     mtot = subs.mass('total')
-    mstar = subs.mass('stars')
-    mhost = subs.catalog[hostmass]
-    #mhost = subs.
     dark = (subs.catalog['IsDark'] == 1)
-    Nsat = subs.catalog['Nsat']
-    Ndark = subs.catalog['Ndark']
-    Ngsat = Nsat - Ndark
+    mbins = np.logspace(8, 15, 41)
     # testing
     bins = np.append([0], np.logspace(0, 6, 100))
     fig, ax = plt.subplots()
@@ -184,27 +152,125 @@ def plot_occupation(sim, subs, hostmass='M200Mean'):
     ax.set_yscale('log')
     save_plot(fig, 'mass_Ndark', sim)
     print('{0} dark subhalos'.format(subs.catalog['IsDark'].sum()))
+    return
+
+
+def plot_occupation(sim, subs, hostmass='M200Mean'):
+    cen = (subs.catalog['Rank'] == 0)
+    sat = ~cen
+    mtot = subs.mass('total')
+    mstar = subs.mass('stars')
+    mhost = subs.catalog[hostmass]
+    dark = (subs.catalog['IsDark'] == 1)
+    Nsat = subs.catalog['Nsat']
+    Ndark = subs.catalog['Ndark']
+    Ngsat = Nsat - Ndark
+    df = pd.DataFrame({
+        'central': cen, 'satellite': sat, 'mtot': mtot, 'mstar': mstar,
+        'mhost': mhost, 'dark': dark, 'Nsat': Nsat, 'Ndark': Ndark,
+        'Ngsat': Ngsat})
     # binning and plot
     mbins = np.logspace(8, 15, 41)
     m = logcenters(mbins)
-    msbins = np.logspace(5, 13, 31)
+    msbins = np.logspace(5.5, 12.5, 26)
     ms = logcenters(msbins)
-    #nh = np.histogram2d(mstar[cen], mhost[cen], (msbins,mbins))[0]
+    mlim = np.log10(m[::m.size-1])
+    mslim = np.log10(ms[::ms.size-1])
     nh = np.histogram(mhost[cen], mbins)[0]
     nc = np.histogram2d(
         mstar[cen & ~dark], mhost[cen & ~dark], (msbins,mbins))[0]
     nsat = np.histogram2d(
         mstar[sat & ~dark], mhost[sat & ~dark], (msbins,mbins))[0]
-    print('nh =', nh.shape)
-    extent = np.log10(np.array([mbins[0],mbins[-1],msbins[0],msbins[-1]]))
-    fig, axes = plt.subplots(figsize=(15,6), ncols=2)
-    for ax, n, label in zip(axes, (nc, nsat), 'cs'):
+    nsub = np.histogram2d(
+        mstar[sat & ~dark], mtot[sat & ~dark], (msbins,mbins))[0]
+
+    extent = [np.append(mlim, mslim), np.append(mslim, mlim)]
+    lw = 4
+    fig, axes = plt.subplots(figsize=(18,12), ncols=2, nrows=2)
+    row = axes[0]
+    for ax, n, label, mtype \
+            in zip(row, (nc,nsub), 'cs', ('total','total')):
         s = ax.imshow(
-            np.log10(n), extent=extent, origin='lower', aspect='auto')
+            np.log10(n), extent=extent[0], origin='lower', aspect='auto')
         plt.colorbar(
             s, ax=ax, label=r'$\log\,N_\mathrm{{{0}}}$'.format(label))
-        ax.set_xlabel(r'$\log\,{0}$'.format(sim.masslabel(mtype='total')))
+        ax.set_xlabel(r'$\log\,{0}$'.format(sim.masslabel(mtype=mtype)))
         ax.set_ylabel(r'$\log\,{0}$'.format(sim.masslabel(mtype='stars')))
+    # mean central stellar to halo mass relation
+    mstar_cmean = np.histogram(
+            mhost[cen & ~dark], mbins, weights=mstar[cen & ~dark])[0] \
+        / np.histogram(mhost[cen & ~dark], mbins)[0]
+    # and for satellites
+    mstar_smean = np.histogram(
+        mtot[sat & ~dark], mbins, weights=mstar[sat & ~dark])[0] \
+        / np.histogram(mtot[sat & ~dark], mbins)[0]
+    # minimum masses for complete samples
+    mmin = 10
+    jm = (m >= 10**mmin)
+    msmin = 7.5
+    jms = (ms >= 10**msmin)
+    for ax in row:
+        ax.plot(np.log10(m[jm]), np.log10(mstar_cmean[jm]), 'w-', lw=lw+2,
+                zorder=10, label='_none_')
+        ax.plot(np.log10(m[jm]), np.log10(mstar_cmean[jm]), 'C9-', lw=lw,
+                zorder=10, label='Central SHMR')
+        ax.plot(np.log10(m[jm]), np.log10(mstar_smean[jm]), 'w-', lw=lw+2,
+                zorder=10, label='_none_')
+        ax.plot(np.log10(m[jm]), np.log10(mstar_smean[jm]), 'C1-', lw=lw,
+                zorder=10, label='Satellite SHMR')
+    for ax in row:
+        ax.legend(loc='upper left')
+        ax.set_xlim(*mlim)
+        ax.set_ylim(*mslim)
+    row = axes[1]
+    for ax, n, label, mtype \
+            in zip(row, (nc,nsub), 'cs', ('total','total')):
+        s = ax.imshow(
+            np.log10(n.T), extent=extent[1], origin='lower', aspect='auto')
+        plt.colorbar(
+            s, ax=ax, label=r'$\log\,N_\mathrm{{{0}}}$'.format(label))
+        ax.set_ylabel(r'$\log\,{0}$'.format(sim.masslabel(mtype=mtype)))
+        ax.set_xlabel(r'$\log\,{0}$'.format(sim.masslabel(mtype='stars')))
+    mtot_cmean = np.histogram(
+            mstar[cen & ~dark], msbins, weights=mhost[cen & ~dark])[0] \
+        / np.histogram(mstar[cen & ~dark], msbins)[0]
+    mtot_smean = np.histogram(
+            mstar[sat & ~dark], msbins, weights=mtot[sat & ~dark])[0] \
+        / np.histogram(mstar[sat & ~dark], msbins)[0]
+    for ax in row:
+        ax.plot(np.log10(ms[jms]), np.log10(mtot_cmean[jms]), 'w-', lw=lw+2,
+                zorder=10, label='_none_')
+        ax.plot(np.log10(ms[jms]), np.log10(mtot_cmean[jms]), 'C9-', lw=lw,
+                zorder=10, label='Central HSMR')
+        ax.plot(np.log10(ms[jms]), np.log10(mtot_smean[jms]), 'w-', lw=lw+2,
+                zorder=10, label='_none_')
+        ax.plot(np.log10(ms[jms]), np.log10(mtot_smean[jms]), 'C1-', lw=lw,
+                zorder=10, label='Satellite HSMR')
+    # van Uitert+16 (KiDS)
+    v16 = ascii.read('literature/vanuitert16.txt', format='commented_header')
+    v16['logmstar'] = sim.mass_to_sim_h(
+        v16['logmstar'], 0.7, 'stars', log=True)
+    v16['logmhalo'] = sim.mass_to_sim_h(
+        v16['logmhalo'], 0.7, 'total', log=True)
+    row[0].plot(v16['logmstar'], v16['logmhalo'], 'w-', lw=5, zorder=19,
+                label='_none_')
+    row[0].plot(v16['logmstar'], v16['logmhalo'], 'k-', lw=3, zorder=20,
+                label='van Uitert+16')
+    s18 = np.array(
+        [[9.51,10.01,10.36,10.67,11.01], [10.64,11.41,11.71,11.84,12.15],
+         [0.53,0.21,0.17,0.15,0.20], [0.39,0.17,0.15,0.15,0.17]])
+    # correcto to EAGLE's h
+    s18[0] = sim.mass_to_sim_h(s18[0], 0.7, 'stars', log=True)
+    s18[1] = sim.mass_to_sim_h(s18[1], 0.7, 'total', log=True)
+    row[1].errorbar(
+        s18[0], s18[1], s18[2:], fmt='wo', ms=18, elinewidth=6, zorder=19)
+    row[1].errorbar(
+        s18[0], s18[1], s18[2:], fmt='ko', ms=14, elinewidth=2, zorder=20,
+        label="Sifon+18")
+    for ax in row:
+        ax.legend(loc='upper left')
+        ax.set_xlim(*mslim)
+        ax.set_ylim(*mlim)
     save_plot(fig, 'numbers_mstar_mtot', sim)
     fig, ax = plt.subplots(figsize=(6,5))
     #ax.plot(m, nh_mtot, 'k-', label='Halos')
@@ -222,7 +288,6 @@ def plot_occupation(sim, subs, hostmass='M200Mean'):
     jmin = np.argmin((logmsbins-mmin)**2)
     jmax = np.argmin((logmsbins-mmax)**2)
     j = np.arange(jmin, jmax+1, 1, dtype=int)
-    print('ms[j] =', ms[j])
     ax.plot(m, np.sum(nc[j], axis=0), 'C0--')
     ax.plot(m, np.sum(nsat[j], axis=0), 'C1--')
     ax.plot([], [], 'k--',
@@ -286,6 +351,24 @@ def plot_relation_old(sim, subs, cen, sat, bins, rbins, xname='stars',
         sim.plot_path, '{0}.pdf'.format(output(sim, xname, yname)))
     savefig(out, fig=fig)
     return
+
+
+def plot_vpec():
+    fig, axes = plt.subplots(figsize=(12,5), ncols=2)
+    bins = [np.linspace(0, 3000, 100), np.logspace(-1, 3.5, 100)]
+    for ax, b in zip(axes, bins):
+        ax.hist(subs.velocity(), b, histtype='step', label='3d', bottom=1)
+        for i, x in enumerate('xyz'):
+            ax.hist(subs.velocity(i), b, histtype='step', label=x, bottom=1)
+        ax.legend(loc='upper right')
+        ax.set_xlabel('Peculiar velocity (km/s)')
+        ax.set_yscale('log')
+    axes[1].set_xscale('log')
+    axes[0].set_title('Linear binning')
+    axes[1].set_title('Log-scale binning')
+    output = 'vpeculiar'
+    save_plot(fig, output, sim)
+
 
 
 def average(sample, xbins, xname='stars', yname='total', mask=None,
