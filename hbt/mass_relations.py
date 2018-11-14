@@ -4,14 +4,15 @@ from matplotlib import pyplot as plt
 import numpy as np
 import os
 import pandas as pd
-from scipy.stats import binned_statistic as binnedstat
+from scipy.stats import (
+    binned_statistic as binnedstat, binned_statistic_dd as binnedstat_dd)
 import sys
 from time import time
 if sys.version_info[0] == 2:
     range = xrange
 
 import lnr
-from plottools.plotutils import savefig, update_rcParams
+from plottools.plotutils import colorscale, savefig, update_rcParams
 update_rcParams()
 
 from HBTReader import HBTReader
@@ -55,12 +56,14 @@ def wrap_plot(sim, subs, isnap, debug=True):
     #axes[0].set_title('3d')
     #axes[0].plot(subs.distance(), 
 
-    mass_sigma_host(sim, subs)
-
     #test_velocities(subs)
 
+    plot_shmr_fmass(sim, subs)
+    plot_shmr(sim, subs)
     plot_occupation(sim, subs)
     #plot_relation(sim, subs, cen, sat, mstarbins, debug=debug)
+
+    mass_sigma_host(sim, subs)
     return
 
     if norm:
@@ -155,27 +158,53 @@ def plot_massfunction(sim, subs):
     return
 
 
-def plot_occupation(sim, subs, hostmass='M200Mean'):
-    cen = (subs.catalog['Rank'] == 0)
-    sat = ~cen
-    mtot = subs.mass('total')
-    mstar = subs.mass('stars')
-    mhost = subs.catalog[hostmass]
-    dark = (subs.catalog['IsDark'] == 1)
-    Nsat = subs.catalog['Nsat']
-    Ndark = subs.catalog['Ndark']
-    Ngsat = Nsat - Ndark
-    df = pd.DataFrame({
-        'central': cen, 'satellite': sat, 'mtot': mtot, 'mstar': mstar,
-        'mhost': mhost, 'dark': dark, 'Nsat': Nsat, 'Ndark': Ndark,
-        'Ngsat': Ngsat})
-    # binning and plot
-    mbins = np.logspace(8, 15, 41)
-    m = logcenters(mbins)
-    msbins = np.logspace(5.5, 12.5, 26)
-    ms = logcenters(msbins)
-    mlim = np.log10(m[::m.size-1])
-    mslim = np.log10(ms[::ms.size-1])
+def plot_shmr_fmass(sim, subs, hostmass='M200Mean'):
+    cen, sat, mtot, mstar, mhost, dark, Nsat, Ndark, Ngsat = \
+        definitions(subs, hostmass=hostmass)
+    gsat = sat & ~dark
+    mbins, m, mlim, msbins, ms, mslim = binning(sim)
+    """
+    centrals = pd.DataFrame({
+        'mtot': mtot[cen], 'mstar': mstar[cen], 'mhost': mhost[cen],
+        'dark': dark[cen], 'Nsat': Nsat[cen], 'Ndark': Ndark[cen],
+        'Ngsat': Ngsat[cen]})
+    satellites = pd.DataFrame({
+        'mtot': mtot[sat], 'mstar': mstar[sat], 'mhost': mhost[sat],
+        'mu': mtot[sat]/mhost[sat], 'dark': dark[sat], 'Nsat': Nsat[sat],
+        'Ndark': Ndark[sat], 'Ngsat': Ngsat[sat]})
+    # bin
+    #satcuts = [pd.cut(satellites['mu'], mubins),
+               #pd.cut(satellites['mstar'], msbins),
+               #pd.cut(satellites['mtot'], mbins)]
+    """
+    mubins = np.linspace(-5, 0, 11)
+    colors, cmap = colorscale(array=mubins)
+    mubins = 10**mubins
+    mu = logcenters(mubins)
+
+    extent = [np.append(mlim, mslim), np.append(mslim, mlim)]
+    lw = 4
+    fig, axes = plt.subplots(figsize=(15,6), ncols=2)
+    ax = axes[0]
+    # hsmr as a function of mu
+    hsmr_mu = binnedstat_dd(
+        [mu[gsat], msat[gsat]], mtot[gsat], 'mean', [mubins,msbins])
+    hsmr_mu = hsmr_mu.statistic
+    print('hsmr_mu =', hsmr_mu.shape, mubins, msbins)
+    for i in range(mu.size):
+        ax.plot(ms, hsmr_mu[:,i], '-', color=colors[i], lw=4)
+    cbar = plt.colorbar(cmap)
+    cbar.set_label(r'log $m_\mathrm{sub}/M_\mathrm{host}$')
+    ax.set_xlabel(r'$\log\,{0}$'.format(sim.masslabel(mtype='total')))
+    ax.set_xlabel(r'$\log\,{0}$'.format(sim.masslabel(mtype='stars')))
+    save_plot(fig, 'shmr_mu', sim)
+    return
+
+
+def plot_shmr(sim, subs, hostmass='M200Mean'):
+    cen, sat, mtot, mstar, mhost, dark, Nsat, Ndark, Ngsat = \
+        definitions(subs, hostmass=hostmass)
+    mbins, m, mlim, msbins, ms, mslim = binning(sim)
     nh = np.histogram(mhost[cen], mbins)[0]
     nc = np.histogram2d(
         mstar[cen & ~dark], mhost[cen & ~dark], (msbins,mbins))[0]
@@ -271,7 +300,27 @@ def plot_occupation(sim, subs, hostmass='M200Mean'):
         ax.legend(loc='upper left')
         ax.set_xlim(*mslim)
         ax.set_ylim(*mlim)
-    save_plot(fig, 'numbers_mstar_mtot', sim)
+    save_plot(fig, 'shmr_censat', sim)
+    return
+
+
+def plot_occupation(sim, subs, hostmass='M200Mean'):
+    cen, sat, mtot, mstar, mhost, dark, Nsat, Ndark, Ngsat = definitions(subs)
+    # binning and plot
+    mbins = np.logspace(8, 15, 41)
+    m = logcenters(mbins)
+    msbins = np.logspace(5.5, 12.5, 26)
+    ms = logcenters(msbins)
+    mlim = np.log10(m[::m.size-1])
+    mslim = np.log10(ms[::ms.size-1])
+    nh = np.histogram(mhost[cen], mbins)[0]
+    nc = np.histogram2d(
+        mstar[cen & ~dark], mhost[cen & ~dark], (msbins,mbins))[0]
+    nsat = np.histogram2d(
+        mstar[sat & ~dark], mhost[sat & ~dark], (msbins,mbins))[0]
+    nsub = np.histogram2d(
+        mstar[sat & ~dark], mtot[sat & ~dark], (msbins,mbins))[0]
+
     fig, ax = plt.subplots(figsize=(6,5))
     #ax.plot(m, nh_mtot, 'k-', label='Halos')
     #ax.plot(m, np.sum(nc, axis=0), 'C0:', label='Total Centrals')
@@ -384,20 +433,9 @@ def average(sample, xbins, xname='stars', yname='total', mask=None,
     return yavg
 
 
-def logcenters(bins):
-    logbins = np.log10(bins)
-    return 10**((logbins[:-1]+logbins[1:])/2)
-
-
 def munari13(m, cosmo, z=0):
     hz = (cosmo.H(z) / (100*u.km/u.s/u.Mpc)).value
     return 1177 * (hz*m/1e15)**0.364 
-
-
-def save_plot(fig, output, sim):
-    out = os.path.join(sim.plot_path, '{0}.pdf'.format(output))
-    savefig(out, fig=fig)
-    return
 
 
 def test_velocities(subs):
@@ -513,15 +551,52 @@ def axlabel(sim, name):
     return r'{0} (M$_\odot$)'.format(sim.masslabel(mtype=name))
 
 
-def mbins(sim, mtype='stars'):
+def binning(sim):
+    #mbins = np.logspace(8, 15, 41)
+    mbins = massbins(sim, mtype='total')
+    m = logcenters(mbins)
+    #msbins = np.logspace(5.5, 12.5, 26)
+    msbins = massbins(sim, mtype='stars')
+    ms = logcenters(msbins)
+    mlim = np.log10(m[::m.size-1])
+    mslim = np.log10(ms[::ms.size-1])
+    return mbins, m, mlim, msbins, ms, mslim
+
+
+def definitions(subs, hostmass='M200Mean'):
+    cen = (subs.catalog['Rank'] == 0)
+    sat = ~cen
+    mtot = subs.mass('total')
+    mstar = subs.mass('stars')
+    mhost = subs.catalog[hostmass]
+    dark = (subs.catalog['IsDark'] == 1)
+    Nsat = subs.catalog['Nsat']
+    Ndark = subs.catalog['Ndark']
+    Ngsat = Nsat - Ndark
+    return cen, sat, mtot, mstar, mhost, dark, Nsat, Ndark, Ngsat
+
+
+def logcenters(bins):
+    logbins = np.log10(bins)
+    return 10**((logbins[:-1]+logbins[1:])/2)
+
+
+def massbins(sim, mtype='stars'):
     bins = {'apostle': {'stars': np.logspace(3, 11, 21)},
-            'eagle': {'stars': np.logspace(7, 13, 31)}}
+            'eagle': {'stars': np.logspace(5.5, 12.5, 26),
+                      'total': np.logspace(8, 15, 31)}}
     return bins[sim.family][mtype]
 
 
 def output(sim, xname, yname):
     return '{0}_{1}'.format(sim.masslabel(mtype=xname, latex=False),
                             sim.masslabel(mtype=yname, latex=False))
+
+
+def save_plot(fig, output, sim):
+    out = os.path.join(sim.plot_path, '{0}.pdf'.format(output))
+    savefig(out, fig=fig)
+    return
 
 
 

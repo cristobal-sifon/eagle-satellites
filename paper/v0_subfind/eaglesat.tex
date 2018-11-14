@@ -41,7 +41,6 @@
 \newcommand{\hbt}{\textsc{hbt+}}
 
 \newcommand{\Msun}{\mathrm{M}_\odot}
-\newcommand{\mtwo}{M_\mathrm{200m}}
 \newcommand{\hMsun}{h^{-1}\,\Msun}
 \newcommand{\hMpc}{h^{-1}\,\mathrm{Mpc}}
 \newcommand{\subfind}{\textsc{subfind}}
@@ -51,9 +50,9 @@
 \newcommand{\zinfall}{z_\mathrm{infall}}
 
 
-\title[Mass content of EAGLE cluster galaxies]{The history and mass content of cluster galaxies in the EAGLE simulation}
+\title[Mass content of satellites in EAGLE]{The history and mass content of cluster galaxies in the EAGLE simulation}
 
-\author[C.\ Sif\'on et al.]{Crist\'obal Sif\'on
+\author[C.\ Sif\'on]{Crist\'obal Sif\'on
 \\
 Department of Astrophysical Sciences, Peyton Hall, Princeton University, Princeton, NJ 08544, USA
 }
@@ -78,7 +77,7 @@ We explore the mass content of cluster galaxies in the EAGLE cosmological hydrod
   
   We explore changes in satellite stellar mass/halo mass as a function of (the observationally accessible) distance from host/nearest cluster, as well as the more physical change as a function of time for the same satellites.
   
-  We identify the progenitors of $z=0$ satellites as \textbf{some population of centrals at some earlier time}, and find \textbf{the following problems arise when interpreting differences between present-day satellites with present-day centrals}
+  We identify the progenitors of $z=0.18$ satellites as \textbf{some population of centrals at some earlier time}, and find \textbf{the following problems arise when interpreting differences between present-day satellites with present-day centrals}
 
 \end{abstract}
 
@@ -115,77 +114,48 @@ We explore the mass content of cluster galaxies in the EAGLE cosmological hydrod
 
 \section{Introduction}
 
-
-
-
-In this paper we refer generically to ``galaxy groups'' as all galaxy associations more massive than $\mtwo=10^{11}\,\Msun$, and to ``clusters'' as the subset of those groups which have $\mtwo>10^{13}\,\Msun$. (This is a more relaxed definition of ``cluster'' than usual.) Throughout, we refer to masses $M_{\Delta m}$ ($M_{\Delta c}$) as the mass containing $\Delta$ times the mean (critical) density of the Universe at the group redshift. Where appropriate, we adopt the cosmology used in the EAGLE simulations,  with \textbf{parameters...}
+In this paper we refer generically to ``galaxy groups'' as all galaxy associations more massive than $M_{200m}=10^{11}\,\hMsun$, and to ``clusters'' as the subset of those groups which have $M_{200m}>10^{13}\,\Msun$. (This is a more relaxed definition of ``cluster'' than usual.) Throughout, we refer to masses $M_{\Delta m}$ ($M_{\Delta c}$) as the mass containing $\Delta$ times the mean (critical) density of the Universe at the group redshift. Where appropriate, we adopt the cosmology used in the EAGLE simulations,  with \textbf{parameters...}
 
 
 \section{Simulation}
 
-We use the Evolution and Assembly of Galaxies and their Environment (EAGLE) simulations \citep{schaye15,crain15}. EAGLE is a suite of cosmological hydrodynamical simulations with varying box sizes, resolutions, and baryonic feedback prescriptions. The simulation we use here is labelled \texttt{RefL0100N1504} and has a box size of $(100\,\hMpc)^3$, with N particles and mass resolutions of X,Y,Z for dark matter, gas and stars, respectively. Our study is based on the upgraded Hierarchical Bound Tree \citep[\hbt,][]{han18} post-processing of EAGLE, in which subhalos are found ... . 
+Our study is based on the upgraded Hierarchical Bound Tree \citep[HBT+,][]{han18} post-processing Evolution and Assembly of Galaxies and their Environment (EAGLE) simulations \citep{schaye15,crain15}. EAGLE is a suite of cosmological hydrodynamical simulations with varying box sizes, resolutions, and baryonic feedback prescriptions. The simulation we use here is labelled \texttt{RefL0100N1504} and has a box size of $(100\,\hMpc)^3$, with N particles and mass resolutions of X,Y,Z for dark matter, gas and stars, respectively.
 
-\subsection{Mass definitions}
+Haloes were identified in EAGLE using a standard friends-of-friends algorithm with a linking length of X, and subhaloes were identified using the upgraded . \cite{knebe11} found that \subfind\ tends to underpredict subhalo masses at all halo-centric distances. While uncertainties on the bias were not reported by \cite{knebe11}, the smooth behaviour of the bias as a function of halo-centric distance suggests that uncertainties are rather small, and we neglect them in our analysis. By interpolating figure 8 of \cite{knebe11}, we apply the following correction to all subhalo and galaxy masses reported in the EAGLE database:
+\begin{equation}\label{eq:subfind_correction}
+  \Delta m_\mathrm{sub}(x) = ...
+\end{equation}
+where $x=R/R_{200m}$ is the three-dimensional distance normalized by the halo size.\footnote{\cite{knebe11} reported their results in terms of $R_{200c}$ and $M_{200c}$. We convert from $R_{200c}$ to $R_{200m}$ using \textbf{a mass-concentration relation consistent with EAGLE -- look for one}.}
 
-For clarity, we compare here the different mass definitions
+We adopt the location of the minimum of the gravitational potential as the position of all subhaloes, consistent with \cite{velliscig17}.
 
-\begin{itemize}
-  \item plot mass functions for different host mass definitions (Mbound, M200Mean, etc) and for subhalos
-  \item show plots comparing those masses directly
-\end{itemize}
+\Cref{f:massfunction} shows the mass functions of 
 
-
-%\begin{figure}
-%  \centerline{\includegraphics[width=\linewidth]{massfunction.pdf}}
-%\caption{Mass function of galaxy groups with $M_{200m}>10^{11}\,\hMsun$ and central and satellite galaxies in the EAGLE RefL0100N1504 simulation.}
-%\label{f:massfunction}
-%\end{figure}
-
-
-
-%\begin{figure}
-%  \centerline{\includegraphics[width=\linewidth]{history_chart.pdf}}
-%\caption{Schematic figure showing the relevant times we consider in this work. The brown circle represents a galaxy of interest, which is a satellite at redshift $z_0$, part of a host group shown in grey. We identify the last redshift at which the brown satellite was hosted by the grey host as $\zinfall$. The last time at which the brown satellite was a central galaxy is labelled $\zcent$. When the brown satellite fell into the grey host (identified at present with \texttt{GroupID}), it may in fact have already been part of another group, shown in green. If this is the case, then $\zcent \neq \zinfall$.}
-%\label{f:history_chart}
-%\end{figure}
+\begin{figure}
+  \centerline{\includegraphics[width=\linewidth]{massfunction.pdf}}
+\caption{Mass function of galaxy groups with $M_{200m}>10^{11}\,\hMsun$ and central and satellite galaxies in the EAGLE RefL0100N1504 simulation.}
+\label{f:massfunction}
+\end{figure}
 
 
-\section{Present-day cluster galaxies in EAGLE}
+\begin{figure}
+  \centerline{\includegraphics[width=\linewidth]{history_chart.pdf}}
+\caption{Schematic figure showing the relevant times we consider in this work. The brown circle represents a galaxy of interest, which is a satellite at redshift $z_0$, part of a host group shown in grey. We identify the last redshift at which the brown satellite was hosted by the grey host as $\zinfall$. The last time at which the brown satellite was a central galaxy is labelled $\zcent$. When the brown satellite fell into the grey host (identified at present with \texttt{GroupID}), it may in fact have already been part of another group, shown in green. If this is the case, then $\zcent \neq \zinfall$.}
+\label{f:history_chart}
+\end{figure}
+
+\section{The evolution of present-day subhalos}
 
 \begin{itemize}
-  \item make a plot similar to \Cref{f:shmr_now} but showing how this depends on the subhalo-to-host mass ratio (e.g., with different lines, or normalizing an axis or both axes)
-  \item also make a plot with total-to-stellar mass ratio as a function of cluster-centric distance (also showing the effect of host halo mass)
-  \item also have a look at scatter in mtot vs.\ mstar
-\end{itemize}
-
-
-\subsection{The relations between total and stellar mass}
-
-\Cref{f:shmr_now} shows the stellar-to-halo mass relation (SHMR) and the halo-to-stellar mass relation (HSMR)\footnote{Note that due to intrinsic scatter, one cannot be obtained by simply inverting the other.} We also show two observational results for comparison: the central HSMR by \cite{vanuitert16}, and the satellite HSMR by \cite{sifon18_meneacs}.
-
-
-
-
-
-\begin{figure*}
-  \centerline{\includegraphics[width=\linewidth]{numbers_mstar_mtot.pdf}}
-  \caption{The stellar-to-halo mass relations (SHMR, top panels) and halo-to-stellar mass relations (HSMR, bottom panels) for central (left panels) and satellite (right panels) cluster galaxies in EAGLE. Color scales represent the lof of the number of central and satellite galaxies, respectively, and lines are the means in each panel, as labelled, and are only shown where the samples are complete in the independent (i.e., x-axis) variable. Central total masses refer to $M_\mathrm{200m}$, while subhalo masses are total \hbt\ masses. The central HSMR is compared to that derived from KiDS data by \citet{vanuitert16}, while the satellite HSMR to that measured in MENeaCS clusters by \citet{sifon18_meneacs}.}
-  \label{f:shmr_now}
-\end{figure*}
-
-\section{The evolution of cluster galaxies}
-
-\begin{itemize}
-  \item reproduce the 2d histograms in \Cref{f:shmr_now} but now show tracks for a few subhalos, i.e., how do they move along this plane as they are accreted and orbit the cluster?
   \item show something like the fraction of subhalos that were centrals at infall (i.e., $\tcent = \tinfall$) as a function of halo mass, subhalo mass, and infall time.
 \end{itemize}
 
 
-%\begin{figure*}
-%  \centerline{\includegraphics[width=\linewidth]{total_to_stellar_groups_and_clusters.pdf}}
-%\caption{The total-to-stellar mass relation of galaxies as a function of distance to their \emph{host} group (dashed lines), and as a function of their distance to the \emph{nearest} massive ($M_{200m}>10^{13}\,h^{-1}\,\Msun$) cluster (dotted lines), each normalized by the size of the group/cluster. The blue line shows the average total-to-stellar mass relation of all satellites belonging to all groups, and the black line shows the total-to-stellar mass relation of central galaxies. In the latter two, the respective shaded regions show the scatter in each.}
-%\label{f:relation}
-%\end{figure*}
+\begin{figure*}
+  \centerline{\includegraphics[width=\linewidth]{total_to_stellar_groups_and_clusters.pdf}}
+\caption{The total-to-stellar mass relation of galaxies as a function of distance to their \emph{host} group (dashed lines), and as a function of their distance to the \emph{nearest} massive ($M_{200m}>10^{13}\,h^{-1}\,\Msun$) cluster (dotted lines), each normalized by the size of the group/cluster. The blue line shows the average total-to-stellar mass relation of all satellites belonging to all groups, and the black line shows the total-to-stellar mass relation of central galaxies. In the latter two, the respective shaded regions show the scatter in each.}
+\label{f:relation}
+\end{figure*}
 
 \Cref{f:relation} shows that:
 \begin{enumerate}

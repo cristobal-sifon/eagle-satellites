@@ -22,11 +22,10 @@
 {Crain} R.~A.,  et~al., 2015, \mn@doi [\mnras] {10.1093/mnras/stv725}, \href
   {http://adsabs.harvard.edu/abs/2015MNRAS.450.1937C} {450, 1937}
 
-\bibitem[\protect\citeauthoryear{{Han}, {Cole}, {Frenk}, {Benitez-Llambay}  \&
-  {Helly}}{{Han} et~al.}{2018}]{han18}
-{Han} J.,  {Cole} S.,  {Frenk} C.~S.,  {Benitez-Llambay} A.,   {Helly} J.,
-  2018, \mn@doi [\mnras] {10.1093/mnras/stx2792}, \href
-  {http://adsabs.harvard.edu/abs/2018MNRAS.474..604H} {474, 604}
+\bibitem[\protect\citeauthoryear{{Knebe} et~al.,}{{Knebe}
+  et~al.}{2011}]{knebe11}
+{Knebe} A.,  et~al., 2011, \mn@doi [\mnras] {10.1111/j.1365-2966.2011.18858.x},
+  \href {http://adsabs.harvard.edu/abs/2011MNRAS.415.2293K} {415, 2293}
 
 \bibitem[\protect\citeauthoryear{{Rhee}, {Smith}, {Choi}, {Yi}, {Jaff{\'e}},
   {Candlish}  \& {S{\'a}nchez-J{\'a}nssen}}{{Rhee} et~al.}{2017}]{rhee17}
@@ -40,16 +39,10 @@
 {Schaye} J.,  et~al., 2015, \mn@doi [\mnras] {10.1093/mnras/stu2058}, \href
   {http://adsabs.harvard.edu/abs/2015MNRAS.446..521S} {446, 521}
 
-\bibitem[\protect\citeauthoryear{{Sif{\'o}n}, {Herbonnet}, {Hoekstra}, {van der
-  Burg}  \& {Viola}}{{Sif{\'o}n} et~al.}{2018}]{sifon18_meneacs}
-{Sif{\'o}n} C.,  {Herbonnet} R.,  {Hoekstra} H.,  {van der Burg} R.~F.~J.,
-  {Viola} M.,  2018, \mn@doi [\mnras] {10.1093/mnras/sty1161}, \href
-  {http://adsabs.harvard.edu/abs/2018MNRAS.478.1244S} {478, 1244}
-
-\bibitem[\protect\citeauthoryear{{van Uitert} et~al.,}{{van Uitert}
-  et~al.}{2016}]{vanuitert16}
-{van Uitert} E.,  et~al., 2016, \mn@doi [\mnras] {10.1093/mnras/stw747}, \href
-  {http://adsabs.harvard.edu/abs/2016MNRAS.tmp..601V} {}
+\bibitem[\protect\citeauthoryear{{Velliscig} et~al.,}{{Velliscig}
+  et~al.}{2017}]{velliscig17}
+{Velliscig} M.,  et~al., 2017, \mn@doi [\mnras] {10.1093/mnras/stx1789}, \href
+  {http://adsabs.harvard.edu/abs/2017MNRAS.471.2856V} {471, 2856}
 
 \makeatother
 \end{thebibliography}
