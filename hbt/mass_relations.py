@@ -21,6 +21,9 @@ from core.simulation import Simulation
 from core.subhalo import HostHalos, Subhalos, Track
 
 
+ccolor = 'C9'
+scolor = 'C1'
+
 
 def main(debug=True):
 
@@ -40,13 +43,12 @@ def main(debug=True):
 
 
 def wrap_plot(sim, subs, isnap, debug=True):
-    # this applies to apostle
-    mstarbins = mbins(sim, 'stars')
 
     subs = Subhalos(subs, sim, isnap, exclude_non_FoF=True)
     subhalos = subs.catalog
     print('subs.catalog:')
     print(np.sort(subs.colnames))
+    print()
     #sys.exit()
 
     # plot phase-space
@@ -58,10 +60,10 @@ def wrap_plot(sim, subs, isnap, debug=True):
 
     #test_velocities(subs)
 
-    plot_shmr_fmass(sim, subs)
-    plot_shmr(sim, subs)
+    #mstar_cmean, mstar_smean, mtot_cmean, mtot_smean
+    cshmr, sshmr, chsmr, shsmr = plot_shmr(sim, subs)
+    plot_shmr_fmass(sim, subs, shsmr=shsmr, chsmr=chsmr)
     plot_occupation(sim, subs)
-    #plot_relation(sim, subs, cen, sat, mstarbins, debug=debug)
 
     mass_sigma_host(sim, subs)
     return
@@ -158,45 +160,67 @@ def plot_massfunction(sim, subs):
     return
 
 
-def plot_shmr_fmass(sim, subs, hostmass='M200Mean'):
+def plot_shmr_fmass(sim, subs, shsmr=None, chsmr=None, hostmass='M200Mean'):
     cen, sat, mtot, mstar, mhost, dark, Nsat, Ndark, Ngsat = \
         definitions(subs, hostmass=hostmass)
     gsat = sat & ~dark
-    mbins, m, mlim, msbins, ms, mslim = binning(sim)
-    """
-    centrals = pd.DataFrame({
-        'mtot': mtot[cen], 'mstar': mstar[cen], 'mhost': mhost[cen],
-        'dark': dark[cen], 'Nsat': Nsat[cen], 'Ndark': Ndark[cen],
-        'Ngsat': Ngsat[cen]})
-    satellites = pd.DataFrame({
-        'mtot': mtot[sat], 'mstar': mstar[sat], 'mhost': mhost[sat],
-        'mu': mtot[sat]/mhost[sat], 'dark': dark[sat], 'Nsat': Nsat[sat],
-        'Ndark': Ndark[sat], 'Ngsat': Ngsat[sat]})
-    # bin
-    #satcuts = [pd.cut(satellites['mu'], mubins),
-               #pd.cut(satellites['mstar'], msbins),
-               #pd.cut(satellites['mtot'], mbins)]
+    mbins, m, mlim = binning(sim, mtype='total')
+    msbins, ms, mslim = binning(sim, mtype='stars')
+    logms = np.log10(ms)
+    mu = mtot / mhost
     """
     mubins = np.linspace(-5, 0, 11)
     colors, cmap = colorscale(array=mubins)
     mubins = 10**mubins
-    mu = logcenters(mubins)
+    xmu = logcenters(mubins)
+    mulims = np.log10(xmu[::xmu.size-1])
+    """
+    #binning(sim=None, mtype='total', n=None, xmin=0, xmax=1, log=True)
+    mubins, xmu, mulim = binning(xmin=-5, xmax=0, n=10, log=True)
+    mhbins, mh, mhlim = binning(xmin=9.5, xmax=14.5, n=10, log=True)
+    print('mhbins =', np.log10(mhbins))
+    print('mubins =', np.log10(mubins))
+    print()
 
     extent = [np.append(mlim, mslim), np.append(mslim, mlim)]
     lw = 4
-    fig, axes = plt.subplots(figsize=(15,6), ncols=2)
+    fig, axes = plt.subplots(figsize=(12,5), ncols=2)
     ax = axes[0]
     # hsmr as a function of mu
+    colors, cmap = colorscale(array=np.log10(xmu))
     hsmr_mu = binnedstat_dd(
-        [mu[gsat], msat[gsat]], mtot[gsat], 'mean', [mubins,msbins])
+        [mu[gsat], mstar[gsat]], mtot[gsat], 'mean', [mubins,msbins])
     hsmr_mu = hsmr_mu.statistic
-    print('hsmr_mu =', hsmr_mu.shape, mubins, msbins)
-    for i in range(mu.size):
-        ax.plot(ms, hsmr_mu[:,i], '-', color=colors[i], lw=4)
-    cbar = plt.colorbar(cmap)
+    print('hsmr_mu =', hsmr_mu.shape, xmu.shape, ms.shape)
+    for i in range(xmu.size):
+        ax.plot(logms, np.log10(hsmr_mu[i]), '-', color=colors[i], lw=4)
+    cbar = plt.colorbar(cmap, ax=ax)
     cbar.set_label(r'log $m_\mathrm{sub}/M_\mathrm{host}$')
-    ax.set_xlabel(r'$\log\,{0}$'.format(sim.masslabel(mtype='total')))
-    ax.set_xlabel(r'$\log\,{0}$'.format(sim.masslabel(mtype='stars')))
+    # as a function of Mhost
+    ax = axes[1]
+    colors, cmap = colorscale(array=np.log10(mh))
+    hsmr_mhost = binnedstat_dd(
+        [mhost[gsat], mstar[gsat]], mtot[gsat], 'mean', [mhbins,msbins])
+    hsmr_mhost = hsmr_mhost.statistic
+    for i in range(mh.size):
+        ax.plot(logms, np.log10(hsmr_mhost[i]), '-', color=colors[i], lw=4,
+                zorder=2*mh.size-i)
+    cbar = plt.colorbar(cmap, ax=ax)
+    cbar.set_label(r'log $M_\mathrm{host}$')
+    for ax in axes:
+        if shsmr is not None:
+            plot_line(
+                ax, logms, np.log10(shsmr), '-', lw=3, color=scolor,
+                label='Overall', zorder=100)
+        if chsmr is not None:
+            plot_line(
+                ax, logms, np.log10(chsmr), '-', lw=3, color=ccolor,
+                label='Centrals', zorder=100)
+        ax.legend(fontsize=18)
+        ax.set_xlabel(r'$\log\,{0}$'.format(sim.masslabel(mtype='stars')))
+        ax.set_ylabel(r'$\log\,{0}$'.format(sim.masslabel(mtype='total')))
+        ax.set_xlim(mslim)
+        ax.set_ylim(mlim)
     save_plot(fig, 'shmr_mu', sim)
     return
 
@@ -204,7 +228,9 @@ def plot_shmr_fmass(sim, subs, hostmass='M200Mean'):
 def plot_shmr(sim, subs, hostmass='M200Mean'):
     cen, sat, mtot, mstar, mhost, dark, Nsat, Ndark, Ngsat = \
         definitions(subs, hostmass=hostmass)
-    mbins, m, mlim, msbins, ms, mslim = binning(sim)
+    #mbins, m, mlim, msbins, ms, mslim = binning(sim)
+    mbins, m, mlim = binning(sim, mtype='total')
+    msbins, ms, mslim = binning(sim, mtype='stars')
     nh = np.histogram(mhost[cen], mbins)[0]
     nc = np.histogram2d(
         mstar[cen & ~dark], mhost[cen & ~dark], (msbins,mbins))[0]
@@ -239,14 +265,18 @@ def plot_shmr(sim, subs, hostmass='M200Mean'):
     msmin = 7.5
     jms = (ms >= 10**msmin)
     for ax in row:
-        ax.plot(np.log10(m[jm]), np.log10(mstar_cmean[jm]), 'w-', lw=lw+2,
-                zorder=10, label='_none_')
-        ax.plot(np.log10(m[jm]), np.log10(mstar_cmean[jm]), 'C9-', lw=lw,
-                zorder=10, label='Central SHMR')
-        ax.plot(np.log10(m[jm]), np.log10(mstar_smean[jm]), 'w-', lw=lw+2,
-                zorder=10, label='_none_')
-        ax.plot(np.log10(m[jm]), np.log10(mstar_smean[jm]), 'C1-', lw=lw,
-                zorder=10, label='Satellite SHMR')
+        #ax.plot(np.log10(m[jm]), np.log10(mstar_cmean[jm]), 'w-', lw=lw+2,
+                #zorder=10, label='_none_')
+        #ax.plot(np.log10(m[jm]), np.log10(mstar_cmean[jm]), 'C9-', lw=lw,
+                #zorder=10, label='Central SHMR')
+        #ax.plot(np.log10(m[jm]), np.log10(mstar_smean[jm]), 'w-', lw=lw+2,
+                #zorder=10, label='_none_')
+        #ax.plot(np.log10(m[jm]), np.log10(mstar_smean[jm]), 'C1-', lw=lw,
+                #zorder=10, label='Satellite SHMR')
+        plot_line(ax, np.log10(m[jm]), np.log10(mstar_cmean[jm]), '-',
+                  color=ccolor, lw=lw, zorder=10, label='Central SHMR')
+        plot_line(ax, np.log10(m[jm]), np.log10(mstar_smean[jm]), '-',
+                  color=scolor, lw=lw, zorder=10, label='Satellite SHMR')
     for ax in row:
         ax.legend(loc='upper left')
         ax.set_xlim(*mlim)
@@ -267,24 +297,30 @@ def plot_shmr(sim, subs, hostmass='M200Mean'):
             mstar[sat & ~dark], msbins, weights=mtot[sat & ~dark])[0] \
         / np.histogram(mstar[sat & ~dark], msbins)[0]
     for ax in row:
-        ax.plot(np.log10(ms[jms]), np.log10(mtot_cmean[jms]), 'w-', lw=lw+2,
-                zorder=10, label='_none_')
-        ax.plot(np.log10(ms[jms]), np.log10(mtot_cmean[jms]), 'C9-', lw=lw,
-                zorder=10, label='Central HSMR')
-        ax.plot(np.log10(ms[jms]), np.log10(mtot_smean[jms]), 'w-', lw=lw+2,
-                zorder=10, label='_none_')
-        ax.plot(np.log10(ms[jms]), np.log10(mtot_smean[jms]), 'C1-', lw=lw,
-                zorder=10, label='Satellite HSMR')
+        #ax.plot(np.log10(ms[jms]), np.log10(mtot_cmean[jms]), 'w-', lw=lw+2,
+                #zorder=10, label='_none_')
+        #ax.plot(np.log10(ms[jms]), np.log10(mtot_cmean[jms]), 'C9-', lw=lw,
+                #zorder=10, label='Central HSMR')
+        #ax.plot(np.log10(ms[jms]), np.log10(mtot_smean[jms]), 'w-', lw=lw+2,
+                #zorder=10, label='_none_')
+        #ax.plot(np.log10(ms[jms]), np.log10(mtot_smean[jms]), 'C1-', lw=lw,
+                #zorder=10, label='Satellite HSMR')
+        plot_line(ax, np.log10(ms[jms]), np.log10(mtot_cmean[jms]), '-',
+                  color=ccolor, lw=lw, zorder=10, label='Central HSMR')
+        plot_line(ax, np.log10(ms[jms]), np.log10(mtot_smean[jms]), '-',
+                  color=scolor, lw=lw, zorder=10, label='Satellite HSMR')
     # van Uitert+16 (KiDS)
     v16 = ascii.read('literature/vanuitert16.txt', format='commented_header')
     v16['logmstar'] = sim.mass_to_sim_h(
         v16['logmstar'], 0.7, 'stars', log=True)
     v16['logmhalo'] = sim.mass_to_sim_h(
         v16['logmhalo'], 0.7, 'total', log=True)
-    row[0].plot(v16['logmstar'], v16['logmhalo'], 'w-', lw=5, zorder=19,
-                label='_none_')
-    row[0].plot(v16['logmstar'], v16['logmhalo'], 'k-', lw=3, zorder=20,
-                label='van Uitert+16')
+    #row[0].plot(v16['logmstar'], v16['logmhalo'], 'w-', lw=5, zorder=19,
+                #label='_none_')
+    #row[0].plot(v16['logmstar'], v16['logmhalo'], 'k-', lw=3, zorder=20,
+                #label='van Uitert+16')
+    plot_line(row[0], v16['logmstar'], v16['logmhalo'], 'k-', lw=lw,
+              zorder=20, label='van Uitert+16')
     s18 = np.array(
         [[9.51,10.01,10.36,10.67,11.01], [10.64,11.41,11.71,11.84,12.15],
          [0.53,0.21,0.17,0.15,0.20], [0.39,0.17,0.15,0.15,0.17]])
@@ -301,7 +337,7 @@ def plot_shmr(sim, subs, hostmass='M200Mean'):
         ax.set_xlim(*mslim)
         ax.set_ylim(*mlim)
     save_plot(fig, 'shmr_censat', sim)
-    return
+    return mstar_cmean, mstar_smean, mtot_cmean, mtot_smean
 
 
 def plot_occupation(sim, subs, hostmass='M200Mean'):
@@ -350,55 +386,6 @@ def plot_occupation(sim, subs, hostmass='M200Mean'):
     ax.set_xlabel(r'${0}$'.format(mhlabel))
     ax.set_ylabel(r'$\langle N\rangle ({0})$'.format(mhlabel))
     save_plot(fig, 'occupation', sim)
-    return
-
-
-def plot_relation(sim, subs):
-    cen = (subs.catalog['Rank'] == 0)
-    sat = ~cen
-    mstar = subs.mass('stars')
-    mtot = subs.mass('total')
-    nsat = subs.catalog['Nsat']
-    msbins = np.linspace(6, 13, 25)
-    ms = 10**((msbins[1:]+msbins[:-1]) / 2)
-    msbins = 10**msbins
-    #fig, axes = plt.subplots(figsize=(12,5), ncols=2)
-    #ax = axes[0]
-    #ax.scatter(
-    return
-
-
-def plot_relation_old(sim, subs, cen, sat, bins, rbins, xname='stars',
-                  yname='total', ccolor='C0', scolor='C1', debug=False):
-    sgood = ~sat.orphan
-    # centrals should all be "good" but you never know
-    cgood = ~cen.orphan
-    x = (bins[:-1]+bins[1:]) / 2
-    msat = average(sat, bins, mask=sgood, debug=debug)
-    mcen = average(cen, bins, mask=cgood, debug=debug)
-    fig, ax = plt.subplots(figsize=(8,6))
-    # plot all objects
-    # downsample if too many objects
-    if sim.family == 'apostle':
-        ax.plot(cen.mass(xname)[cgood], cen.mass(yname)[cgood], 'o',
-                color=ccolor, ms=4, label='_none_')
-        ax.plot(sat.mass(xname)[sgood], sat.mass(yname)[sgood], 's',
-                color=scolor, ms=4, label='_none_')
-    ax.plot(x, mcen, '-', color=ccolor, lw=3, label='Centrals')
-    ax.plot(x, msat, '-', color=scolor, lw=3, label='Satellites')
-    # satellites at varying distances
-    
-    ax.set_xscale('log')
-    ax.set_yscale('log')
-    ax.set_xlabel(axlabel(sim, xname))
-    ax.set_ylabel(axlabel(sim, yname))
-    ax.annotate(
-        sim.formatted_name, xy=(0.05,0.92), xycoords='axes fraction',
-        ha='left', va='top', fontsize=16)
-    ax.legend(loc='lower right')
-    out = os.path.join(
-        sim.plot_path, '{0}.pdf'.format(output(sim, xname, yname)))
-    savefig(out, fig=fig)
     return
 
 
@@ -551,16 +538,27 @@ def axlabel(sim, name):
     return r'{0} (M$_\odot$)'.format(sim.masslabel(mtype=name))
 
 
-def binning(sim):
-    #mbins = np.logspace(8, 15, 41)
+def binning(sim=None, mtype='total', n=None, xmin=0, xmax=1, log=True):
+    if sim is None:
+        f = np.logspace if log else np.linspace
+        bins = f(xmin, xmax, n+1)
+    else:
+        bins = massbins(sim, mtype=mtype)
+        if n is not None:
+            bins = np.log10(bins[::bins.size-1])
+            bins = np.logspace(bins[0], bins[1], n+1)
+    x = logcenters(bins)
+    xlim = np.log10(x[::x.size-1])
+    return bins, x, xlim
+    """
     mbins = massbins(sim, mtype='total')
     m = logcenters(mbins)
-    #msbins = np.logspace(5.5, 12.5, 26)
     msbins = massbins(sim, mtype='stars')
     ms = logcenters(msbins)
     mlim = np.log10(m[::m.size-1])
     mslim = np.log10(ms[::ms.size-1])
     return mbins, m, mlim, msbins, ms, mslim
+    """
 
 
 def definitions(subs, hostmass='M200Mean'):
@@ -586,6 +584,24 @@ def massbins(sim, mtype='stars'):
             'eagle': {'stars': np.logspace(5.5, 12.5, 26),
                       'total': np.logspace(8, 15, 31)}}
     return bins[sim.family][mtype]
+
+
+def plot_line(ax, *args, **kwargs):
+    if 'lw' not in kwargs:
+        kwargs['lw'] = 4
+    kwargs_bg = kwargs.copy()
+    if 'color' in kwargs:
+        kwargs_bg.pop('color')
+    if 'label' in kwargs:
+        kwargs_bg.pop('label')
+    kwargs_bg['lw'] += 2
+    ax.plot(*args, **kwargs_bg, color='w', label='_none_')
+    ax.plot(*args, **kwargs)
+    #ax.plot(np.log10(m[jm]), np.log10(mstar_cmean[jm]), 'w-', lw=lw+2,
+            #zorder=10, label='_none_')
+    #ax.plot(np.log10(m[jm]), np.log10(mstar_cmean[jm]), 'C9-', lw=lw,
+            #zorder=10, label='Central SHMR')
+    return
 
 
 def output(sim, xname, yname):
