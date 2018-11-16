@@ -55,6 +55,10 @@ class Simulation(object):
         return self._cosmology
 
     @property
+    def data_path(self):
+        return os.path.join('data', self.name.replace('/', '_'))
+
+    @property
     def family(self):
         if self._family is None:
             self._family = self.name.split('/')[0]
@@ -202,8 +206,11 @@ class Simulation(object):
         return self.snapshot_indices[self.snapshots == snap][0]
 
     def initialize_tree(self):
+        if not os.path.isdir(self.data_path):
+            os.makedirs(self.data_path)
         if not os.path.isdir(self.plot_path):
             os.makedirs(self.plot_path)
+        return
 
     def masslabel(self, latex=True, **kwargs):
         """Return label of a given mass type

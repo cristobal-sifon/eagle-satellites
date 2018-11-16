@@ -1,0 +1,8 @@
+# sample  M0  alpha  beta  logk  sigma
+#
+# relation between stellar mass and mass at infall,
+# see section 2.1 of Wang, De Lucia & Weinmann 2013.
+# Here, Ho = 100 km/s/Mpc.
+#
+centrals    3.43e11  0.34   2.56  10.23  0.169
+satellites  5.23e11  0.298  1.99  10.30  0.192
