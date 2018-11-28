@@ -212,7 +212,7 @@ class Simulation(object):
             os.makedirs(self.plot_path)
         return
 
-    def masslabel(self, latex=True, **kwargs):
+    def masslabel(self, latex=True, suffix=None, **kwargs):
         """Return label of a given mass type
 
         Paramters
@@ -225,16 +225,24 @@ class Simulation(object):
             mass. Otherwise see ``self.masstypes``
         latex : bool, optional
             whether the label should be in latex or plain text format
+        suffix : str, optional
+            a suffix to add to the subscript, separated by a comma if
+            ``latex=True`` and by an underscore otherwise
 
         Returns
         -------
         label : str
             mass label in latex format
         """
+        subscript = self.masstype(**kwargs)
         if latex:
-            return r'M_\mathrm{{{0}}}'.format(self.masstype(**kwargs))
+            if suffix:
+                subscript = '{0},{1}'.format(subscript, suffix)
+            return r'M_\mathrm{{{0}}}'.format(subscript)
         else:
-            return 'M{0}'.format(self.masstype(**kwargs).lower())
+            if suffix:
+                subscript = '{0}_{1}'.format(subscript, suffix)
+            return 'M{0}'.format(subscript.lower())
 
     def masstype(self, mtype=None, index=None):
         assert mtype is not None or index is not None, \

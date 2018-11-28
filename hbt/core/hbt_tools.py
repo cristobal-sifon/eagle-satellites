@@ -10,6 +10,7 @@ def parse_args():
 def setup_parser():
     parser = argparse.ArgumentParser()
     add = parser.add_argument
+    add('--ncores', dest='ncores', default=1, type=int)
     add('simulation', default='LR')
     args = parser.parse_args()
     return args

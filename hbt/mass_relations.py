@@ -207,7 +207,7 @@ def plot_massfunction(sim, subs, hostmass='M200Mean'):
                     zorder=20-i)
         cbar = plt.colorbar(cmap, ax=ax)
         cbar.set_label(r'log $M_\mathrm{{host}}/{0}$'.format(Msun))
-        ax.legend(loc='upper right', ncol=2, fontsize=12)
+        ax.legend(loc='upper right', ncol=1, fontsize=16)
     for fig, name in zip(figs, ('msub','mu')):
         save_plot(fig, 'n{0}'.format(name), sim)
     return
@@ -568,10 +568,6 @@ def view_velocities(subs, sim, vref='MostBound'):
 ##
 ## Auxiliary functions
 ##
-
-
-def axlabel(sim, name):
-    return r'{0} (M$_\odot$)'.format(sim.masslabel(mtype=name))
 
 
 def binning(sim=None, mtype='total', n=None, xmin=0, xmax=1, log=True):

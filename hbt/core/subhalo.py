@@ -25,16 +25,13 @@ class BaseDataSet(object):
     def __init__(self, catalog, as_dataframe=True):
         self._catalog = catalog
         self._as_dataframe = as_dataframe
-        # private attributes
-        self.__range = None
 
     ### private properties ###
 
     @property
     def _range(self):
-        if self.__range is None:
-            self.__range = np.arange(self._catalog.size, dtype=int)
-        return self.__range
+        #return np.arange(self.catalog.size, dtype=int)
+        return np.arange(self.catalog[self.colnames[0]].size, dtype=int)
 
     ### public properties ###
 
@@ -48,13 +45,6 @@ class BaseDataSet(object):
         self._as_dataframe = as_df
 
     @property
-    def colnames(self):
-        if self.as_dataframe:
-            return list(self.catalog)
-        else:
-            return self.catalog.dtype.names
-
-    @property
     def catalog(self):
         if self.as_dataframe and not isinstance(self._catalog, pd.DataFrame):
             self._catalog = self.DataFrame(self._catalog)
@@ -66,6 +56,13 @@ class BaseDataSet(object):
     #@catalog.setter
     #def catalog(self, cat):
         #self._catalog = cat
+
+    @property
+    def colnames(self):
+        if self.as_dataframe:
+            return list(self.catalog)
+        else:
+            return self.catalog.dtype.names
 
     ### methods ###
 
@@ -160,7 +157,7 @@ class BaseSubhalo(BaseDataSet):
                 return self.Mbound
             return self.MboundType[:,self.sim._masstype_index(mtype)]
         if index == -1:
-            return self.Mbound
+            return np.array(self.Mbound)
         return self.MboundType[:,index]
 
     def nbound(self, mtype=None, index=None):
@@ -171,7 +168,7 @@ class BaseSubhalo(BaseDataSet):
                 return self.Nbound
             return self.NboundType[:,self.sim._masstype_index(mtype)]
         if index == -1:
-            return self.Nbound
+            return np.array(self.Nbound)
         return self.NboundType[:,index]
 
     ## easy access to positions, distances and velocities ##
@@ -363,13 +360,13 @@ class Subhalos(BaseSubhalo):
 
     """
 
-    def __init__(self, catalog, sim, isnap, exclude_non_FoF=False,
-                 logMmin=8.5, as_dataframe=True, load_distances=True,
-                 load_velocities=True):
+    def __init__(self, catalog, sim, isnap,
+                 logMmin=8.5, as_dataframe=True, exclude_non_FoF=True,
+                 load_hosts=True, load_distances=True, load_velocities=True):
         """
         Parameters
         ----------
-        subhalos : output of ``reader.LoadSubhalos``
+        catalog : output of ``reader.LoadSubhalos``
             subhalo sample, defined at a specific snapshot
         sim : ``Simulation`` object or ``str``
             simulation containing the track. If ``str``, should be
@@ -382,6 +379,8 @@ class Subhalos(BaseSubhalo):
             (i.e., those with HostHaloId=-1). Some attributes or
             methods may not work if set to False.
         """
+        assert isinstance(as_dataframe, bool)
+        assert isinstance(load_hosts, bool)
         assert isinstance(load_distances, bool)
         assert isinstance(load_velocities, bool)
         super(Subhalos, self).__init__(
@@ -393,14 +392,26 @@ class Subhalos(BaseSubhalo):
         if self.exclude_non_FoF:
             print('Excluding {0} non-FoF subhalos'.format(self.non_FoF.sum()))
             self._catalog = self.catalog[~self.non_FoF]
-        self.catalog['IsDark'] = (self.nbound('stars') == 0)
-        self.logMmin = logMmin
-        self._catalog = self.catalog[self.mass('total') > 10**self.logMmin]
+        if 'Mbound' in self.colnames:
+            self.logMmin = logMmin
+            self._catalog = self.catalog[self.mass('total') > 10**self.logMmin]
+        if 'Nbound' in self.colnames:
+            if self.as_dataframe:
+                self.catalog['IsDark'] = (self.nbound('stars') == 0)
+            else:
+                self._catalog = append_fields(
+                    self.catalog, 'IsDark', (self.nbound('stars') == 0))
         self.isnap = isnap
         #self.redshift = self.redshift[self.isnap]
         self._has_host_properties = False
         self._has_distances = False
         self._has_velocities = []
+        self.load_hosts = load_hosts
+        if self.load_hosts:
+            self.host_properties()
+        else:
+            load_distances = False
+            load_velocities = False
         self.load_distances = load_distances
         self.load_velocities = load_velocities
         if self.load_distances:
@@ -481,7 +492,6 @@ class Subhalos(BaseSubhalo):
         self.as_dataframe = True
         # alias
         sub = self.catalog
-        print('N =', sub['HostHaloId'].size)
         columns = list(np.append(self.pcols(), 'HostHaloId'))
         to = time()
         hosts = sub[columns].join(
@@ -549,12 +559,12 @@ class Subhalos(BaseSubhalo):
             return host_mask
         if return_value == 'track':
             return self.reader.GetTrack(
-                self.catalog['TrackId'][host_mask][0])
+                np.array(self.catalog['TrackId'][host_mask])[0])
         if return_value == 'trackid':
-            return self.catalog['TrackId'][host_mask][0]
+            return np.array(self.catalog['TrackId'][host_mask])[0]
         if return_value == 'index':
             return self._range[host_mask][0]
-        return self.catalog[host_mask]
+        return np.array(self.catalog[host_mask])
 
     def _mass_weighted_stat(self, values, mass, label):
         """Apply mass weighting
@@ -604,7 +614,6 @@ class Subhalos(BaseSubhalo):
             return pd.Series({label: 0}, index=[label])
         vmean = np.mean([x[i] for i in cols], axis=0)
         vxyz = np.sum([(x[i]-vi)**2 for i, vi in zip(cols, vmean)], axis=0)
-        #print('vxyz =', vxyz, vxyz.shape, np.array(x[cols[0]]).shape)
         return self._mass_weighted_stat(vxyz, np.array(x[mcol]), label)**0.5
 
     def _mass_weighted_std(self, x, cols, mcol, label='sigma_cl'):
@@ -622,9 +631,11 @@ class Subhalos(BaseSubhalo):
             print('velocities already loaded')
             return
         if not self._has_host_properties:
-            self.load_hosts()
+            self.host_properties()
         print('Calculating velocities...')
         to = time()
+        adf = self.as_dataframe
+        self.as_dataframe = True
         # alias
         cx = self.catalog
         axes = 'xyz'
@@ -668,7 +679,8 @@ class Subhalos(BaseSubhalo):
         print('velocity dispersions...')
         ti = time()
         hostkeys = np.append(['HostHaloId', vhcol], vhcols)
-        cx = cx.join(hosts[hostkeys].set_index('HostHaloId'), on='HostHaloId')
+        cx = cx.join(hosts[hostkeys].set_index('HostHaloId'), on='HostHaloId',
+                     rsuffix='_h')
         for i, vcol in enumerate(vcols):
             vdiff = cx[vcol] \
                 - cx['Physical{0}HostMeanVelocity{1}'.format(self.pvref, i)]
@@ -706,6 +718,7 @@ class Subhalos(BaseSubhalo):
         cx.drop(columns=mvcols)
         self._catalog = cx
         self._has_velocities.append(mass_weighting)
+        self.as_dataframe = adf
         print('Calculated velocities in {0:.2f} min'.format((time()-to)/60))
         print()
         return
@@ -746,7 +759,7 @@ class Subhalos(BaseSubhalo):
             return cent
         return cent[0]
 
-    def load_hosts(self, force_isnap=False, verbose=False):
+    def host_properties(self, force_isnap=False, verbose=False):
         """Load halo masses and sizes into the subhalo data
 
         See `HostHalos` for details
@@ -761,16 +774,21 @@ class Subhalos(BaseSubhalo):
             return
         print('Loading hosts...')
         to = time()
+        adf = self.as_dataframe
+        self.as_dataframe = True
         if self.isnap not in self.sim.virial_snapshots:
             hosts = HostHalos(self.sim, self.isnap, force_isnap=force_isnap)
             ti = time()
             # number of star particles, to identify dark subhalos
-            cols = ['HostHaloId', 'IsDark']
+            cols = ['HostHaloId']
+            if 'IsDark' in self.colnames:
+                cols.append('IsDark')
             grouped = self.catalog[cols].groupby('HostHaloId')
-            nm = pd.DataFrame(
-                {'Nsat': grouped.size()-1,
-                 'Ndark': grouped['IsDark'].sum()})
-            self._catalog = self.catalog.join(nm, on='HostHaloId', rsuffix='')
+            nmdict = {'Nsat': grouped.size()-1}
+            if 'IsDark' in self.colnames:
+                 nmdict['Ndark'] = grouped['IsDark'].sum()
+            nm = pd.DataFrame(nmdict)
+            self._catalog = self.catalog.join(nm, on='HostHaloId', rsuffix='_h')
             self._catalog = self.catalog.join(
                 hosts.catalog, on='HostHaloId', rsuffix='_h')
             # update host masses
@@ -781,6 +799,7 @@ class Subhalos(BaseSubhalo):
                 print('Joined hosts in {0:.2f} s'.format(time()-to))
             del hosts
         self._has_host_properties = True
+        self.as_dataframe = adf
         print('Loaded in {0:.2f} s'.format(time()-to))
         return
 
@@ -800,30 +819,32 @@ class Subhalos(BaseSubhalo):
         see ``return_value``
         """
         assert trackid // 1 == trackid, 'trackid must be an int'
-        _valid_return = ('index','mask','table','trackid')
+        _valid_return = ('index','mask','table','track','trackid')
         assert return_value in _valid_return, \
             'return_value must be one of {0}'.format(_valid_return)
         try:
             idx = self.index(trackid)
-        except IndexError:
+        except IndexError as e:
+            print('IndexError:', e)
             return None
-        sibling_mask = (self.catalog['HostHaloId'] \
-                        == self.catalog['HostHaloId'][idx])
+        hostids = np.array(self.catalog['HostHaloId'])
+        sibling_mask = (hostids == hostids[idx])
         if sibling_mask.sum() == 0:
             return None
         if return_value == 'mask':
             return sibling_mask
         if return_value == 'track':
-            return self.catalog['TrackId'][sibling_mask]
+            return self.catalog[sibling_mask]
+        if return_value == 'trackid':
+            return np.array(self.catalog['TrackId'])[sibling_mask]
         if return_value == 'index':
             return self._range[sibling_mask]
-        return self.catalog[sibling_mask]
 
 
 
 class Track(BaseSubhalo):
 
-    def __init__(self, track, sim, as_dataframe=True):
+    def __init__(self, track, sim, as_dataframe=False):
         """
         Parameters
         ----------
@@ -844,8 +865,10 @@ class Track(BaseSubhalo):
             track, sim, as_dataframe=as_dataframe)
         self._track = track
         self._trackid = self.track['TrackId']
-        self.hostid = self.track['HostHaloId']
+        self.hostid = np.array(self.track['HostHaloId'])
         self.current_hostid = self.hostid[-1]
+        self._first_satellite_snapshot = None
+        self._first_satellite_snapshot_index = None
         self._infall_snapshot = None
         self._infall_snapshot_index = None
         self._last_central_snapshot = None
@@ -856,22 +879,54 @@ class Track(BaseSubhalo):
     ### attributes ###
 
     @property
+    def first_satellite_snapshot(self):
+        """
+        If the track has never been a satellite, this will remain None
+        """
+        if self.first_satellite_snapshot_index is None:
+            return
+        if self._first_satellite_snapshot is None:
+            self._first_satellite_snapshot = \
+                self.track['Snapshot'][self.first_satellite_snapshot_index]
+        return self._first_satellite_snapshot
+
+    @property
+    def first_satellite_snapshot_index(self):
+        """
+        If the track has never been a satellite, this will remain None
+        """
+        if self._first_satellite_snapshot_index is None:
+            sat = (self.track['Rank'] > 0)
+            if sat.sum() > 0:
+                self._first_satellite_snapshot_index = self._range[sat][0]
+        return self._first_satellite_snapshot_index
+
+    @property
     def icent(self):
         """alias for ``self.last_central_snapshot_index``"""
         return self.last_central_snapshot_index
 
     @property
     def last_central_snapshot(self):
+        """
+        If the track has never been a central, this will remain None
+        """
+        if self.last_central_snapshot_index is None:
+            return
         if self._last_central_snapshot is None:
             self._last_central_snapshot = \
-                self.track['Snapshot'][self.track['Rank'] == 0][-1]
+                self.track['Snapshot'][self.last_central_snapshot_index]
         return self._last_central_snapshot
 
     @property
     def last_central_snapshot_index(self):
+        """
+        If the track has never been a central, this will remain None
+        """
         if self._last_central_snapshot_index is None:
-            self._last_central_snapshot_index = \
-                 self._range[self.track['Rank'] == 0][-1]
+            cent = (self.track['Rank'] == 0)
+            if cent.sum() > 0:
+                self._last_central_snapshot_index = self._range[cent][-1]
         return self._last_central_snapshot_index
 
     @property
@@ -936,8 +991,8 @@ class Track(BaseSubhalo):
         # Rank is necessary for the definition of the Subhalos object
         snap = Subhalos(
             self.reader.LoadSubhalos(
-                isnap, ['TrackId','HostHaloId','Rank']),
-            self.sim)
+                isnap, ['TrackId','HostHaloId','Rank','Mbound']),
+            self.sim, isnap, load_hosts=False)
         #hostid = snap.host(self.trackid, return_value='trackid')
         return snap.host(self.trackid, return_value=return_value)
         return self.reader.GetTrack(hostid)
@@ -993,7 +1048,7 @@ class Track(BaseSubhalo):
         """
         return
 
-    def infall(self, return_value='index'):
+    def infall(self, return_value='index', min_snap_range_brute=3):
         """Last redshift at which the subhalo was not in its present
         host
 
@@ -1008,19 +1063,46 @@ class Track(BaseSubhalo):
                 valid_outputs, return_value)
         hostid = self.host(isnap=-1, return_value='trackid')
         iinf = 0
-        # Running backwards because in HBT+ all tracks exist today,
-        # at least as 'orphan' galaxies with Nbound=1
-        for isnap in self.sim.snapshots[::-1]:
-            snapcat = Subhalos(self.reader.LoadSubhalos(isnap), self.sim)
+        # first jump by halves until we've narrowed it down to
+        # very few snapshots
+        imin = self.sim.snapshots.min()
+        imax = self.sim.snapshots.max()
+        do_smart = True
+        if do_smart:
+            while imax - imin > min_snap_range_brute:
+                isnap = (imin+imax) // 2
+                subs = self.reader.LoadSubhalos(
+                    isnap, ['TrackId','HostHaloId'])
+                if len(subs) == 0:
+                    imin = isnap
+                    continue
+                snapcat = Subhalos(
+                    subs, self.sim, isnap, load_hosts=False, logMmin=0)
+                sib = snapcat.siblings(hostid, 'trackid')
+                if sib is None or self.trackid not in sib:
+                    imin = isnap
+                else:
+                    imax = isnap
+        # once we've reached the minimum range allowed above,
+        # we just do backwards brute-force
+        for isnap in range(imax, imin-1, -1):
+            subs = self.reader.LoadSubhalos(isnap)
+            if len(subs) == 0:
+                iinf_backward = 0
+                break
+            snapcat = Subhalos(
+                subs, self.sim, isnap, load_hosts=False, logMmin=0)
             sib = snapcat.siblings(hostid, 'trackid')
             # this means we reached the beginning of the track
             if sib is None:
-                iinf = 0
+                iinf_backward = 0
                 break
-            if self.trackid not in sib['TrackId']:
+            elif self.trackid not in sib:
                 iinf_backward = isnap - self.sim.snapshots.max() - 1
-                iinf =  self._range[iinf_backward]
                 break
+        else:
+            iinf_backward = 0
+        iinf =  self._range[iinf_backward]
         if return_value == 'tlookback':
             return self.lookback_time(isnap=iinf)
         if return_value == 'redshift':
