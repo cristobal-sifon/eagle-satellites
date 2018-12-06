@@ -30,7 +30,7 @@ adjust_kwargs = dict(
 
 
 def main():
-
+    print('Running...')
     args = hbt_tools.parse_args()
     sim = Simulation(args.simulation)
 
@@ -56,34 +56,58 @@ def main():
     # should not count on them being sorted by mass
     ids_cent = subs.centrals['TrackId']
 
-    n = 10
-    print('Plotting centrals...')
-    to = time()
-    title = '{1}: {0} most massive central subhalos'.format(
-        n, sim.formatted_name)
-    plot_centrals(
-        args, sim, reader, subs, subs.centrals, rank['Mbound'][:n],
-        #title=None)
-        title=title)
-    print('Finished plot_centrals in {0:.2f} minutes'.format((time()-to)/60))
+    do_plot_centrals = False
+    if do_plot_centrals:
+        n = 10
+        print('Plotting centrals...')
+        to = time()
+        title = '{1}: {0} most massive central subhalos'.format(
+            n, sim.formatted_name)
+        plot_centrals(
+            args, sim, reader, subs, subs.centrals, rank['Mbound'][:n],
+            #title=None)
+            title=title)
+        print('Finished plot_centrals in {0:.2f} minutes'.format(
+            (time()-to)/60))
+
     print()
-    #return
     print('Plotting halos...')
     to = time()
     # total, gas, halo, stars
     # ['gas', 'DM', 'disk', 'bulge', 'stars', 'BH']
-    #for massindex in range(-1, 6):
-    for massindex in (-1, 0, 1, 4, 5):
-        ti = time()
-        plot_halos(
-            args, sim, reader, subs, subs.centrals['TrackId'][rank['Mbound']],
-            massindex=massindex)
-        print('Plotted mass #{0} in {1:.2f} minutes'.format(
-            massindex, (time()-to)/60))
-        break
-        sleep(5)
+    ti = time()
+    plot_halos(
+        args, sim, reader, subs, subs.centrals['TrackId'][rank['Mbound'][:3]])
+    #print('Plotted mass #{0} in {1:.2f} minutes'.format(
+        #massindex, (time()-to)/60))
     print('Finished plot_halos in {0:.2f} minutes'.format((time()-to)/60))
     return
+
+
+def member_indices(args, subcat, host_ids, nsub=10):
+    cat = subcat.catalog
+    centrals = (cat['Rank'] == 0)
+    halos = np.intersect1d(cat['TrackId'], host_ids)
+    to = time()
+    #if args.ncores == 1:
+    if True:
+        idx = []
+        for track in host_ids:
+            idx.append(subcat.siblings(track, 'index')[:nsub+1])
+    else:
+        idx = [track for track in host_ids]
+        pool = mp.Pool(args.ncores)
+        results = \
+            [pool.apply_async(subcat.siblings, args=(track,),
+                              kwds={'return_value': 'index'})
+             for track in host_ids]
+        pool.close()
+        pool.join()
+        for out in results:
+            out = out.get()
+            idx[out[0]] = out[1]
+    print('member indices in {0:.2f} s'.format(time()-to))
+    return idx
 
 
 def plot_centrals(args, sim, reader, subcat, centrals, indices, massindex=-1,
@@ -100,7 +124,7 @@ def plot_centrals(args, sim, reader, subcat, centrals, indices, massindex=-1,
     cscale, cmap = colorscale(10+np.log10(centrals['Mbound'][indices]))
     read_and_plot_track(
         args, axes, sim, reader, subcat, centrals, indices,
-        massindex=-1, show_history=False, label_host=False, show_label=False,
+        show_history=False, label_host=False, show_label=False,
         colors=cscale, label_history=False)
     cbar = fig.colorbar(cmap, cax=cax)
     cbar.ax.tick_params(labelsize=20, direction='in', which='both', pad=14)
@@ -112,62 +136,78 @@ def plot_centrals(args, sim, reader, subcat, centrals, indices, massindex=-1,
     return
 
 
-def plot_halo(args, sim, reader, subcat, hostid, axes, massindex=-1,
-              output='', nsub=10, fig=None, show_label=False,
-              label_history=False):
+def make_halo_plot(args, sim, tracks, massindex=-1, includes_central=True,
+                   title=None, label_history=True, suffix=''):
     to = time()
-    print('HostID:', hostid)
-    cat = subcat.catalog
-    # find all subhalos in the same halo
-    central = (cat['TrackId'] == hostid)
-    central_hostid = cat['HostHaloId'][central]
-    halo = (cat['HostHaloId'] == central_hostid)
-    print_halo(cat[halo])
-    ranked = np.argsort(-cat[halo]['Mbound'])
-    ## central subhalo
-    read_and_plot_track(
-        args, axes, sim, reader, subcat, cat[halo], ranked[0], color='k',
-        lw=3, massindex=massindex, show_label=show_label,
-        show_history=True, label_history=label_history)
-    ## most massive satellite subhalos
-    # in case we're plotting more than 10
-    colors = np.arange(nsub) % 10
-    colors = np.array(['C{0}'.format(i) for i in colors])
-    read_and_plot_track(
-        args, axes, sim, reader, subcat, cat[halo], ranked[1:nsub+1],
-        massindex=massindex, show_history=True, label_host=True,
-        show_label=show_label, colors=colors, label_history=False)
-    if show_label:
-        axes[1].legend(
-            fontsize=12, bbox_to_anchor=(0.96,0.54), loc='upper right')
-    if output:
-        plt.subplots_adjust(**adjust_kwargs)
-        savefig(output, fig=fig, close=False, tight=False)
-    print('Plotted halo in {0:.2f} min'.format((time()-to)/60))
-    return
-
-
-def plot_halos(args, sim, reader, subcat, ids_central, massindex=-1, ncl=3,
-               show_title=True):
-    """Plot the evolution of a few massive subhalos in the most massive
-    halos"""
+    # this should include multiple clusters
+    if not hasattr(tracks[0], '__iter__'):
+        tracks = [tracks]
+    i0 = int(includes_central)
+    hostids = [t[-3] for t in tracks]
+    ncl = np.unique(hostids).size
+    nsub = [(hostids == i).sum() for i in np.unique(hostids)]
+    nsat = [n-includes_central for n in nsub]
+    # colors. Centrals are black; loop colors for satellites
+    colors = []
+    j = 0
+    n = 0
+    for i in range(len(tracks)):
+        #if j == sum(nsub[:i]):
+        if i == sum(nsub[:n]):
+            j = 0
+            n += 1
+            if includes_central:
+                colors.append('k')
+                continue
+        colors.append('C{0}'.format(j%10))
+        j += 1
     mname = sim.masslabel(index=massindex, latex=False)
-    output = 'track_{0}.pdf'.format(mname)
-    output = os.path.join(sim.plot_path, output)
-    title = '{0}: {1} most massive halos\n'.format(sim.formatted_name, ncl)
+    output = 'track_{0}'.format(mname)
+    if suffix:
+        output += '_{0}'.format(suffix)
+    output = os.path.join(sim.plot_path, '{0}.pdf'.format(output))
+    #title = '{0}: {1} most massive halos'.format(sim.formatted_name, ncl)
     fig, axes = plt.subplots(figsize=(14,5*(ncl+0.5)), ncols=2, nrows=ncl)
-    for i, row, hostid in zip(count(), axes, ids_central):
-        plot_halo(args, sim, reader, subcat, hostid, row, output=output,
-                  massindex=massindex, fig=fig,
-                  label_history='right' if (i==0) else False)
+    for i, row in enumerate(axes):
+        n = int(np.sum(nsub[:i]))
+        # the central track
+        if includes_central:
+            plot_track(
+                row, sim, tracks[n], massindex=massindex, color=colors[n],
+                label_history='right')
+        j = [n+i0+ii for ii in range(nsub[i]-i0)]
+        _ = [plot_track(
+                row, sim, tracks[ji], massindex=massindex, color=colors[ji])
+             for ji in j]
         setup_track_axes(
             row, sim, sim.cosmology, is_last_row=(i==len(axes)-1),
             masslabel=sim.masslabel(index=massindex, latex=True))
     rect = [0.03, 0.01, 0.99, 0.99]
-    if show_title:
+    if title:
         fig.suptitle(title)
         rect[3] -=  0.12/ncl
     savefig(output, fig=fig, rect=rect, w_pad=1.2)
+    print('    in {0:.1f} s'.format(time()-to))
+    return
+
+
+def plot_halos(args, sim, reader, subcat, ids_central, nsub=10,
+               title=None):
+    """Plot the evolution of a few massive subhalos in the most massive
+    halos"""
+    to = time()
+    ncl = len(ids_central)
+    idx = member_indices(args, subcat, ids_central, nsub=nsub)
+    idx = np.reshape(idx, -1)
+    # this is the expensive step. Need to figure out exactly what
+    # comes out but I think it should be a nested list with all the
+    # tracks, where the first dimension are the hosts
+    tracks = read_tracks(args, sim, reader, subcat.catalog, idx, nsub=nsub)
+    # (['gas', 'DM', 'disk', 'bulge', 'stars', 'BH']
+    # disk and bulge mass not included in EAGLE nor Apostle
+    # saves me about a minute
+    for massindex in (-1, 0, 1, 4, 5):
+        make_halo_plot(args, sim, tracks, massindex=massindex, title=title)
     return
 
 
@@ -178,6 +218,11 @@ def plot_track(axes, sim, track_data, massindex=-1,
     Make sure `massindex` is consistent with `read_track()`
     """
     trackid, t, Mt, rank, depth, icent, isat, iinf, hostid, th, Mh = track_data
+    if hasattr(massindex, '__iter__'):
+        pass
+    else:
+        Mt = Mt[massindex]
+        Mh = Mh[massindex]
     Mo = Mt[-1]
     if show_label:
         label = '{0}: {1:.2f} ({2}/{3})'.format(
@@ -189,12 +234,15 @@ def plot_track(axes, sim, track_data, massindex=-1,
 
     if show_history:
         for ax, m in zip(axes, [Mt,Mt/Mo]):
-            if isat is not None:
-                ax.plot(t[isat], m[isat], 'ws', mec=color, ms=12, mew=1.5,
-                        label=r'$t_\mathrm{sat}$')
             if icent is not None:
-                ax.plot(t[icent], m[icent], 'wo', mec=color, ms=12, mew=1.5,
+                ax.plot(t[icent], m[icent], 'ws', mec=color, ms=12, mew=1.5,
                         label=r'$t_\mathrm{cen}$')
+            if isat is not None:
+                ax.plot(t[isat], m[isat], 'wo', mec=color, ms=12, mew=1.5,
+                        label=r'$t_\mathrm{sat}$')
+            else:
+                ax.plot([], [], 'wo', mec=color, ms=12, mew=1.5,
+                        label=r'$t_\mathrm{sat}$')
             ax.plot(t[iinf], m[iinf], 'o', ms=7, color=color, mew=1.5,
                     label=r'$t_\mathrm{infall}$')
         if label_history:
@@ -208,7 +256,7 @@ def plot_track(axes, sim, track_data, massindex=-1,
         #axes[1].plot(th, Mh/Mh[-1], **host_kwargs)
         # some information on the host halo
         if label_host:
-            text = r'log ${1}$$_\mathrm{{,host}} = {0:.2f}$'.format(
+            text = r'log ${1}^\mathrm{{host}} = {0:.2f}$'.format(
                 np.log10(Mh[-1]),
                 sim.masslabel(index=massindex, latex=True))
             text += '\nHost ID = {0}'.format(hostid)
@@ -253,18 +301,64 @@ def read_and_plot_track(args, axes, sim, reader, subhalos, cat, indices,
     return
 
 
-def read_track(sim, reader, subhalos, cat, index, massindex=-1,
-               load_history=True, verbose=True):
-    trackid = cat['TrackId'][index]
+def read_tracks(args, sim, reader, cat, indices, nsub=10, sort_mass=True,
+                **kwargs):
+    """
+    if `sort_mass==True`, then tracks are sorted per host by final
+    total mass. Note that this assumes that tracks belonging to
+    each host are all together one after the other (will generalize
+    later)
+    """
+    if not hasattr(indices, '__iter__'):
+        indices = [indices]
+    to = time()
+    if args.ncores == 1:
+        tracks = \
+            [read_track(sim, reader, cat, i, **kwargs)[:-1]
+             for i in indices]
+    else:
+        tracks = [[] for _ in indices]
+        pool = mp.Pool(args.ncores)
+        # need to pass the indices this way so I can keep track of order
+        results = \
+            [pool.apply_async(
+                 read_track, args=(sim,reader,cat[indices],i),
+                 kwds=kwargs)
+             for i in range(len(indices))]
+        pool.close()
+        pool.join()
+        for out in results:
+            out = out.get()
+            tracks[out[-1]] = out[:-1]
+    print('Read all tracks in {0:.2f} minutes'.format((time()-to)/60))
+    #read_track output (last value not recorded):
+    #return trackid, t, Mt, rank, depth, icent, isat, iinf, \
+        #hostid, th, Mh, track_idx
+    to = time()
+    if sort_mass:
+        hostids = np.array([t[-3] for t in tracks])
+        nh = np.arange(hostids.size, dtype=int)
+        # this is the last value of the last Mt column
+        Mtot_now = np.array([t[2][-1][-1] for t in tracks])
+        for i in np.unique(hostids):
+            mask = (hostids == i)
+            aux = [tracks[m] for m in nh[mask]]
+            jsort = np.argsort(-Mtot_now[mask])
+            for j, k in enumerate(nh[mask]):
+                tracks[k] = aux[jsort[j]]
+    print('Sorted tracks in {0:.2f} s'.format(time()-to))
+    return tracks
+
+
+def read_track(sim, reader, cat, track_idx, load_history=True,
+               massindex=None, verbose=True):
+    trackid = cat['TrackId'][track_idx]
     ti = time()
     track = Track(reader.GetTrack(trackid), sim)
-    Mt = track.mass(index=massindex)
-    rank = track.track['Rank']
-    depth = track.track['Depth']
     if verbose:
         print('Loaded track #{2} (TrackID {0}) in {1:.2f} minutes'.format(
-            trackid, (time()-ti)/60, index))
-    t = track.lookback_time()
+            trackid, (time()-ti)/60, track_idx))
+    # this is what takes up all the time, especially the infall
     if load_history:
         # las moment it was a central
         icent = track.last_central_snapshot_index
@@ -276,11 +370,25 @@ def read_track(sim, reader, subhalos, cat, index, massindex=-1,
         icent = isat = iinf = None
     host = track.host(-1, return_value='track')
     host = Track(host, sim)
+    t = track.lookback_time()
     th = host.lookback_time()
-    Mh = host.mass(index=massindex)
+    if massindex is None:
+        Mt = [track.mass(index=i) for i in range(6)]
+        Mt.append(track.mass(index=-1))
+        Mt = np.array(Mt)
+        Mh = [host.mass(index=i) for i in range(6)]
+        Mh.append(host.mass(index=-1))
+        Mh = np.array(Mh)
+    else:
+        Mt = track.mass(index=massindex)
+        Mh = host.mass(index=massindex)
+    #print('Mt =', Mt.shape)
+    #print(
+    rank = track.track['Rank']
+    depth = track.track['Depth']
     hostid = host.trackid
     return trackid, t, Mt, rank, depth, icent, isat, iinf, \
-        hostid, th, Mh, index
+        hostid, th, Mh, track_idx
 
 
 def print_halo(halo, mmin=10):

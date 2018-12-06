@@ -1086,7 +1086,8 @@ class Track(BaseSubhalo):
         # once we've reached the minimum range allowed above,
         # we just do backwards brute-force
         for isnap in range(imax, imin-1, -1):
-            subs = self.reader.LoadSubhalos(isnap)
+            subs = self.reader.LoadSubhalos(
+                isnap, ['TrackId','HostHaloId'])
             if len(subs) == 0:
                 iinf_backward = 0
                 break
@@ -1098,7 +1099,7 @@ class Track(BaseSubhalo):
                 iinf_backward = 0
                 break
             elif self.trackid not in sib:
-                iinf_backward = isnap - self.sim.snapshots.max() - 1
+                iinf_backward = isnap - self.sim.snapshots.max()
                 break
         else:
             iinf_backward = 0
