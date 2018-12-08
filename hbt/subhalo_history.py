@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 from astropy.cosmology import FlatLambdaCDM
+from astropy.io import fits
+from astropy.units import Quantity
 from glob import glob
 from itertools import count
 from matplotlib import pyplot as plt, ticker, rcParams
@@ -56,31 +58,37 @@ def main():
     # should not count on them being sorted by mass
     ids_cent = subs.centrals['TrackId']
 
-    do_plot_centrals = False
+    do_plot_centrals = True
     if do_plot_centrals:
-        n = 10
+        n = 20
         print('Plotting centrals...')
         to = time()
         title = '{1}: {0} most massive central subhalos'.format(
             n, sim.formatted_name)
         plot_centrals(
             args, sim, reader, subs, subs.centrals, rank['Mbound'][:n],
-            #title=None)
-            title=title)
+            suffix=n, title=None)
+            #title=title)
         print('Finished plot_centrals in {0:.2f} minutes'.format(
             (time()-to)/60))
 
-    print()
-    print('Plotting halos...')
-    to = time()
-    # total, gas, halo, stars
-    # ['gas', 'DM', 'disk', 'bulge', 'stars', 'BH']
-    ti = time()
-    plot_halos(
-        args, sim, reader, subs, subs.centrals['TrackId'][rank['Mbound'][:3]])
-    #print('Plotted mass #{0} in {1:.2f} minutes'.format(
-        #massindex, (time()-to)/60))
-    print('Finished plot_halos in {0:.2f} minutes'.format((time()-to)/60))
+    do_plot_halos = False
+    if do_plot_halos:
+        print()
+        print('Plotting halos...')
+        to = time()
+        # total, gas, halo, stars
+        # ['gas', 'DM', 'disk', 'bulge', 'stars', 'BH']
+        ti = time()
+        j = rank['Mbound'][:3]
+        suff = np.median(subs.centrals['Mbound'][j])
+        suff = '{0:.2f}'.format(suff).replace('.', 'p')
+        plot_halos(args, sim, reader, subs,
+                   subs.centrals['TrackId'][j], suffix=suff)
+        #print('Plotted mass #{0} in {1:.2f} minutes'.format(
+            #massindex, (time()-to)/60))
+        print('Finished plot_halos in {0:.2f} minutes'.format((time()-to)/60))
+
     return
 
 
@@ -111,7 +119,7 @@ def member_indices(args, subcat, host_ids, nsub=10):
 
 
 def plot_centrals(args, sim, reader, subcat, centrals, indices, massindex=-1,
-                  title='Central subhalos'):
+                  suffix=None, title='Central subhalos'):
     # another option is to create more than one gridspec, see
     # https://matplotlib.org/users/tight_layout_guide.html
     # but I've wasted enough time here for now
@@ -122,17 +130,20 @@ def plot_centrals(args, sim, reader, subcat, centrals, indices, massindex=-1,
     if title:
         fig.suptitle(title)
     cscale, cmap = colorscale(10+np.log10(centrals['Mbound'][indices]))
-    read_and_plot_track(
+    track_data = read_and_plot_track(
         args, axes, sim, reader, subcat, centrals, indices,
         show_history=False, label_host=False, show_label=False,
         colors=cscale, label_history=False)
+    save_tracks(track_data, 'track_centrals', sim, massindex, suffix)
     cbar = fig.colorbar(cmap, cax=cax)
     cbar.ax.tick_params(labelsize=20, direction='in', which='both', pad=14)
     clabel = sim.masslabel(mtype='total')
     cbar.set_label(r'log ${0}$ ($z=0$)'.format(clabel))#, fontsize=20)
     setup_track_axes(axes, sim, sim.cosmology)
-    output = os.path.join(sim.plot_path, 'track_centrals.pdf')
-    savefig(output, fig=fig, rect=[0,0,1,0.9])
+    output = os.path.join(sim.plot_path, 'track_centrals')
+    if suffix:
+        output += '_{0}'.format(suffix)
+    savefig('{0}.pdf'.format(output), fig=fig, rect=[0,0,1,0.95])
     return
 
 
@@ -152,7 +163,6 @@ def make_halo_plot(args, sim, tracks, massindex=-1, includes_central=True,
     j = 0
     n = 0
     for i in range(len(tracks)):
-        #if j == sum(nsub[:i]):
         if i == sum(nsub[:n]):
             j = 0
             n += 1
@@ -192,22 +202,20 @@ def make_halo_plot(args, sim, tracks, massindex=-1, includes_central=True,
 
 
 def plot_halos(args, sim, reader, subcat, ids_central, nsub=10,
-               title=None):
-    """Plot the evolution of a few massive subhalos in the most massive
-    halos"""
+               title=None, suffix=None):
+    """Plot the evolution of a few massive subhalos in a set of halos"""
     to = time()
     ncl = len(ids_central)
     idx = member_indices(args, subcat, ids_central, nsub=nsub)
     idx = np.reshape(idx, -1)
-    # this is the expensive step. Need to figure out exactly what
-    # comes out but I think it should be a nested list with all the
-    # tracks, where the first dimension are the hosts
+    # this is the expensive step
     tracks = read_tracks(args, sim, reader, subcat.catalog, idx, nsub=nsub)
-    # (['gas', 'DM', 'disk', 'bulge', 'stars', 'BH']
-    # disk and bulge mass not included in EAGLE nor Apostle
-    # saves me about a minute
+    # ['gas', 'DM', 'disk', 'bulge', 'stars', 'BH']
+    # disk and bulge mass not included in EAGLE nor Apostle; skipping
+    # saves a minute or two
     for massindex in (-1, 0, 1, 4, 5):
         make_halo_plot(args, sim, tracks, massindex=massindex, title=title)
+        save_tracks(tracks, 'track_halos', sim, massindex, suffix)
     return
 
 
@@ -273,32 +281,30 @@ def read_and_plot_track(args, axes, sim, reader, subhalos, cat, indices,
                         label_history=False, verbose=True, **kwargs):
     if not hasattr(indices, '__iter__'):
         indices = [indices]
-    read_kwargs = {'massindex': massindex, 'load_history': show_history,
-                   'verbose': verbose}
+    read_kwargs = {'load_history': show_history, 'verbose': verbose}
     if colors is None:
         colors = [color]*len(indices)
     if args.ncores == 1:
-        track_data = \
-            [read_track(sim, reader, subhalos, cat, i, **read_kwargs)[:-1]
-             for i in indices]
+        track_data = [read_track(sim, reader, cat, i, **read_kwargs)[:-1]
+                      for i in indices]
     else:
         track_data = [[] for _ in indices]
         pool = mp.Pool(args.ncores)
         # need to pass the indices this way so I can keep track of order
         results = \
-            [pool.apply_async(
-                read_track, args=(sim,reader,subhalos,cat[indices],i),
-                kwds=read_kwargs)
+            [pool.apply_async(read_track, args=(sim,reader,cat[indices],i),
+                              kwds=read_kwargs)
              for i in range(len(indices))]
         pool.close()
         pool.join()
         for out in results:
             out = out.get()
             track_data[out[-1]] = out[:-1]
-    _ = [plot_track(axes, sim, data, color=color, label_host=label_host,
-                    show_history=show_history, label_history=label_history)
-         for data, color in zip(track_data, colors)]
-    return
+    _ = [plot_track(axes, sim, data, massindex=massindex, color=color,
+                    label_host=label_host, show_history=show_history,
+                    label_history=label_history, zorder=indices.size+1-i)
+         for i, data, color in zip(count(), track_data, colors)]
+    return track_data
 
 
 def read_tracks(args, sim, reader, cat, indices, nsub=10, sort_mass=True,
@@ -367,7 +373,7 @@ def read_track(sim, reader, cat, track_idx, load_history=True,
         # infall
         iinf = track.infall('index')
     else:
-        icent = isat = iinf = None
+        icent = isat = iinf = track._none_value
     host = track.host(-1, return_value='track')
     host = Track(host, sim)
     t = track.lookback_time()
@@ -407,6 +413,60 @@ def print_halo(halo, mmin=10):
     return
 
 
+def save_tracks(track_data, output, sim=None, massindex=None, suffix=None):
+    """Save track information to file
+
+    Parameters
+    ----------
+    track_data : list
+        output(s) of one or more runs of `read_track`
+    """
+    if output[-5:] == '.fits':
+        output = output[:-5]
+    if suffix is not None:
+        output += '_{0}'.format(suffix)
+    if sim is not None:
+        if massindex is not None:
+            output += '_{0}'.format(
+                sim.masslabel(index=massindex, latex=False))
+        output = os.path.join(sim.data_path, output)
+    output += '.fits'
+    if not hasattr(track_data[0], '__iter__'):
+        track_data = [track_data]
+    ntracks = len(track_data)
+    nval = len(track_data[0])
+    nsnap = sim.snapshots.size
+    # "transpose"
+    track_data = [[t[i] for t in track_data] for i in range(nval)]
+    # should record all mass types - all of them are part of
+    # track_data so just need to separate them here. Right?
+    farr = '{0}E'.format(nsnap)
+    names = ['TrackId', 't_lookback', 'Mt', 'Rank', 'Depth', 'i_cen',
+             'i_sat', 'i_infall', 'TrackId_host', 't_lookback_host',
+             'Mt_host']
+    fmts = ['J', farr, farr, 'I', 'I', 'I', 'I', 'I', 'J', farr, farr]
+    columns = []
+    for name, fmt, col in zip(names, fmts, track_data):
+        if name[:2] == 'Mt':
+            col = [np.transpose(c) for c in col]
+            name = \
+                [name.replace('Mt', sim.masslabel(index=i, latex=False))
+                 for i in range(-1, 6)]
+        else:
+            if not hasattr(col[0], '__iter__'):
+                col = np.array([col])
+            name = [name]
+        for i, c, n in zip(count(), col, name):
+            if isinstance(c, Quantity):
+                c = c.value
+            if np.any(c):
+                columns.append(fits.Column(name=n, array=c, format=fmt))
+    fitstbl = fits.BinTableHDU.from_columns(columns)
+    fitstbl.writeto(output)
+    print('Saved to', output)
+    return
+
+
 def summarize_array(array, name, **kwargs):
     print('{0}: (min,max)=({1},{2}); size={3}'.format(
         name, array.min(), array.max(), array.size), **kwargs)
@@ -423,15 +483,15 @@ def title_axis(title, rows=10):
     return rows
 
 
-def setup_track_axes(axes, sim, lookback_cosmo=False, textcolor='0.3',
-                     masslabel=r'M_\mathrm{total}', is_last_row=True):
+def setup_track_axes(axes, sim, lookback_cosmo=False, zmarks=[0.1,0.5,1,2,5],
+                     textcolor='0.3', masslabel=r'M_\mathrm{total}',
+                     is_last_row=True):
     if isinstance(lookback_cosmo, FlatLambdaCDM):
         x = 't'
         xlabel = 'lookback time (Gyr)'
         xlim = (14.5, -0.5)
         tickspace = 4
-        zmark = [0.1, 0.5, 1, 5]
-        tmark = [lookback_cosmo.lookback_time(z).value for z in zmark]
+        tmarks = [lookback_cosmo.lookback_time(z).value for z in zmarks]
     else:
         x = 'z'
         xlabel = 'Redshift'
@@ -452,7 +512,7 @@ def setup_track_axes(axes, sim, lookback_cosmo=False, textcolor='0.3',
         else:
             ax.set_xticklabels([])
         if lookback_cosmo:
-            for z, t in zip(zmark, tmark):
+            for z, t in zip(zmarks, tmarks):
                 ax.axvline(t, dashes=(4,4), lw=1, color=textcolor)
                 # in order to do this, need to know plot limits...
                 ax.annotate(

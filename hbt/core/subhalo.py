@@ -25,6 +25,7 @@ class BaseDataSet(object):
     def __init__(self, catalog, as_dataframe=True):
         self._catalog = catalog
         self._as_dataframe = as_dataframe
+        self._none_value = 999
 
     ### private properties ###
 
@@ -867,12 +868,10 @@ class Track(BaseSubhalo):
         self._trackid = self.track['TrackId']
         self.hostid = np.array(self.track['HostHaloId'])
         self.current_hostid = self.hostid[-1]
-        self._first_satellite_snapshot = None
-        self._first_satellite_snapshot_index = None
-        self._infall_snapshot = None
-        self._infall_snapshot_index = None
-        self._last_central_snapshot = None
-        self._last_central_snapshot_index = None
+        self._first_satellite_snapshot = self._none_value
+        self._first_satellite_snapshot_index = self._none_value
+        self._last_central_snapshot = self._none_value
+        self._last_central_snapshot_index = self._none_value
         self._zcentral = None
         self._zinfall = None
 
@@ -883,9 +882,9 @@ class Track(BaseSubhalo):
         """
         If the track has never been a satellite, this will remain None
         """
-        if self.first_satellite_snapshot_index is None:
-            return
-        if self._first_satellite_snapshot is None:
+        if self.first_satellite_snapshot_index == self._none_value:
+            return self._none_value
+        if self._first_satellite_snapshot == self._none_value:
             self._first_satellite_snapshot = \
                 self.track['Snapshot'][self.first_satellite_snapshot_index]
         return self._first_satellite_snapshot
@@ -895,7 +894,7 @@ class Track(BaseSubhalo):
         """
         If the track has never been a satellite, this will remain None
         """
-        if self._first_satellite_snapshot_index is None:
+        if self._first_satellite_snapshot_index == self._none_value:
             sat = (self.track['Rank'] > 0)
             if sat.sum() > 0:
                 self._first_satellite_snapshot_index = self._range[sat][0]
@@ -911,9 +910,9 @@ class Track(BaseSubhalo):
         """
         If the track has never been a central, this will remain None
         """
-        if self.last_central_snapshot_index is None:
-            return
-        if self._last_central_snapshot is None:
+        if self.last_central_snapshot_index == self._none_value:
+            return self._none_value
+        if self._last_central_snapshot == self._none_value:
             self._last_central_snapshot = \
                 self.track['Snapshot'][self.last_central_snapshot_index]
         return self._last_central_snapshot
@@ -923,7 +922,7 @@ class Track(BaseSubhalo):
         """
         If the track has never been a central, this will remain None
         """
-        if self._last_central_snapshot_index is None:
+        if self._last_central_snapshot_index == self._none_value:
             cent = (self.track['Rank'] == 0)
             if cent.sum() > 0:
                 self._last_central_snapshot_index = self._range[cent][-1]
