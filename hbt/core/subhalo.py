@@ -1,6 +1,8 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
+from astropy.io import fits
+from astropy.table import Table
 import h5py
 from itertools import combinations, count
 import matplotlib.pyplot as plt
@@ -11,13 +13,11 @@ import pandas as pd
 import six
 import sys
 from time import time
+import warnings
 
 from HBTReader import HBTReader
 
 from .simulation import BaseSimulation, Simulation
-
-# my code
-from stattools import Cbi, Sbi
 
 
 class BaseDataSet(object):
@@ -187,7 +187,7 @@ class BaseSubhalo(BaseDataSet):
         if value == 'velocity':
             return vcol(ax)
 
-    def dcol(self, ax=''):
+    def dcol(self, ax='', frame='Physical'):
         """Distance column name
 
         Parameters
@@ -201,9 +201,9 @@ class BaseSubhalo(BaseDataSet):
         dcol : str
             distance column name
         """
-        return 'Comoving{0}Distance{1}'.format(self.pvref, ax)
+        return '{2}{0}Distance{1}'.format(self.pvref, ax, frame.capitalize())
 
-    def dcols(self, ndim=1):
+    def dcols(self, ndim=1, frame='Physical'):
         """Distance column names
 
         Parameters
@@ -213,8 +213,8 @@ class BaseSubhalo(BaseDataSet):
         """
         assert ndim in (1, 2, 3)
         if ndim == 3:
-            return self.dcol()
-        return [self.dcol(''.join(plane))
+            return self.dcol(frame=frame)
+        return [self.dcol(''.join(plane), frame=frame)
                 for plane in combinations('012', ndim)]
 
     def dlabel(self, ax=''):
@@ -229,13 +229,13 @@ class BaseSubhalo(BaseDataSet):
     def distance(self, ax=''):
         return self.catalog[self.dcol(ax=ax)]
 
-    def pcol(self, ax):
+    def pcol(self, ax, frame='Comoving'):
         assert int(ax) in [0,1,2]
-        return 'Comoving{0}Position{1}'.format(self.pvref, ax)
+        return '{2}{0}Position{1}'.format(self.pvref, ax, frame)
 
-    def pcols(self):
+    def pcols(self, frame='Comoving'):
         """All position column names"""
-        return [self.pcol(i) for i in range(3)]
+        return [self.pcol(i, frame) for i in range(3)]
 
     def plabel(self, ax):
         return self._get_ax1d_label(ax)
@@ -362,7 +362,8 @@ class Subhalos(BaseSubhalo):
     """
 
     def __init__(self, catalog, sim, isnap,
-                 logMmin=8.5, as_dataframe=True, exclude_non_FoF=True,
+                 logMmin=9, logM200Mean_min=12, as_dataframe=True,
+                 exclude_non_FoF=True,
                  load_hosts=True, load_distances=True, load_velocities=True):
         """
         Parameters
@@ -389,13 +390,21 @@ class Subhalos(BaseSubhalo):
         print('{0} objects in the full catalog'.format(
             catalog['TrackId'].size))
         self.exclude_non_FoF = exclude_non_FoF
-        self.non_FoF = (self.catalog['HostHaloId'] == -1)
+        self.non_FoF = (self.catalog['HostHaloId'] == -1)# \
+                        #| np.isnan(self.catalog['HostHaloId']))
         if self.exclude_non_FoF:
             print('Excluding {0} non-FoF subhalos'.format(self.non_FoF.sum()))
             self._catalog = self.catalog[~self.non_FoF]
         if 'Mbound' in self.colnames:
             self.logMmin = logMmin
             self._catalog = self.catalog[self.mass('total') > 10**self.logMmin]
+        else:
+            self.logMmin = 0
+            warnings.warn('No Mbound column. Not applying Mbound cut')
+        if 'M200Mean' in self.colnames:
+            self.logM200Mean_min = logM200Mean_min
+            mask = (self.catalog['M200Mean'] > 10**self.logM200Mean_min)
+            self._catalog = self.catalog[mask]
         if 'Nbound' in self.colnames:
             if self.as_dataframe:
                 self.catalog['IsDark'] = (self.nbound('stars') == 0)
@@ -404,6 +413,13 @@ class Subhalos(BaseSubhalo):
                     self.catalog, 'IsDark', (self.nbound('stars') == 0))
         self.isnap = isnap
         #self.redshift = self.redshift[self.isnap]
+        self._central_idx = None
+        self._central_mask = None
+        self._centrals = None
+        self._orphan = None
+        self._satellite_idx = None
+        self._satellite_mask = None
+        self._satellites = None
         self._has_host_properties = False
         self._has_distances = False
         self._has_velocities = []
@@ -416,16 +432,10 @@ class Subhalos(BaseSubhalo):
         self.load_distances = load_distances
         self.load_velocities = load_velocities
         if self.load_distances:
-            self.distance2host()
+            #self.distance2host('Physical')
+            self.distance2host('Comoving')
         if self.load_velocities:
             self.host_velocities()
-        self._central_idx = None
-        self._central_mask = None
-        self._centrals = None
-        self._orphan = None
-        self._satellite_idx = None
-        self._satellite_mask = None
-        self._satellites = None
 
     ### attributes ###
 
@@ -472,7 +482,7 @@ class Subhalos(BaseSubhalo):
 
     ### methods ###
 
-    def distance2host(self, verbose=True):
+    def distance2host(self, frame='Physical', verbose=True):
         """Calculate the distance of all subhalos to the center of
         their host
 
@@ -485,37 +495,59 @@ class Subhalos(BaseSubhalo):
             distances to host in Mpc, in 3d or along the given
             projection
         """
-        if self._has_distances:
-            print('Distances already calculated')
-            return
+        #if self._has_distances:
+            #print('Distances already calculated')
+            #return
         print('Calculating distances...')
         input_fmt = self.as_dataframe
         self.as_dataframe = True
         # alias
         sub = self.catalog
-        columns = list(np.append(self.pcols(), 'HostHaloId'))
+        columns = list(np.append(self.pcols(), ['HostHaloId','Rank']))
         to = time()
         hosts = sub[columns].join(
-            sub[columns][sub['Rank'] == 0],#.set_index('HostHaloId'),
+            sub[columns][sub['Rank'] == 0].set_index('HostHaloId'),
             on='HostHaloId', rsuffix='_h')
+        print('hosts:', np.sort(hosts.columns))
+        j = (hosts['HostHaloId'] > 100) & (hosts['HostHaloId'] <= 102)
+        print('j =', j.sum())
+        """
+        tbl = Table.from_pandas(hosts[j])
+        cols = [fits.Column(name=key, array=tbl[key]) for key in tbl.colnames]
+        hdu = fits.BinTableHDU.from_columns(cols)
+        hdu.writeto('test_hosthalo.fits')
+        """
         print('Joined hosts in {0:.2f} min'.format((time()-to)/60))
         # 1d
         ti = time()
-        for dcol, pcol in zip(self.dcols(1), self.pcols()):
-            self.catalog[dcol] = np.absolute(hosts[pcol] - hosts[pcol+'_h'])
+        print('1d:')
+        print(self.pcols())
+        for dcol, pcol in zip(self.dcols(1, frame), self.pcols(frame)):
+            print(dcol, pcol)
+            self.catalog[dcol] = ((hosts[pcol] - hosts[pcol+'_h'])**2)**0.5
+            print('percentiles:', np.percentile(self.satellites[dcol],
+                  [0,1,25,50,99,100]))
+        #print(hosts[['HostHaloId','HostHaloId_h','Rank','Rank_h']][j])
+        #print(hosts[['ComovingMostBoundPosition0'[j])
         print('1d distances in {0:.2f} s'.format(time()-ti))
         # 2d
         ti = time()
-        for dcol in self.dcols(2):
-            dcols = [self.dcol(dcol[-i]) for i in (2,1)]
+        for dcol in self.dcols(2, frame):
+            dcols = [self.dcol(dcol[-i], frame) for i in (2,1)]
             self.catalog[dcol] = np.sum(
                 self.catalog[dcols]**2, axis=1)**0.5
+            print(dcol)
+            print('percentiles:', np.percentile(self.satellites[dcol],
+                  [0,1,25,50,99,100]))
         print('2d distances in {0:.2f} s'.format(time()-ti))
         # 3d
         ti = time()
-        self.catalog[self.dcol()] = np.sum(
-            self.catalog[self.dcols()]**2, axis=1)**0.5
+        self.catalog[self.dcol(frame=frame)] = np.sum(
+            self.catalog[self.dcols(frame=frame)]**2, axis=1)**0.5
         print('3d distances in {0:.2f} s'.format(time()-ti))
+        print('percentiles:',
+              np.percentile(self.satellites[self.dcol(frame=frame)],
+              [0,1,25,50,99,100]))
         if verbose:
             print('Calculated distances in {0:.2f} s'.format(time()-to))
         self.as_dataframe = input_fmt

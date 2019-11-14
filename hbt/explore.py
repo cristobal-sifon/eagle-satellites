@@ -11,10 +11,17 @@ update_rcParams()
 
 from HBTReader import HBTReader
 
+from core import hbt_tools
+from core.simulation import Simulation
+
+
+args = hbt_tools.parse_args()
 
 #path_hbt = '/cosma/home/jvbq85/data/HBT/data/eagle/L0100N1504/subcat'
 #path_hbt = '/cosma/home/jvbq85/data/HBT/data/apostle/V1_LR/subcat'
-path_hbt = '/cosma/home/jvbq85/data/HBT/data/apostle/V1_MR/subcat'
+#path_hbt = '/cosma/home/jvbq85/data/HBT/data/apostle/V1_MR/subcat'
+sim = Simulation(args.simulation)
+path_hbt = sim.path
 
 plot_path = os.path.join('plots', '_'.join(path_hbt.split('/')[-3:-1]))
 if not os.path.isdir(plot_path):
@@ -73,7 +80,8 @@ def make_hist_sub(column, ax, bins=50, log=False, log_hist=True):
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
 columns = ('Mbound', 'Nbound', 'LastMaxMass', 'SnapshotIndexOfLastMaxMass',
-           'SnapshotIndexOfLastIsolation')
+           'SnapshotIndexOfLastIsolation', 'PhysicalMostBoundDistance',
+           'ComovingMostBoundDistance')
 log = (True, True, True, False, False)
 ncol = len(columns)
 fig, axes = plt.subplots(figsize=(5*ncol,4), ncols=ncol)
