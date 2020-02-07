@@ -51,5 +51,17 @@
 {van Uitert} E.,  et~al., 2016, \mn@doi [\mnras] {10.1093/mnras/stw747}, \href
   {http://adsabs.harvard.edu/abs/2016MNRAS.tmp..601V} {}
 
+\bibitem[\protect\citeauthoryear{{van den Bosch} \& {Ogiya}}{{van den Bosch} \&
+  {Ogiya}}{2018}]{vdbosch18_nbody}
+{van den Bosch} F.~C.,  {Ogiya} G.,  2018, \mn@doi [\mnras]
+  {10.1093/mnras/sty084}, \href
+  {http://adsabs.harvard.edu/abs/2018MNRAS.475.4066V} {475, 4066}
+
+\bibitem[\protect\citeauthoryear{{van den Bosch}, {Ogiya}, {Hahn}  \&
+  {Burkert}}{{van den Bosch} et~al.}{2018}]{vdbosch18_analytic}
+{van den Bosch} F.~C.,  {Ogiya} G.,  {Hahn} O.,   {Burkert} A.,  2018, \mn@doi
+  [\mnras] {10.1093/mnras/stx2956}, \href
+  {http://adsabs.harvard.edu/abs/2018MNRAS.474.3043V} {474, 3043}
+
 \makeatother
 \end{thebibliography}

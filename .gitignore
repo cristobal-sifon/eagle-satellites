@@ -1,4 +1,5 @@
-#data
+data/
+subcat/
 
 # Backup files
 *~
