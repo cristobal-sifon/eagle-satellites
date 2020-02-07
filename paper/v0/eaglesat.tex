@@ -43,6 +43,7 @@
 
 \newcommand{\msub}{m_\mathrm{sub}}
 \newcommand{\Mhost}{M_\mathrm{host}}
+\newcommand{\mstar}{m_\star}
 \newcommand{\Msun}{\mathrm{M}_\odot}
 \newcommand{\Mtotal}{M_\mathrm{total}}
 \newcommand{\mtwo}{M_\mathrm{200m}}
@@ -120,7 +121,7 @@ We explore the mass content of cluster galaxies in the \eagle\ cosmological hydr
 
 \section{Introduction}
 
-Over time, galaxies evolvoe and co-evolve as they are pulled together by gravity and form larger gravitationally-bound systems such as groups and clusters of galaxies, and eventually merge into larger galaxies. This hierarchical formation scenario is widely supported by simulations of structure formation \citep[e.g.,][]{?} and observations \citep[e.g.,][]{?}. Galaxies, in turn, reside in dark matter subhaloes, which interact gravitationally to form ever larger subhaloes and haloes (where subhaloess
+Over time, galaxies evolve and co-evolve as they are pulled together by gravity and form larger gravitationally-bound systems such as groups and clusters of galaxies, and eventually merge into larger galaxies. This hierarchical formation scenario is widely supported by simulations of structure formation \citep[e.g.,][]{?} and observations \citep[e.g.,][]{?}. Galaxies, in turn, reside in dark matter subhaloes, which interact gravitationally to form ever larger subhaloes and haloes (where subhaloess
 
 In this paper, we study the demographics and evolution of satellite galaxies and their host haloes in detail, paying particular attention to the transfer of mass from galaxies to their host groups and clusters, 
 
@@ -161,7 +162,7 @@ We show the mass functions for subhaloes and galaxies in \Cref{f:massfunction}.
 
 \begin{figure}
   \centerline{\includegraphics[width=\linewidth]{nmsub.pdf}}
-  \caption{Total mass function of central (cyan) and satellite (black) subhaloes (dashed) and galaxies (solid). The thinner, colored lines show the satellite subhalo mass function split into different host halo masses. The rapid drop in each colored curve happens as subhalo masses approach their host halo mass, as the latter is always larger. \comment{Our analysis throughout refers to subhaloes with $\log\msub\geq9.7$, identified by the vertical dotted line.} Here, $\Mhost=\mtwo$.}
+  \caption{Total mass function of central (cyan) and satellite (black) subhaloes (dashed) and galaxies (solid). The thinner, colored lines show the satellite subhalo mass function split into different host halo masses. The rapid drop in each colored curve happens as subhalo masses approach their host halo mass, as the latter is always larger. \comment{Our analysis throughout refers to subhaloes with $\log\msub\geq10.0$, identified by the vertical dotted line.} Here, $\Mhost=\mtwo$.}
   \label{f:massfunction}
 \end{figure}
 
@@ -192,15 +193,49 @@ We show the mass functions for subhaloes and galaxies in \Cref{f:massfunction}.
 
 \subsection{The relations between total and stellar mass}
 
-\Cref{f:shmr_now} shows the stellar-to-halo mass relation (SHMR) and the halo-to-stellar mass relation (HSMR)\footnote{Note that due to intrinsic scatter, one cannot be obtained by simply inverting the other.} Central and satellite galaxies clearly follow different relations. This result has been seen for a long time in simulations and originates in the severe tidal stripping suffered by satellite galaxies (moreover, with time, some of the stripped mass will be accreted by the central subhalo).
+\Cref{f:shmr_now} shows the stellar-to-halo mass relation (SHMR) and the halo-to-stellar mass relation (HSMR)\footnote{Note that due to intrinsic scatter, one cannot be obtained by simply inverting the other.} Central and satellite galaxies clearly follow different relations. This result has been seen for a long time in simulations and originates in the severe tidal stripping suffered by satellite galaxies (moreover, with time, some of the stripped mass will be accreted by the central subhalo). The ratio between the relations for centrals and satellites is approximately constant in both stellar mass (for the HSMR) and subhalo mass (for the SHMR),
+\begin{align}\label{eq:relation_ratios}
+  \Mtotal^\mathrm{sub}(\mstar) 
+      &= \upsilon_\mathrm{HSMR}(\mstar) \Mtotal^\mathrm{cen}(\mstar) \\
+  \log \upsilon(\mstar) &= XXX + YYY \log \mstar
+\end{align}
+and
 
-We also show two observational results for comparison: the central HSMR by \cite{vanuitert16}, and the satellite HSMR by \cite{sifon18_meneacs}. There is general agreement between the observational results and \eagle, with perhaps some evidence for larger total satellite masses at large stellar masses in EAGLE compared to observations, which \cite{sifon18_meneacs} showed is also seen in the \subfind\ subhalo catalogue of EAGLE \citep{}
 
-\Cref{f:shmr_mu} shows the dependence of the HSMR on host halo mass. As seen in the right panel, there is a slight dependence of the HSMR with host halo mass, with more massive haloes hosting satellites with a lower total-to-stellar mass ratio (i.e., a lower dark matter fraction). This can easily be understood by the effect of tidal stripping from the host halo, which is more severe in more massive hosts and affects dark matter more strongly than stellar mass \citep[e.g.,][]{}. The left panel shows the same relations but separated by the ratio of satellite-to-host mass,
+We also show two observational results for comparison: the central HSMR by \cite{vanuitert16}, and the satellite HSMR by \cite{sifon18_meneacs}. There is general agreement between the observational results and \eagle, with perhaps some evidence for larger total satellite masses at large stellar masses in EAGLE compared to observations, which \cite{sifon18_meneacs} showed is also seen in the \subfind\ subhalo catalogue of EAGLE \citep{}.
+
+\Cref{f:shmr_mu} shows the dependence of the HSMR on host halo mass. As seen in the right panel, there is a slight dependence of the HSMR with host halo mass, with more massive haloes hosting satellites with a lower total-to-stellar mass ratio (i.e., a lower dark matter fraction). This can easily be understood by the effect of tidal stripping from the host halo, which is more severe in more massive hosts and affects dark matter more strongly than stellar mass \citep[e.g.,][]{}. 
+
+In order for the EAGLE SHMR to be useful for halo model interpretations of lensing or clustering measurements, we fit the HSMR with a double power-law in total mass, modulated by host halo mass:
+\begin{equation}\label{eq:shmr_Mh}
+%  \msub(\mstar,\Mhost) 
+%    = m_0(\Mhost)
+%      \frac{\left(\mstar/m_1\right)^{\beta_\mathrm{s}^\star}}
+%           {\left[1+\left((\mstar/m_1\right)
+%                 {\beta_\mathrm{s}^\star-\gamma_\mathrm{s}^\star}\right]}
+  \mstar(\msub,\Mhost)
+    = m_{\star,0}^\mathrm{sub}(\Mhost)
+      \frac{\left(\msub/m_1^\mathrm{sub}\right)^{\beta_1^\mathrm{sub}}}
+           {\left[1+\left(\msub/m_1^\mathrm{sub}\right)\right]
+                 ^{\beta_1^\mathrm{sub}-\beta_2^\mathrm{sub}}
+           }
+\end{equation}
+where for simplicity we model $m_{\star,0}$ as a power law:
+%\begin{equation}\label{eq:m_0}
+% \log m_0(\Mhost) = a_\mathrm{h} + b_\mathrm{h}\log \Mhost \,.
+%\end{equation}
+\begin{equation}\label{eq:mstar_0}
+ \log m_{\star,0}^\mathrm{sub}(\Mhost) = a_\mathrm{0} + b_\mathrm{0}\log \Mhost \,.
+\end{equation}
+\comment{we would have to decouple this from the mass function in order to be consistent with the halo model. Can do this by fitting individual $\msub$s with this equation, though maybe too much?}
+\comment{We find that the following parameters represent the data well:}
+
+
+The left panel of \Cref{f:shmr_mu} shows the same relations but separated by the ratio of satellite-to-host mass,
 \begin{equation}\label{eq:mu}
   \mu \equiv \frac{\msub}{\Mhost} \,.
 \end{equation}
-The HSMR depends more strongly with $\mu$ than $\Mhost$ alone. \comment{Why?}
+The HSMR depends more strongly with $\mu$ than $\Mhost$ alone. Furthermore, we find that the HSMR flattens at smaller $\mu$. This
 
 \comment{To highlight this, we show the HSMR as a function of the distance from the subhaloes to the host halo centre of mass in \Cref{fig:hsmr_R}.}
 
@@ -253,6 +288,14 @@ Notes on \Cref{fig:track_Mtotal}.
 %  \end{itemize}
 \end{itemize}
 
+\subsection{The impact of tidal stripping on the relation between total and stellar mass}
+
+Possible plots:
+\begin{itemize}
+  \item HSMR for different redshifts
+  \item HSMR for different times-since-accretion
+\end{itemize}
+
 %\begin{figure*}
 %  \centerline{\includegraphics[width=\linewidth]{total_to_stellar_groups_and_clusters.pdf}}
 %\caption{The total-to-stellar mass relation of galaxies as a function of distance to their \emph{host} group (dashed lines), and as a function of their distance to the \emph{nearest} massive ($M_{200m}>10^{13}\,h^{-1}\,\Msun$) cluster (dotted lines), each normalized by the size of the group/cluster. The blue line shows the average total-to-stellar mass relation of all satellites belonging to all groups, and the black line shows the total-to-stellar mass relation of central galaxies. In the latter two, the respective shaded regions show the scatter in each.}
@@ -275,7 +318,11 @@ Notes on \Cref{fig:track_Mtotal}.
 %\end{enumerate}
 
 
-\section{Application to satellite lensing measurements}\label{s:lensing}
+%\section{Application to satellite lensing measurements}\label{s:lensing}
+%
+%This may be worth another paper where we look at more observational stuff: phase-space, ESD, etc
+
+
 
 
 \bibliographystyle{mnras}
