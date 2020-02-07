@@ -356,7 +356,7 @@ def plot_massfunction(sim, subs, hostmass='M200Mean'):
 
 
 def plot_shmr_fmass(sim, subs, shsmr=None, chsmr=None, hostmass='M200Mean',
-                    show_hist=True, bincol=None, bins=None):
+                    show_hist=True, bincol=None, bins=8):
     """Plot the SHMR and HSMR
 
     ``bincol`` and ``bins`` allow the relations to be binned in a
@@ -369,45 +369,40 @@ def plot_shmr_fmass(sim, subs, shsmr=None, chsmr=None, hostmass='M200Mean',
     mbins, m, mlim = binning(sim, mtype='total')
     msbins, ms, mslim = binning(sim, mtype='stars')
     logms = np.log10(ms)
-    mu = mtot / mhost
     mubins, xmu, mulim = binning(xmin=-5, xmax=0, n=10, log=True)
     mhbins, mh, mhlim = binning(xmin=10, xmax=14.5, n=9, log=True)
+    if bincol is not None:
+        if bincol == 'mu':
+            xbin = mtot / mhost
+        else:
+            xbin = subs.catalog[bincol]
+        if not np.iterable(bins):
+            j = np.isfinite(xbin)
+            bins = np.linspace(xbin[j].min(), xbin[j].max(), bins+1)
     # completeness limit
     msmin = 7.5
     jms = (ms >= 10**msmin)
 
     extent = [np.append(mlim, mslim), np.append(mslim, mlim)]
     lw = 4
-    fig, axes = plt.subplots(figsize=(16,6), ncols=2)
-    ax = axes[0]
-    # hsmr as a function of mu
-    colors, cmap = colorscale(array=np.log10(xmu))
-    hsmr_mu = binnedstat_dd(
-        [mu[gsat], mstar[gsat]], mtot[gsat], 'mean', [mubins,msbins])
-    hsmr_mu = hsmr_mu.statistic
-    for i in range(xmu.size):
-        ax.plot(logms[jms], np.log10(hsmr_mu[i,jms]), '-', color=colors[i],
-                lw=4)
-    cbar = plt.colorbar(cmap, ax=ax)
-    cbar.set_label(r'log $M_\mathrm{total}/M_\mathrm{host}$')
-    cbarticks = np.arange(
-        np.log10(mubins[0]), np.log10(mubins[-1])+0.1, 1, dtype=int)
-    cbar.ax.set_yticks(cbarticks)
-    # as a function of Mhost
-    ax = axes[1]
-    colors, cmap = colorscale(array=np.log10(mh))
-    hsmr_mhost = binnedstat_dd(
-        [mhost[gsat], mstar[gsat]], mtot[gsat], 'mean', [mhbins,msbins])
-    hsmr_mhost = hsmr_mhost.statistic
+    # as a function of third variable
+    fig, ax = plt.subplots(figsize=(8,6))
+    colors, cmap = colorscale(array=bins)
+    # fix bins here
+    hsmr_binned = binnedstat_dd(
+        [xbin[gsat], mstar[gsat]], mtot[gsat], 'mean', [mhbins,msbins])
+    hsmr_binned = hsmr_binned.statistic
     for i in range(mh.size):
-        ax.plot(logms[jms], np.log10(hsmr_mhost[i,jms]), '-', color=colors[i],
+        ax.plot(logms[jms], np.log10(hsmr_binned[i,jms]), '-', color=colors[i],
                 lw=4, zorder=2*mh.size-i)
     cbar = plt.colorbar(cmap, ax=ax)
-    cbar.set_label(r'log $M_\mathrm{host}$')
-    cbarticks = np.arange(
-        np.log10(mhbins[0]), np.log10(mhbins[-1])+0.1, 1, dtype=int)
-    cbar.ax.set_yticks(cbarticks)
+    #cbar.set_label(r'log $M_\mathrm{host}$')
+    cbar.set_label(bincol)
+    #cbarticks = np.arange(
+        #np.log10(mhbins[0]), np.log10(mhbins[-1])+0.1, 1, dtype=int)
+    #cbar.ax.set_yticks(cbarticks)
     # compare to overall and last touches
+    """
     for ax in axes:
         if shsmr is not None:
             plot_line(
@@ -422,8 +417,9 @@ def plot_shmr_fmass(sim, subs, shsmr=None, chsmr=None, hostmass='M200Mean',
         ax.set_ylabel(r'$\log\,{0}$'.format(sim.masslabel(mtype='total')))
         #ax.set_xlim(mslim)
         #ax.set_ylim(mlim)
-    #save_plot(fig, 'shmr_{0}'.format(bincol), sim)
-    save_plot(fig, 'shmr_mu', sim)
+    """
+    save_plot(fig, 'shmr_{0}'.format(bincol), sim)
+    #save_plot(fig, 'shmr_mu', sim)
     return
 
 
