@@ -1,25 +1,31 @@
 from astropy import units as u
 from astropy.io import ascii
 from astropy.table import Table
-from matplotlib import pyplot as plt
+from icecream import ic
+import matplotlib as mpl
+from matplotlib import pyplot as plt, ticker
+import multiprocessing as mp
 import numpy as np
 import os
 import pandas as pd
+from scipy.optimize import curve_fit
 from scipy.stats import (
     binned_statistic as binnedstat, binned_statistic_dd as binnedstat_dd)
 import sys
 from time import time
+from tqdm import tqdm
 if sys.version_info[0] == 2:
     range = xrange
 
 import lnr
-from plottools.plotutils import colorscale, savefig, update_rcParams
+from plottery.plotutils import colorscale, savefig, update_rcParams
 update_rcParams()
 
 from HBTReader import HBTReader
-from core import hbt_tools
-from core.simulation import Simulation
-from core.subhalo import HostHalos, Subhalos, Track
+from hbtpy import hbt_tools
+from hbtpy.hbt_tools import timer
+from hbtpy.simulation import Simulation
+from hbtpy.subhalo import HostHalos, Subhalos, Track
 
 
 ccolor = 'C9'
@@ -38,35 +44,40 @@ def main(debug=True):
 
     isnap = -1
     subs = reader.LoadSubhalos(isnap)
+    print('Loaded subhalos!')
 
-    wrap_plot(sim, subs, isnap)
+    wrap_plot(reader, sim, subs, isnap)
+    return
 
     return
 
 
-def wrap_plot(sim, subs, isnap, debug=True):
+def wrap_plot(reader, sim, subs, isnap, debug=True):
 
     subs = Subhalos(subs, sim, isnap, exclude_non_FoF=True)
     subhalos = subs.catalog
-    print('subs.catalog:')
-    print(np.sort(subs.colnames))
+    ic(np.sort(subs.colnames))
     print('{0} objects'.format(subs.catalog[subs.colnames[0]].size))
     print()
 
-    # plot phase-space
-    #norm = True
-    #fig, axes = plt.subplots(figsize=(14,10), ncols=2, nrows=2)
-    #axes = np.reshape(axes, -1)
-    #axes[0].set_title('3d')
-    #axes[0].plot(subs.distance(), 
+    # dark matter mass fraction as a function of time-since-infall
+    #plot_dmfrac(reader, sim, subs, 'tinfall')
 
+    # plot phase-space
+    #plot_rv(sim, subs)
+    #return
     #test_velocities(subs)
 
+    xbins = dict(
+        'ComovingMostBoundDistance': np.append(
+            np.arange(0, 0.51, 0.1), np.arange(1, 3.1, 0.5)),
+        )
+
     cshmr, sshmr, chsmr, shsmr = plot_shmr(sim, subs)
-    plot_shmr_fmass(sim, subs, shsmr=shsmr, chsmr=chsmr)
+    #plot_shmr_fmass(sim, subs, shsmr=shsmr, chsmr=chsmr)
     plot_shmr_fmass(
         sim, subs, bincol='ComovingMostBoundDistance',
-        bins=np.linspace(0, 3, 9))
+        bins=xbins['ComovingMostBoundDistance'])
     return
 
     for norm in (True, False):
@@ -151,6 +162,23 @@ def mass_sigma_host(sim, subs):
     out = os.path.join(sim.plot_path, '{0}.pdf'.format(output))
     savefig(out, fig=fig)
     return
+
+
+#@timer
+def plot_dmfrac(reader, sim, subs, xparam, bins=None, hostmass='M200Mean',
+                ncores=1):
+    """Plot the dark matter fraction as a function of a few things
+
+    """
+    #cen, sat, mtot, mstar, mhost, dark, Nsat, Ndark, Ngsat = \
+        #definitions(subs, hostmass=hostmass)
+    mdm = subs.mass('dm')
+    mtot = subs.mass('total')
+    dmfrac = mdm / mtot
+    # plot
+    #fig, ax = plt.subplots(figsize=(7,6))
+    
+    return infall
 
 
 def plot_massfunction2(
@@ -355,8 +383,43 @@ def plot_massfunction(sim, subs, hostmass='M200Mean'):
     return
 
 
+def plot_rv(sim, subs, hostmass='M200Mean', weights=None):
+    cen, sat, mtot, mstar, mhost, dark, Nsat, Ndark, Ngsat = \
+        definitions(subs, hostmass=hostmass)
+    # use subs attributes for distance and velocity
+    testID = subs.catalog['HostHaloId'].iloc[10000]
+    j = (subs.catalog['HostHaloId'] == testID)
+    print('testID =', testID, j.sum())
+    print('calculating r and v')
+    r = (subs.catalog['ComovingMostBoundDistance'] \
+         / subs.catalog['R200MeanComoving'])[sat]
+    v = (subs.catalog['PhysicalMostBoundPeculiarVelocity'] \
+         / subs.catalog['PhysicalMostBoundHostVelocityDispersion'])[sat]
+    rbins = np.arange(0, 3.01, 0.05)
+    vbins = np.arange(-5, 5.01, 0.1)
+    print('Calculating histograms')
+    hist2d, xe, ye = np.histogram2d(r, v, (rbins,vbins))
+    #hist2d[hist2d == 0] = np.nan
+    #hist2d.T
+    print('hist2d =', hist2d.shape)
+    #return
+    extent = (xe[0], xe[-1], ye[0], ye[-1])
+    print('Making plot')
+    fig, ax = plt.subplots(figsize=(9,6))
+    im = ax.imshow(hist2d.T, origin='lower', extent=extent, aspect='auto',
+                   norm=mpl.colors.LogNorm())
+    plt.colorbar(im, ax=ax, label=r'$N_\mathrm{sat}$')
+    ax.set_xlabel(r'$')
+    ax.set_ylabel(r'$v_\mathrm{pec}/\sigma_{v,\mathrm{host}}$')
+    output = os.path.join(sim.plot_path, 'phase-space', 'rv_3d.pdf')
+    print('Saving plot')
+    savefig(output, fig=fig)
+    print('Finished!')
+    return
+
+
 def plot_shmr_fmass(sim, subs, shsmr=None, chsmr=None, hostmass='M200Mean',
-                    show_hist=True, bincol=None, bins=8):
+                    show_hist=True, bincol=None, bins=8, mask=None):
     """Plot the SHMR and HSMR
 
     ``bincol`` and ``bins`` allow the relations to be binned in a
@@ -371,14 +434,22 @@ def plot_shmr_fmass(sim, subs, shsmr=None, chsmr=None, hostmass='M200Mean',
     logms = np.log10(ms)
     mubins, xmu, mulim = binning(xmin=-5, xmax=0, n=10, log=True)
     mhbins, mh, mhlim = binning(xmin=10, xmax=14.5, n=9, log=True)
+    ic(mhbins.shape)
+    ic(mh.shape)
+    ic(mhlim.shape)
     if bincol is not None:
         if bincol == 'mu':
             xbin = mtot / mhost
         else:
             xbin = subs.catalog[bincol]
+        ic(xbin.min())
+        ic(xbin.max())
         if not np.iterable(bins):
             j = np.isfinite(xbin)
             bins = np.linspace(xbin[j].min(), xbin[j].max(), bins+1)
+        ic(bins)
+        ic(np.histogram(xbin, bins)[0])
+        colors, cmap = colorscale(array=bins)
     # completeness limit
     msmin = 7.5
     jms = (ms >= 10**msmin)
@@ -387,38 +458,34 @@ def plot_shmr_fmass(sim, subs, shsmr=None, chsmr=None, hostmass='M200Mean',
     lw = 4
     # as a function of third variable
     fig, ax = plt.subplots(figsize=(8,6))
-    colors, cmap = colorscale(array=bins)
     # fix bins here
     hsmr_binned = binnedstat_dd(
-        [xbin[gsat], mstar[gsat]], mtot[gsat], 'mean', [mhbins,msbins])
+        [xbin[gsat], mstar[gsat]], mtot[gsat], 'mean', [bins,msbins])
     hsmr_binned = hsmr_binned.statistic
-    for i in range(mh.size):
+    ic(hsmr_binned.shape)
+    for i in range(bins.size-1):
         ax.plot(logms[jms], np.log10(hsmr_binned[i,jms]), '-', color=colors[i],
-                lw=4, zorder=2*mh.size-i)
+                lw=4, zorder=2*bins.size-i)
     cbar = plt.colorbar(cmap, ax=ax)
-    #cbar.set_label(r'log $M_\mathrm{host}$')
     cbar.set_label(bincol)
-    #cbarticks = np.arange(
-        #np.log10(mhbins[0]), np.log10(mhbins[-1])+0.1, 1, dtype=int)
-    #cbar.ax.set_yticks(cbarticks)
     # compare to overall and last touches
-    """
-    for ax in axes:
-        if shsmr is not None:
-            plot_line(
-                ax, logms[jms], np.log10(shsmr[jms]), '-', lw=3, color=scolor,
-                label='Overall', zorder=100)
-        if chsmr is not None:
-            plot_line(
-                ax, logms[jms], np.log10(chsmr[jms]), '-', lw=3, color=ccolor,
-                label='Centrals', zorder=100)
+    if shsmr is not None:
+        plot_line(
+            ax, logms[jms], np.log10(shsmr[jms]), '-', lw=3, color=scolor,
+            label='Overall', zorder=100)
+    if chsmr is not None:
+        plot_line(
+            ax, logms[jms], np.log10(chsmr[jms]), '-', lw=3, color=ccolor,
+            label='Centrals', zorder=100)
+    if shsmr is not None or chsmr is not None:
         ax.legend(fontsize=18)
-        ax.set_xlabel(r'$\log\,{0}$'.format(sim.masslabel(mtype='stars')))
-        ax.set_ylabel(r'$\log\,{0}$'.format(sim.masslabel(mtype='total')))
-        #ax.set_xlim(mslim)
-        #ax.set_ylim(mlim)
-    """
-    save_plot(fig, 'shmr_{0}'.format(bincol), sim)
+    ax.set_xlabel(r'$\log\,{0}$'.format(sim.masslabel(mtype='stars')))
+    ax.set_ylabel(r'$\log\,{0}$'.format(sim.masslabel(mtype='total')))
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
+    ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
+    #ax.set_xlim(mslim)
+    #ax.set_ylim(mlim)
+    save_plot(fig, f'shmr_{bincol}', sim)
     #save_plot(fig, 'shmr_mu', sim)
     return
 

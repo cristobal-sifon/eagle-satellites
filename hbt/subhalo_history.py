@@ -15,16 +15,16 @@ import os
 import sys
 from time import sleep, time
 
-from plottools.plotutils import colorscale, savefig, update_rcParams
+from plottery.plotutils import colorscale, savefig, update_rcParams
 update_rcParams()
 rcParams['text.latex.preamble'].append(r'\usepackage{color}')
 
 from HBTReader import HBTReader
 
 # local
-from core import hbt_tools
-from core.simulation import Simulation
-from core.subhalo import Subhalos, Track
+from hbtpy import hbt_tools
+from hbtpy.simulation import Simulation
+from hbtpy.subhalo import Subhalos, Track
 #from core.subhalo_new import Subhalos, Track
 
 adjust_kwargs = dict(
