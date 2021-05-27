@@ -124,7 +124,7 @@ class BaseSubhalo(BaseDataSet):
 
     @property
     def mvir(self):
-        return 1e10 * self.catalog['MVir']
+        return self.catalog['MVir']
 
     @property
     def Nbound(self):
@@ -829,7 +829,9 @@ class Subhalos(BaseSubhalo):
             # update host masses
             for col in list(self.catalog):
                 if 'M200' in col or col == 'MVir':
-                    self.catalog[col] = 1e10 * self.catalog[col]
+                    # otherwise I think this happens twice?
+                    if self.catalog[col].max() < 1e10:
+                        self.catalog[col] = 1e10 * self.catalog[col]
             if verbose:
                 print('Joined hosts in {0:.2f} s'.format(time()-to))
             del hosts
@@ -877,10 +879,12 @@ class Subhalos(BaseSubhalo):
 
 
 
-class Track(BaseSubhalo):
+class _Track(BaseSubhalo):
 
     def __init__(self, track, sim, as_dataframe=False):
         """
+        Discontinued. Please use ``track.Track`` instead.
+
         Parameters
         ----------
         track : output of ``reader.GetTrack``
@@ -919,6 +923,9 @@ class Track(BaseSubhalo):
         self._last_central_snapshot_index = self._none_value
         self._zcentral = None
         self._zinfall = None
+
+    def __str__(self):
+        return f'Track ID {self.trackid} in {self.sim.name}'
 
     ### attributes ###
 
