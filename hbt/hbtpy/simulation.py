@@ -7,6 +7,9 @@ from glob import glob
 import numpy as np
 import os
 import six
+# debugging
+from icecream import ic
+import sys
 
 from HBTReader import HBTReader
 
@@ -36,7 +39,11 @@ class Simulation(object):
         self._cosmology = None
         self._family = None
         self._formatted_name = None
+        self._redshifts = None
         self._snapshots = None
+        self._snapshot_files = None
+        self._snapshot_list = None
+        self._snapshot_mask = None
         self._snapshot_indices = None
         self._virial_snapshots = None
         self.initialize_tree()
@@ -113,31 +120,51 @@ class Simulation(object):
         return os.path.join('plots', self.name.replace('/', '_'))
 
     @property
-    def redshift(self):
-        snaplist = os.path.join(self.root, 'subcat', 'snapshotlist.txt')
-        snaplist = ascii.read(snaplist)
-        return np.array(
-            [x.split('_')[2][1:].replace('p', '.') for x in snaplist],
-            dtype=float)
+    def redshifts(self):
+        if self._redshifts is None:
+            self._redshifts =  np.array(
+                [x.split('_')[2][1:].replace('p', '.') for x in snaplist],
+                dtype=float)
+            self._redshifts[self.snapshot_mask]
+        return self._redshifts
 
     @property
     def root(self):
         return '/cosma/home/durham/jvbq85/data/HBT/data'
 
     @property
+    def scale_factor(self):
+        return 1 / (1+self.redshifts)
+
+    @property
+    def snapshot_files(self):
+        if self._snapshot_files is None:
+            self._snapshot_files = sorted(glob(
+                os.path.join(self.path, 'SubSnap*')))
+        return self._snapshot_files
+
+    @property
+    def snapshot_list(self):
+        if self._snapshot_list is None:
+            self._snapshot_list = np.loadtxt(
+                os.path.join(self.path, 'snapshotlist.txt'), dtype=str)
+        return self._snapshot_list
+
+    @property
+    def snapshot_mask(self):
+        if self._snapshot_mask is None:
+            ic(self.snapshot_files)
+            ic(self.get_snapshot_file_from_index(0))
+            self._snapshot_mask = np.array(
+                [(self.get_snapshot_file_from_index(i) in self.snapshot_files)
+                 for i in range(self.snapshot_list.size)])
+        return self._snapshot_mask
+
+    @property
     def snapshots(self):
         if self._snapshots is None:
-            try:
-                snaps = [
-                    i.split('/')[-1].split('_')[1].split('.')[0]
-                    for i in sorted(glob(os.path.join(self.path,'SubSnap*')))]
-            except IndexError:
-                snaps = []
-                for i in sorted(os.listdir(self.path)):
-                    try:
-                        snaps.append(int(i))
-                    except ValueError:
-                        pass
+            snaps = [i.split('/')[-1].split('_')[1].split('.')[0]
+                     for i in self.snapshot_files]
             self._snapshots = np.array(snaps, dtype=int)
         return self._snapshots
 
@@ -165,6 +192,9 @@ class Simulation(object):
         return self._virial_snapshots
 
     ### methods ###
+
+    def get_snapshot_file_from_index(self, idx):
+        return os.path.join(self.path, f'SubSnap_{idx:03d}.hdf5')
 
     def mass_to_sim_h(self, m, h, mtype='total', log=False):
         """Correction to mass measurement to account for different h
