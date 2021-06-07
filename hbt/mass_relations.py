@@ -3,14 +3,14 @@ from astropy.io import ascii
 from astropy.table import Table
 from icecream import ic
 import matplotlib as mpl
-from matplotlib import pyplot as plt, ticker
+from matplotlib import colors as mplcolors, pyplot as plt, ticker
 import multiprocessing as mp
 import numpy as np
 import os
 import pandas as pd
 from scipy.optimize import curve_fit
 from scipy.stats import (
-    binned_statistic as binnedstat, binned_statistic_dd as binnedstat_dd)
+    binned_statistic as binstat, binned_statistic_dd as binstat_dd)
 import sys
 from time import time
 from tqdm import tqdm
@@ -18,14 +18,16 @@ if sys.version_info[0] == 2:
     range = xrange
 
 import lnr
+import plottery
 from plottery.plotutils import colorscale, savefig, update_rcParams
 update_rcParams()
 
 from HBTReader import HBTReader
 from hbtpy import hbt_tools
-from hbtpy.hbt_tools import timer
+from hbtpy.hbt_tools import save_plot, timer
 from hbtpy.simulation import Simulation
-from hbtpy.subhalo import HostHalos, Subhalos, Track
+from hbtpy.subhalo import HostHalos, Subhalos
+from hbtpy.track import Track
 
 
 ccolor = 'C9'
@@ -52,13 +54,27 @@ def main(debug=True):
     return
 
 
-def wrap_plot(reader, sim, subs, isnap, debug=True):
+def wrap_plot(reader, sim, subs, isnap, hostmass='logM200Mean',
+              logM200Mean_min=13, logMmin=8, debug=True):
 
-    subs = Subhalos(subs, sim, isnap, exclude_non_FoF=True)
+    subs = Subhalos(
+        subs, sim, isnap, exclude_non_FoF=True, logMmin=logMmin,
+        logM200Mean_min=logM200Mean_min)
     subhalos = subs.catalog
     ic(np.sort(subs.colnames))
+    ic(subhalos.shape)
+    ic(np.unique(subhalos['HostHaloId']).size)
+    ic(np.log10(subhalos['M200Mean'].min()))
+    ic(np.log10(subhalos['M200Mean'].max()))
     print('{0} objects'.format(subs.catalog[subs.colnames[0]].size))
     print()
+
+    plot_path = f'{hostmass}_{logM200Mean_min:.1f}-logM_{logMmin}'
+    plot_path = plot_path.replace('.', 'p')
+
+    # fraction of dark satellites - less than 1% througout
+    dark_fraction(sim, subs, plot_path=plot_path)
+    dark_fraction(sim, subs, mhost_norm=False, plot_path=plot_path)
 
     # dark matter mass fraction as a function of time-since-infall
     #plot_dmfrac(reader, sim, subs, 'tinfall')
@@ -68,37 +84,50 @@ def wrap_plot(reader, sim, subs, isnap, debug=True):
     #return
     #test_velocities(subs)
 
-    xbins = dict(
-        'ComovingMostBoundDistance': np.append(
-            np.arange(0, 0.51, 0.1), np.arange(1, 3.1, 0.5)),
-        )
+    xbins = {
+        'ComovingMostBoundDistance': np.linspace(0, 3, 9),
+        'logComovingMostBoundDistance': np.logspace(-2, 0.5, 9),
+        'M200Mean': np.logspace(13, 14.7, 9),
+        'mu': np.logspace(-5, 0, 9),
+        }
+    binlabel = {
+        'ComovingMostBoundDistance': r'$R_\mathrm{{com}}$ ($h^{{-1}}$Mpc)',
+        'M200Mean': r'$M_\mathrm{200m}$ (M$_\odot$)',
+        'mu': r'$\mu$',
+    }
 
-    cshmr, sshmr, chsmr, shsmr = plot_shmr(sim, subs)
+    cshmr, sshmr, chsmr, shsmr = plot_shmr(
+        sim, subs, hostmass_min=1e13, xlim=(8,14), ylim=(7,12))
     #plot_shmr_fmass(sim, subs, shsmr=shsmr, chsmr=chsmr)
-    plot_shmr_fmass(
-        sim, subs, bincol='ComovingMostBoundDistance',
-        bins=xbins['ComovingMostBoundDistance'])
-    return
+    #return
+    for bincol in ('mu','M200Mean'):
+        plot_shmr_binned(
+            sim, subs,
+            bincol=bincol, binlabel=binlabel[bincol],
+            bins=xbins[bincol], logbins=True)
+    bincol = 'mu'
+    bincol = 'ComovingMostBoundDistance'
+    plot_shmr_binned(
+        sim, subs, #shsmr=shsmr, chsmr=chsmr,
+        bincol=bincol, binlabel=binlabel[bincol],
+        bins=xbins[f'log{bincol}'], logbins=True)
 
     for norm in (True, False):
         plot_massfunction2(
-            sim, subs, 'M200Mean', np.logspace(11, 14.7, 9),
-            r'log $M_\mathrm{{200m}}$ ($h^{{-1}}{0}$)'.format(Msun),
+            sim, subs, 'M200Mean', xbins['M200Mean'],
+            r'$M_\mathrm{{200m}}$ ($h^{{-1}}{0}$)'.format(Msun),
             norm=norm)
+        bincol = 'ComovingMostBoundDistance'
         for log in (True, False):
-            rbins = (np.logspace(-1, 0.5, 9) if log else np.linspace(0, 3, 9))
-            pref = 'log ' * log
+            pref = 'log' * log
+            rbins = xbins[f'{pref}{bincol}']
             plot_massfunction2(
-                sim, subs, 'ComovingMostBoundDistance', rbins,
-                r'{0}$R_\mathrm{{com}}$/($h^{{-1}}$Mpc)'.format(pref),
+                sim, subs, bincol, bins=rbins, binlabel=binlabel[bincol],
                 norm=norm, bin_in_log10=log)
-        #plot_massfunction2(
-            #sim, subs, 'PhysicalMostBoundDistance', rbins,
-            #r'{0}$R_\mathrm{{phys}}$/($h^{{-1}}$Mpc)'.format(pref),
-            #bin_in_log10=log)
-    #plot_massfunction2(
-        #sim, subs, 'M200Mean', np.logspace(10,14.5,9),
-        #r'log $M_\mathrm{{host}}/{0}$'.format(Msun))
+
+
+    # bin by time since infall
+
     return
 
     plot_occupation(sim, subs)
@@ -112,6 +141,34 @@ def wrap_plot(reader, sim, subs, isnap, debug=True):
         v = v / np.array(subhalos[vhostkey])
     #for ax, projection in zip(projections):
 
+    return
+
+
+def dark_fraction(sim, subs, mhost_norm=True, plot_path=None):
+    if mhost_norm:
+        mbins = np.logspace(-4, -0.3, 21)
+    else:
+        mbins = massbins(sim, mtype='total')
+    mx = (mbins[:-1]+mbins[1:]) / 2
+    m = definitions(subs, as_dict=True)
+    dark = np.array(m['dark'], dtype=np.uint8)
+    x = m['mtot']/m['mhost'] if mhost_norm else m['mtot']
+    Ndark = np.histogram(x, bins=mbins, weights=dark)[0]
+    Ngal = np.histogram(x, bins=mbins, weights=1-dark)[0]
+    ndark = Ndark / np.histogram(x, bins=mbins)[0]
+    fig, ax = plt.subplots(figsize=(7,6))
+    ax.plot(np.log10(mx), ndark)
+    if mhost_norm:
+        xlabel = r'$\log\mu\equiv\log m_\mathrm{sub}/M_\mathrm{host}$'
+    else:
+        xlabel = r'log $m_\mathrm{sub}/$M$_\odot$'
+    ax.set(xlabel=xlabel, ylabel='Fraction of dark satellites')
+    output = 'dark_fraction'
+    if mhost_norm:
+        output += '_mhost'
+    if plot_path:
+        output = os.path.join(plot_path, output)
+    save_plot(fig, output, sim)
     return
 
 
@@ -131,8 +188,8 @@ def mass_sigma_host(sim, subs):
     sigma3d = subs.sigma()[h]
     mtot = subs.mass('total')[h]
     nsat = subs.catalog['Nsat'][h]
-    sigma_mean = binnedstat(mtot, sigma3d, 'mean', mbins)[0]
-    sigma_median = binnedstat(mtot, sigma3d, 'median', mbins)[0]
+    sigma_mean = binstat(mtot, sigma3d, 'mean', mbins)[0]
+    sigma_median = binstat(mtot, sigma3d, 'median', mbins)[0]
     c = ax.scatter(
         mtot, sigma3d, marker=',', s=1, c=np.log10(nsat), cmap='viridis',
         label='_none_')
@@ -177,14 +234,15 @@ def plot_dmfrac(reader, sim, subs, xparam, bins=None, hostmass='M200Mean',
     dmfrac = mdm / mtot
     # plot
     #fig, ax = plt.subplots(figsize=(7,6))
-    
+
     return infall
 
 
 def plot_massfunction2(
         sim, subs, binparam, bins=None, binlabel='', bin_in_log10=True,
-        hostmass='M200Mean', overwrite=True, norm=False,
-        mbins=np.logspace(8,15,21), mubins=np.logspace(-5, 0, 21)):
+        hostmass='M200Mean', overwrite=True, norm=False, show_centrals=False,
+        mbins=np.logspace(8,15,21), mubins=np.logspace(-5, 0, 21),
+        show_all=False, show_slope=False):
     """Plot subhalo mass function, both as a function of msub and mu
 
     TO-DO:
@@ -208,20 +266,22 @@ def plot_massfunction2(
         definitions(subs, hostmass=hostmass)
     gcen = cen & ~dark
     gsat = sat & ~dark
-    fig1, ax1 = plt.subplots(figsize=(9,6))
-    fig2, ax2 = plt.subplots(figsize=(9,6))
+    fig1, ax1 = plt.subplots(figsize=(8,6))
+    fig2, ax2 = plt.subplots(figsize=(8,6))
     figs = [fig1, fig2]
     axes = [ax1, ax2]
     for ax in axes:
         ax.set_yscale('log')
     ax1.set_xlabel(r'log $m_\mathrm{{sub}}/{0}$'.format(Msun))
-    ylabel = r'$N(m_\mathrm{sub})$'
-    if norm:
-        ylabel = ylabel[:-1] + r'/m_\mathrm{sub}$'
+    # ylabel = r'$N(m_\mathrm{sub})$'
+    # if norm:
+    #     ylabel = ylabel[:-1] + r'/m_\mathrm{sub}$'
+    ylabel = r'$n(m_\mathrm{sub})$' if norm else r'$N(\mathrm{sub})$'
     ax1.set_ylabel(ylabel)
     ax2.set_xlabel(
         r'log $\mu$ $\equiv$ log $(m_\mathrm{sub}/M_\mathrm{200m})$')
-    ax2.set_ylabel(r'$N(\mu)$')
+    nlabel = r'$n(\mu)$' if norm else r'$N(\mu)$'
+    ax2.set_ylabel(nlabel)
     # central bin values for plots (msub and mu; it is assumed that
     # they are binned in log space)
     logm = np.log10(logcenters(mbins))
@@ -252,51 +312,71 @@ def plot_massfunction2(
     if 'Distance' in binparam or 'Velocity' in binparam:
         dcols = [binparam+i for i in '012']
         cols = cols + dcols
-    print(subs.catalog[cols][subs.catalog['HostHaloId'] == 2377])
     #
     xbins = np.log10(logcenters(bins)) if bin_in_log10 \
         else (bins[:-1]+bins[1:]) / 2
-    print('xbins =', xbins)
     # normalization (not used right now)
     nij = 1
-    for fig, ax, x, b, name, output, legloc \
-            in zip(figs, axes, (mtot,mtot/mhost), (mbins,mubins), names,
-                   outputs, ('upper right','upper left')):
+    fn = lambda x, a, b, x0=10: a + b*(x-x0)
+    fitmasks = ((logm >= 9) & (logm <= 12),
+                (logmu >= -4) & (logmu <= -1))
+    for fig, ax, x, b, xb, mask, name, output, legloc \
+            in zip(figs, axes, (mtot,mtot/mhost), (mbins,mubins),
+                   (logm,logmu), fitmasks, names,
+                   outputs, ('upper right','upper right')):
         logxo = np.log10(logcenters(b))
-        # centrals
-        nc = np.histogram(x[cen], b)[0]
-        ngc = np.histogram(x[gcen], b)[0]
-        n0 = nc.sum() if norm else 1
-        ax.plot(logxo[nc > 0], nc[nc > 0]/n0, '--', color=ccolor, lw=4,
-                label='Central subhaloes')
-        ax.plot(logxo[ngc > 0], ngc[ngc > 0]/n0, '-', color=ccolor, lw=4,
-                label='Central galaxies')
+        if show_centrals:
+            # centrals
+            nc = np.histogram(x[cen], b)[0]
+            ngc = np.histogram(x[gcen], b)[0]
+            n0 = nc.sum() if norm else 1
+            ax.plot(logxo[nc > 0], nc[nc > 0]/n0, '--', color=ccolor, lw=4,
+                    label='Central subhaloes')
+            ax.plot(logxo[ngc > 0], ngc[ngc > 0]/n0, '-', color=ccolor, lw=4,
+                    label='Central galaxies')
         # satellites
         ns = np.histogram(x[sat], b)[0]
         ngs = np.histogram(x[gsat], b)[0]
-        n0 = ns.sum() if norm else 1
-        ax.plot(logxo[ns > 0], ns[ns > 0]/n0, '--', color=scolor, lw=4,
-                label='Satellite subhaloes')
-        ax.plot(logxo[ngs > 0], ngs[ngs > 0]/n0, '-', color=scolor, lw=4,
-                label='Satellite galaxies')
+        nfit, ncov = curve_fit(fn, xb[mask], np.log10(ns[mask]), p0=(-2,-1))
+        ic(nfit)
+        ic(np.diag(ncov)**0.5)
+        if show_all:
+            n0 = ns.sum() if norm else 1
+            ax.plot(logxo[ns > 0], ns[ns > 0]/n0, '--', color=scolor, lw=4,
+                    zorder=100, label='All satellite subhaloes')
+            ax.plot(logxo[ngs > 0], ngs[ngs > 0]/n0, '-', color=scolor, lw=4,
+                    zorder=100, label='All satellite galaxies')
+        else:
+            ax.plot([], [], '--', color='k', lw=3,
+                    label='Satellite subhaloes')
+            ax.plot([], [], '-', color='k', lw=3,
+                    label='Satellite galaxies')
         ns, xe, ye = np.histogram2d(binvals[sat], x[sat], (bins,b))
         ngs = np.histogram2d(binvals[gsat], x[gsat], (xe,ye))[0]
-        colors, cmap = colorscale(array=xbins)
+        if bin_in_log10:
+            colors, cmap = colorscale(array=10**xbins, log=True)
+        else:
+            colors, cmap = colorscale(array=xbins, log=True)
         for i in range(ns.shape[0]):
             j = (ns[i] > 0)
             if j.sum() == 0:
                 continue
             n0 = ns[i].sum() if norm else 1
-            ax.plot(logxo[j], ns[i][j]/n0, '--', color=colors[i], lw=2,
+            ax.plot(logxo[j], ns[i][j]/n0, '--', color=colors[i], lw=4,
                     zorder=20-i)
-            ax.plot(logxo[j], ngs[i][j]/n0, '-', color=colors[i], lw=2,
+            ax.plot(logxo[j], ngs[i][j]/n0, '-', color=colors[i], lw=4,
                     zorder=20-i)
         cbar = plt.colorbar(cmap, ax=ax)
         cbar.set_label(binlabel)
+        if bin_in_log10:
+            cbar.ax.set_yscale('log')
+            if binparam == 'ComovingMostBoundDistance':
+                cbar.ax.yaxis.set_major_formatter(
+                    ticker.FormatStrFormatter('%.1f'))
         ax.legend(loc=legloc, ncol=1, fontsize=14)
         # to give the legend some space
-        ylim = ax.get_ylim()
-        ax.set_ylim(ylim[0], 10*ylim[1])
+        # ylim = ax.get_ylim()
+        # ax.set_ylim(ylim[0], 10*ylim[1])
         save_plot(fig, output, sim)
     return
 
@@ -418,8 +498,9 @@ def plot_rv(sim, subs, hostmass='M200Mean', weights=None):
     return
 
 
-def plot_shmr_fmass(sim, subs, shsmr=None, chsmr=None, hostmass='M200Mean',
-                    show_hist=True, bincol=None, bins=8, mask=None):
+def plot_shmr_binned(sim, subs, shsmr=None, chsmr=None, hostmass='M200Mean',
+                     show_hist=True, xbin=None, bincol=None, bins=8,
+                     logbins=False, binlabel='', mask=None):
     """Plot the SHMR and HSMR
 
     ``bincol`` and ``bins`` allow the relations to be binned in a
@@ -438,18 +519,23 @@ def plot_shmr_fmass(sim, subs, shsmr=None, chsmr=None, hostmass='M200Mean',
     ic(mh.shape)
     ic(mhlim.shape)
     if bincol is not None:
-        if bincol == 'mu':
-            xbin = mtot / mhost
-        else:
-            xbin = subs.catalog[bincol]
+        if xbin is None:
+            if bincol == 'mu':
+                xbin = mtot / mhost
+            else:
+                xbin = subs.catalog[bincol]
         ic(xbin.min())
         ic(xbin.max())
         if not np.iterable(bins):
             j = np.isfinite(xbin)
-            bins = np.linspace(xbin[j].min(), xbin[j].max(), bins+1)
+            if logbins:
+                bins = np.logspace(
+                    np.log10(xbin[j].min()), np.log10(xbin[j].max()), bins+1)
+            else:
+                bins = np.linspace(xbin[j].min(), xbin[j].max(), bins+1)
         ic(bins)
         ic(np.histogram(xbin, bins)[0])
-        colors, cmap = colorscale(array=bins)
+        colors, cmap = colorscale(array=bins, log=logbins)
     # completeness limit
     msmin = 7.5
     jms = (ms >= 10**msmin)
@@ -459,7 +545,7 @@ def plot_shmr_fmass(sim, subs, shsmr=None, chsmr=None, hostmass='M200Mean',
     # as a function of third variable
     fig, ax = plt.subplots(figsize=(8,6))
     # fix bins here
-    hsmr_binned = binnedstat_dd(
+    hsmr_binned = binstat_dd(
         [xbin[gsat], mstar[gsat]], mtot[gsat], 'mean', [bins,msbins])
     hsmr_binned = hsmr_binned.statistic
     ic(hsmr_binned.shape)
@@ -467,12 +553,16 @@ def plot_shmr_fmass(sim, subs, shsmr=None, chsmr=None, hostmass='M200Mean',
         ax.plot(logms[jms], np.log10(hsmr_binned[i,jms]), '-', color=colors[i],
                 lw=4, zorder=2*bins.size-i)
     cbar = plt.colorbar(cmap, ax=ax)
-    cbar.set_label(bincol)
+    cbar.set_label(binlabel)
+    if logbins:
+        cbar.ax.set_yscale('log')
+        if bins[0] >= 0.01 and bins[-1] <= 100:
+            cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%s'))
     # compare to overall and last touches
     if shsmr is not None:
         plot_line(
             ax, logms[jms], np.log10(shsmr[jms]), '-', lw=3, color=scolor,
-            label='Overall', zorder=100)
+            label='All subhaloes', zorder=100)
     if chsmr is not None:
         plot_line(
             ax, logms[jms], np.log10(chsmr[jms]), '-', lw=3, color=ccolor,
@@ -485,12 +575,116 @@ def plot_shmr_fmass(sim, subs, shsmr=None, chsmr=None, hostmass='M200Mean',
     ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
     #ax.set_xlim(mslim)
     #ax.set_ylim(mlim)
-    save_plot(fig, f'shmr_{bincol}', sim)
+    output = f'shmr_log{bincol}' if logbins else f'shmr_{bincol}'
+    save_plot(fig, output, sim)
     #save_plot(fig, 'shmr_mu', sim)
     return
 
 
-def plot_shmr(sim, subs, hostmass='M200Mean'):
+def plot_shmr(sim, subs, hostmass='M200Mean', hostmass_min=1e13,
+              sample='sat', xlim=None, ylim=None, satcolor='k', cencolor='C1',
+              fnorm=mplcolors.LogNorm, vmin=None, vmax=None):
+    """
+    Note that xlim and ylim refer to the first axis, and are inverted
+    in the second one
+    """
+    cen, sat, mtot, mstar, mhost, dark, Nsat, Ndark, Ngsat = \
+        definitions(subs, hostmass=hostmass)
+    ic(np.log10(mstar[~dark].min()))
+    ic(np.log10(mhost[~dark].min()))
+    ic(np.log10(mtot[~dark].min()))
+    gcen = cen & ~dark
+    gsat = sat & ~dark
+    mbins, m, mlim = binning(sim, mtype='total')
+    msbins, ms, mslim = binning(sim, mtype='stars')
+    ic(mlim)
+    ic(mslim)
+    if xlim is None:
+        xlim = mlim
+    if ylim is None:
+        ylim = mslim
+    mlabel = sim.masslabel(mtype='total') if sample == 'sat' \
+        else r'M_\mathrm{200m}'
+    mslabel = sim.masslabel(mtype='stars')
+    # note the different mass definitions for centrals and satellites
+    ncen = np.histogram2d(mstar[gcen], mhost[gcen], (msbins,mbins))[0]
+    nsat = np.histogram2d(mstar[gsat], mtot[gsat], (msbins,mbins))[0]
+    nsub = nsat if sample[:3] == 'sat' else ncen
+    # plot
+    extent = [np.append(mlim, mslim), np.append(mslim, mlim)]
+    lw = 4
+    fig, axes = plt.subplots(1, 2, figsize=(12,6))
+    # HSMR
+    norm = fnorm(vmin=vmin, vmax=vmax)
+    ax = axes[0]
+    im = ax.imshow(
+        nsub, extent=extent[0], origin='lower', aspect='auto', norm=norm)
+    ax.set(xlabel=fr'$\log\,{mlabel}/$M$_\odot$',
+           ylabel=fr'$\log\,{mslabel}/$M$_\odot$',
+           xlim=xlim, ylim=ylim)
+    # mean central HSMR
+    chsmr = np.histogram(mhost[gcen], mbins, weights=mstar[gcen])[0] \
+        / np.histogram(mhost[gcen], mbins)[0]
+    # mean satellite HSMR
+    shsmr = np.histogram(mtot[gsat], mbins, weights=mstar[gsat])[0] \
+        / np.histogram(mtot[gsat], mbins)[0]
+    if sample == 'sat':
+        plot_line(ax, np.log10(m), np.log10(shsmr), dashes=None, ls='-',
+                  color=satcolor, label='Satellite SHMR')
+        # plot_line(ax, np.log10(m), np.log10(chsmr), color=cencolor,
+        #           dashes=None, label='Central SHMR')
+    else:
+        plot_line(ax, np.log10(m), np.log10(shsmr), ls='-', color=satcolor,
+                  label='Satellite SHMR')
+        # plot_line(ax, np.log10(m), np.log10(chsmr), dashes=None,
+        #           color=cencolor, label='Central SHMR')
+    ax.legend(loc='upper left')
+    # SHMR
+    ax = axes[1]
+    im = ax.imshow(
+        nsub.T, extent=extent[1], origin='lower', aspect='auto', norm=norm)
+    # mean central SHMR
+    cshmr = np.histogram(mstar[gcen], msbins, weights=mhost[gcen])[0] \
+        / np.histogram(mstar[gcen], msbins)[0]
+    # mean satellite SHMR
+    sshmr = np.histogram(mstar[gsat], msbins, weights=mtot[gsat])[0] \
+        / np.histogram(mstar[gsat], msbins)[0]
+    if sample == 'sat':
+        plot_line(ax, np.log10(ms), np.log10(sshmr), dashes=None, ls='-',
+                  color=satcolor, label='Satellite HSMR')
+        # plot_line(ax, np.log10(ms), np.log10(cshmr), color=cencolor,
+        #           dashes=None, label='Central HSMR')
+    else:
+        plot_line(ax, np.log10(ms), np.log10(sshmr), ls='-', color=satcolor,
+                  dashes=None, label='Satellite HSMR')
+        # plot_line(ax, np.log10(ms), np.log10(cshmr), dashes=None,
+        #           color=cencolor, label='Central HSMR')
+    s18 = np.array(
+        [[9.51,10.01,10.36,10.67,11.01], [10.64,11.41,11.71,11.84,12.15],
+         [0.53,0.21,0.17,0.15,0.20], [0.39,0.17,0.15,0.15,0.17]])
+    # correcto to EAGLE's h
+    s18[0] = sim.mass_to_sim_h(s18[0], 0.7, 'stars', log=True)
+    s18[1] = sim.mass_to_sim_h(s18[1], 0.7, 'total', log=True)
+    ax.errorbar(
+        s18[0], s18[1], s18[2:]+0.02, fmt='wo', ms=18, elinewidth=6, zorder=19)
+    ax.errorbar(
+        s18[0], s18[1], s18[2:], fmt='ko', ms=14, elinewidth=2, zorder=20,
+        label="Sifón+18")
+    ax.legend(loc='upper left')
+    #plt.colorbar(im, ax=ax, label=rf'$N_\mathrm{{{sample}}}$')
+    ax.set(ylabel=fr'$\log\,{mlabel}/$M$_\odot$',
+           xlabel=fr'$\log\,{mslabel}/$M$_\odot$',
+           xlim=ylim, ylim=xlim)
+    path = f'{hostmass}_{np.log10(hostmass_min):.1f}'.replace('.', 'p')
+    save_plot(fig, f'{path}/shmr_{sample}', sim)
+    # colorbar
+
+    return cshmr, sshmr, chsmr, shsmr
+
+
+def plot_shmr1(sim, subs, hostmass='M200Mean'):
+    """Not used anymore. Kept here until all details have been merged
+    into plot_shmr"""
     cen, sat, mtot, mstar, mhost, dark, Nsat, Ndark, Ngsat = \
         definitions(subs, hostmass=hostmass)
     #mbins, m, mlim, msbins, ms, mslim = binning(sim)
@@ -671,7 +865,7 @@ def average(sample, xbins, xname='stars', yname='total', mask=None,
 
 def munari13(m, cosmo, z=0):
     hz = (cosmo.H(z) / (100*u.km/u.s/u.Mpc)).value
-    return 1177 * (hz*m/1e15)**0.364 
+    return 1177 * (hz*m/1e15)**0.364
 
 
 def test_velocities(subs):
@@ -765,8 +959,8 @@ def view_velocities(subs, sim, vref='MostBound'):
                 label=r'$\langle v \rangle = \infty$')
         ax.hist(m[sinf], logmbins, histtype='step', bottom=1,
                 lw=2, label=r'$\sigma_\mathrm{v} = \infty$')
-    axes[0].set_xlabel(r'log $m_\mathrm{total}$')
-    axes[1].set_xlabel(r'log $m_\mathrm{star}$')
+    axes[0].set_xlabel(r'log $m_\mathrm{sub}$')
+    axes[1].set_xlabel(r'log $m_\star$')
     for ax in axes:
         ax.set_yscale('log')
         ylim = ax.get_ylim()
@@ -806,7 +1000,29 @@ def binning(sim=None, mtype='total', n=None, xmin=0, xmax=1, log=True):
     """
 
 
-def definitions(subs, hostmass='M200Mean'):
+def definitions(subs, hostmass='M200Mean', as_dict=False):
+    """Subhalo quantities
+
+    Parameters
+    ----------
+    subs : ``Subhalos`` object
+        subhalos
+    hostmass : str, optional
+        host mass definition
+    as_dict : bool, optional
+        whether to return a tuple (if ``False``) or a dictionary
+
+    Returns either a dictionary or tuple with the following content:
+     * cen : centrals mask
+     * sat : satellites mask
+     * mtot : total subhalo mass
+     * mstar : stellar mass
+     * mhost : Host mass as defined in the ``hostmass`` argument
+     * dark : dark subhalos mask
+     * Nsat : number of satellite subhalos associated with the same host
+     * Ndark : number of dark satellite subhalos
+     * Ngsat : number of satellites galaxies
+    """
     cen = (subs.catalog['Rank'] == 0)
     sat = ~cen
     mtot = subs.mass('total')
@@ -816,6 +1032,10 @@ def definitions(subs, hostmass='M200Mean'):
     Nsat = subs.catalog['Nsat']
     Ndark = subs.catalog['Ndark']
     Ngsat = Nsat - Ndark
+    if as_dict:
+        return dict(
+            cen=cen, sat=sat, mtot=mtot, mstar=mstar, mhost=mhost, dark=dark,
+            Nsat=Nsat, Ndark=Ndark, Ngsat=Ngsat)
     return cen, sat, mtot, mstar, mhost, dark, Nsat, Ndark, Ngsat
 
 
@@ -831,17 +1051,20 @@ def massbins(sim, mtype='stars'):
     return bins[sim.family][mtype]
 
 
-def plot_line(ax, *args, **kwargs):
-    if 'lw' not in kwargs:
-        kwargs['lw'] = 4
+def plot_line(ax, *args, lw=4, dashes=(8,8), **kwargs):
+
     kwargs_bg = kwargs.copy()
+    if dashes is not None:
+        kwargs['dashes'] = dashes
+        # the offsets probably depend on the size of the dashes...
+        kwargs_bg['dashes'] = (dashes[0]-2.2,dashes[1]-3.8)
     if 'color' in kwargs:
         kwargs_bg.pop('color')
     if 'label' in kwargs:
         kwargs_bg.pop('label')
-    kwargs_bg['lw'] += 2
+    kwargs_bg['lw'] = lw + 2
     ax.plot(*args, **kwargs_bg, color='w', label='_none_')
-    ax.plot(*args, **kwargs)
+    ax.plot(*args, lw=lw, **kwargs)
     #ax.plot(np.log10(m[jm]), np.log10(mstar_cmean[jm]), 'w-', lw=lw+2,
             #zorder=10, label='_none_')
     #ax.plot(np.log10(m[jm]), np.log10(mstar_cmean[jm]), 'C9-', lw=lw,
@@ -854,19 +1077,13 @@ def output(sim, xname, yname):
                             sim.masslabel(mtype=yname, latex=False))
 
 
-def save_plot(fig, output, sim, **kwargs):
-    if '/' in output:
-        path = os.path.join(sim.plot_path, os.path.split(output)[0])
-        if not os.path.isdir(path):
-            os.makedirs(path)
-    out = os.path.join(sim.plot_path, '{0}.pdf'.format(output))
-    savefig(out, fig=fig, **kwargs)
-    return
-
-
+def plotpath(f):
+    """Not in use right now"""
+    @functools.wraps
+    def wrapper(*args, **kwargs):
+        if 'plot_path' not in kwargs:
+            pass
+            #args = inspect.getfullargspec(
+            #kwargs['plot_path'] =
 
 main()
-
-
-
-
