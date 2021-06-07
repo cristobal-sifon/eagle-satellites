@@ -10,10 +10,13 @@ import numpy as np
 from numpy.lib.recfunctions import append_fields
 import os
 import pandas as pd
+from scipy.stats import binned_statistic as binstat
 import six
-import sys
 from time import time
 import warnings
+#debugging
+from icecream import ic
+import sys
 
 from HBTReader import HBTReader
 
@@ -124,7 +127,7 @@ class BaseSubhalo(BaseDataSet):
 
     @property
     def mvir(self):
-        return 1e10 * self.catalog['MVir']
+        return self.catalog['MVir']
 
     @property
     def Nbound(self):
@@ -331,32 +334,6 @@ class HostHalos(BaseDataSet, BaseSimulation):
         return isnap
 
 
-class HostHaloTrack(BaseSubhalo):
-    """Class containing tracks of all subhalos in a given halo
-
-    """
-
-
-    def __init__(self, hosthaloid, subhalos, sim, isnap=-1):
-        self._hosthaloid = hosthaloid
-        self._subhalos = subhalos
-        self._isnap = isnap
-        super(HostHaloTrack, self).__init__(subhalos, sim)
-
-    @property
-    def children(self):
-        return self._children
-
-    @property
-    def hosthaloid(self):
-        return self._hosthaloid
-
-    @hosthaloid.setter
-    def hosthaloid(self, hostid):
-        self._hosthaloid = hostid
-        self._children = \
-            self._range[self.catalog['HostHaloId'] == self._hosthaloid]
-
 
 class Subhalos(BaseSubhalo):
     """Class to manage a sample of subhalos at a given snapshot
@@ -364,8 +341,8 @@ class Subhalos(BaseSubhalo):
     """
 
     def __init__(self, catalog, sim, isnap,
-                 logMmin=9, logM200Mean_min=12, as_dataframe=True,
-                 exclude_non_FoF=True,
+                 logMmin=9, logM200Mean_min=12, exclude_non_FoF=True,
+                 as_dataframe=True,
                  load_hosts=True, load_distances=True, load_velocities=True):
         """
         Parameters
@@ -378,10 +355,24 @@ class Subhalos(BaseSubhalo):
         isnap : ``int``
             snapshot index at which the subhalos were retrieved.
             Unfortunately this has to be given by hand for now.
-        exclude_non_FoF : bool, optional
+
+        Optional parameters
+        -------------------
+        logMmin : float
+            minimum subhalo mass
+        logM200Mean_min : float
+            minimum host halo mass. Note that this requires
+            ``load_hosts=True``
+        exclude_non_FoF : bool
             whether to exclude all objects not part of any FoF halo
             (i.e., those with HostHaloId=-1). Some attributes or
             methods may not work if set to False.
+        as_dataframe : bool
+            whether to return a ``pd.DataFrame`` or a ``np.recarray``
+        load_hosts, load_distances, load_velocities : bool
+            whether to load host information. If the first one is
+            ``True``, then whether to load cluster-centric distances
+            and peculiar velocities
         """
         assert isinstance(as_dataframe, bool)
         assert isinstance(load_hosts, bool)
@@ -402,11 +393,7 @@ class Subhalos(BaseSubhalo):
             self._catalog = self.catalog[self.mass('total') > 10**self.logMmin]
         else:
             self.logMmin = 0
-            #warnings.warn('No Mbound column. Not applying Mbound cut')
-        if 'M200Mean' in self.colnames:
-            self.logM200Mean_min = logM200Mean_min
-            mask = (self.catalog['M200Mean'] > 10**self.logM200Mean_min)
-            self._catalog = self.catalog[mask]
+            warnings.warn('No Mbound column. Not applying Mbound cut')
         if 'Nbound' in self.colnames:
             if self.as_dataframe:
                 self.catalog['IsDark'] = (self.nbound('stars') == 0)
@@ -428,6 +415,9 @@ class Subhalos(BaseSubhalo):
         self.load_hosts = load_hosts
         if self.load_hosts:
             self.host_properties()
+            self.logM200Mean_min = logM200Mean_min
+            mask = (self.catalog['M200Mean'] > 10**self.logM200Mean_min)
+            self._catalog = self.catalog[mask]
         else:
             load_distances = False
             load_velocities = False
@@ -601,6 +591,61 @@ class Subhalos(BaseSubhalo):
             return self._range[host_mask][0]
         return np.array(self.catalog[host_mask])
 
+    def _shmr_binning(self, x, bins, log):
+        if not np.iterable(bins):
+            bins = np.logspace(np.log10(x.min()), np.log10(x.max()), bins) \
+                if log else np.linspace(x.min(), x.max(), bins)
+        if log:
+            logbins = np.log10(bins)
+            xo = 10**((logbins[1:]+logbins[:-1]) / 2)
+        else:
+            xo = (bins[:-1]+bins[1:]) / 2
+        return bins, xo
+
+    def hsmr(self, bins=20, sample='all', log=True):
+        """Halo-to-stellar mass relation (HSMR)
+
+        Parameters
+        ----------
+        bins : int or array-like
+            `bins` argument of `np.histogram`
+        sample : {'all','centrals','satellites'}
+            over which subhaloes to calculate the HSMR
+        """
+        if sample == 'centrals':
+            mask = self.central_mask
+        elif sample == 'satellites':
+            mask = self.satellite_mask
+        elif sample == 'all':
+            mask = np.ones(self.central_mask.size, dtype=bool)
+        x = self.MboundType[mask,4]
+        y = self.Mbound[mask]
+        bins, xo = self._shmr_binning(x, bins, log)
+        hsmr = np.histogram(x, bins, weights=y)[0] / np.histogram(x, bins)[0]
+        return xo, hsmr
+
+    def shmr(self, bins=20, sample='all', log=True):
+        """Stellar-to-halo mass relation (SHMR)
+
+        Parameters
+        ----------
+        bins : int or array-like
+            `bins` argument of `np.histogram`
+        sample : {'all','centrals','satellites'}
+            over which subhaloes to calculate the HSMR
+        """
+        if sample == 'centrals':
+            mask = self.central_mask
+        elif sample == 'satellites':
+            mask = self.satellite_mask
+        elif sample == 'all':
+            mask = np.ones(self.central_mask.size, dtype=bool)
+        x = self.Mbound[mask]
+        y = self.MboundType[mask,4]
+        bins, xo = self._shmr_binning(x, bins, log)
+        shmr = np.histogram(x, bins, weights=y)[0] / np.histogram(x, bins)[0]
+        return xo, shmr
+
     def _mass_weighted_stat(self, values, mass, label):
         """Apply mass weighting
 
@@ -637,7 +682,7 @@ class Subhalos(BaseSubhalo):
             mass column used for the weighting. See
             ``Simulation.masstypes`` and
             ``Simulation.masstype_pandas_columns``
-        
+
 
         Returns
         -------
@@ -829,7 +874,9 @@ class Subhalos(BaseSubhalo):
             # update host masses
             for col in list(self.catalog):
                 if 'M200' in col or col == 'MVir':
-                    self.catalog[col] = 1e10 * self.catalog[col]
+                    # otherwise I think this happens twice?
+                    if self.catalog[col].max() < 1e10:
+                        self.catalog[col] = 1e10 * self.catalog[col]
             if verbose:
                 print('Joined hosts in {0:.2f} s'.format(time()-to))
             del hosts
@@ -877,10 +924,12 @@ class Subhalos(BaseSubhalo):
 
 
 
-class Track(BaseSubhalo):
+class _Track(BaseSubhalo):
 
     def __init__(self, track, sim, as_dataframe=False):
         """
+        Discontinued. Please use ``track.Track`` instead.
+
         Parameters
         ----------
         track : output of ``reader.GetTrack``
@@ -919,6 +968,9 @@ class Track(BaseSubhalo):
         self._last_central_snapshot_index = self._none_value
         self._zcentral = None
         self._zinfall = None
+
+    def __str__(self):
+        return f'Track ID {self.trackid} in {self.sim.name}'
 
     ### attributes ###
 
@@ -1125,12 +1177,14 @@ class Track(BaseSubhalo):
         iinf = 0
         # first jump by halves until we've narrowed it down to
         # very few snapshots
-        imin = self.sim.snapshots.min()
+        #imin = self.sim.snapshots.min()
+        imin = self.track['SnapshotIndexOfBirth']
         imax = self.sim.snapshots.max()
         do_smart = True
         if do_smart:
             while imax - imin > min_snap_range_brute:
                 isnap = (imin+imax) // 2
+                # note that this will fail if isnap == 281
                 subs = self.reader.LoadSubhalos(
                     isnap, ['TrackId','HostHaloId'])
                 if len(subs) == 0:

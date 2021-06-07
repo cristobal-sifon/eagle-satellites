@@ -4,11 +4,62 @@ from __future__ import (absolute_import, division, print_function,
 from icecream import ic
 import numpy as np
 import six
+#debugging
+from icecream import ic
+import sys
 
 from HBTReader import HBTReader
 
 from .simulation import BaseSimulation, Simulation
-from .subhalo import BaseSubhalo
+from .subhalo import BaseSubhalo, Subhalos
+
+
+class HaloTracks:
+    """Class containing tracks of all subhalos in a given halo
+
+    """
+    def __init__(self, hosthaloid, subhalos, sim=None, isnap=-1):
+        if sim is None and not hasattr(subhalos, 'sim'):
+            err = 'object `subhalos` does not contain a `sim` attribute;' \
+                ' `sim` argument must be provided'
+            raise ValueError(err)
+        self._hosthaloid = hosthaloid
+        self._subhalos = subhalos
+        self._isnap = isnap
+        #super().__init__(subhalos, subhalos.sim)
+        self._central = self._get_track_central()
+        self._satellites_mask = \
+            (self.satellites['HostHaloId'] == self.hosthaloid)
+        self._satellites = self.satellites.loc[self._satellites_mask]
+
+    @property
+    def central(self):
+        """Central subhalo track"""
+        return self._central
+
+    @property
+    def hosthaloid(self):
+        return self._hosthaloid
+
+    @property
+    def satellites(self):
+        """Satellite subhalo tracks"""
+        return self._satellites
+
+    @property
+    def satellites_mask(self):
+        return self._satellites_mask
+
+    def _get_track_central(self):
+        _central = (self.catalog['HostHaloId'] == self.hosthaloid) \
+            & (self.catalog['Rank'] == 0)
+        return Track(self.catalog['TrackId'].loc[_central], self.sim)
+
+    def _get_track_satellites(self):
+        _satellites = (self.catalog['HostHaloId'] == self.hosthaloid) \
+            & (self.catalog['Rank'] > 0)
+        return TrackArray(
+            self.catalog['TrackId'].loc[_satellites], self.sim)
 
 
 class TrackArray(BaseSubhalo):
@@ -23,7 +74,6 @@ class TrackArray(BaseSubhalo):
         else:
             self.sim = sim
         super(TrackArray, self).__init__(self.track_ids, self.sim)
-        ic(self.sim.path)
 
     def infalls(self):
         return
@@ -35,8 +85,8 @@ class Track(BaseSubhalo):
         """
         Parameters
         ----------
-        trackid : int
-            ID of the track to be loaded
+        trackid : int or output of ``reader.GetTrack``
+            ID of the track to be loaded or the track itself
         sim : ``Simulation`` object or ``str``
             simulation containing the track. If ``str``, should be
             simulation label (see ``Simulation.mapping``)
@@ -47,7 +97,6 @@ class Track(BaseSubhalo):
         >>> track = Track(trackid, Simulation('LR'))
 
         """
-        self.trackid = trackid
         # load simulation
         if isinstance(sim, six.string_types):
             self.sim = Simulation(sim)
@@ -55,12 +104,27 @@ class Track(BaseSubhalo):
             self.sim = sim
         # load reader and track
         self.reader = HBTReader(self.sim.path)
-        self.track = self.reader.GetTrack(self.trackid)
+        if isinstance(trackid, (int,np.integer)):
+            self.trackid = trackid
+            self.track = self._load_track()
+        elif isinstance(trackid, np.ndarray):
+            self.track = trackid
+            self.trackid = self.track['TrackId']
+            if hasattr(self.trackid, '__iter__'):
+                self.trackid = self.trackid[0]
+        else:
+            msg = f'argument track {trackid} of wrong type ({type(trackid)})'
+            raise ValueError(msg)
         super(Track, self).__init__(self.track, self.sim)
         # other attributes
-        self.current_host = self.hosts[-1]
+        #self.current_host = self.hosts[-1]
+        self.hostid = np.array(self.track['HostHaloId'])
         self.scale = self.track['ScaleFactor']
         self.z = 1/self.scale - 1
+        self.lookback_time = self.sim.cosmology.lookback_time(self.z)
+        self._birth_snapshot = self._none_value
+        self._first_satellite_snapshot = self._none_value
+        self._first_satellite_snapshot_index = self._none_value
         self._infall_snapshot = None
         self._infall_snapshot_index = None
         self._last_central_snapshot = None
@@ -70,9 +134,66 @@ class Track(BaseSubhalo):
         self._zcentral = None
         self._zinfall = None
 
+    def __repr__(self):
+        return f'Track({self.trackid}, {self.sim.label})'
+
+    def __str__(self):
+        return f'Track ID {self.trackid} in {self.sim.name}'
+
+    @property
+    def birth_snapshot(self):
+        if self._birth_snapshot == self._none_value:
+            self._birth_snapshot \
+                = self.reader.GetSub(self.trackid)['SnapshotIndexOfBirth']
+        return self._birth_snapshot
+
+    @property
+    def Mbound(self):
+        return 1e10 * self.track['Mbound']
+
+    @property
+    def MboundType(self):
+        #if self.as_dataframe:
+            #cols = ['MboundType{0}'.format(i) for i in range(6)]
+            #return 1e10 * np.array(self.track[cols])
+        return 1e10 * self.track['MboundType']
+
+    @property
+    def icent(self):
+        """alias for ``self.last_central_snapshot_index``"""
+        return self.last_central_snapshot_index
+
+    @property
+    def isat(self):
+        """alias for ``self.first_satellite_snapshot_index``"""
+        return self.first_satellite_snapshot_index
+
+    @property
+    def first_satellite_snapshot(self):
+        """
+        If the track has never been a satellite, this will remain None
+        """
+        if self.first_satellite_snapshot_index == self._none_value:
+            return self._none_value
+        if self._first_satellite_snapshot == self._none_value:
+            self._first_satellite_snapshot = \
+                self.track['Snapshot'][self.first_satellite_snapshot_index]
+        return self._first_satellite_snapshot
+
+    @property
+    def first_satellite_snapshot_index(self):
+        """
+        If the track has never been a satellite, this will remain None
+        """
+        if self._first_satellite_snapshot_index == self._none_value:
+            sat = (self.track['Rank'] > 0)
+            if sat.sum() > 0:
+                self._first_satellite_snapshot_index = self._range[sat][0]
+        return self._first_satellite_snapshot_index
+
     @property
     def infall_snapshot(self):
-        if self._infall_snapshot is None:
+        if self._infall_snapshot == self._none_value:
             self._infall_snapshot = \
                 self.track['Snapshot'][self.infall_snapshot_index]
         return self._infall_snapshot
@@ -135,6 +256,143 @@ class Track(BaseSubhalo):
             self._zinfall = self.z[self.host != self.current_host][-1]
         return self._zinfall
 
+    def _load_track(self):
+        """Load track, accounting for missing snapshots"""
+        track = self.reader.GetTrack(self.trackid)
+        #ic(self.sim.snapshot_list)
+        #ic(self.sim.snapshots)
+        #ic(self.sim.snapshot_mask.size)
+        #ic(self.sim.snapshot_mask.sum())
+        #ic(self.sim.snapshot_mask[280:285])
+        #sys.exit()
+        return track
+
+    ### methods ###
+
+    def host(self, isnap=-1, return_value='trackid'):
+        """Host halo (i.e., central subhalo) information at a given
+        snapshot
+
+        Parameters
+        ----------
+        isnap : int, optional
+            snapshot number at which the host is to be identified
+
+        Returns
+        -------
+        host : int
+            track ID of the host halo
+
+        Usage
+        -----
+        The host halo may be loaded as a Track with:
+        >>> track = Track(trackid, sim)
+        >>> host_track = track.host(isnap)
+        >>> host = Track(host_track, sim)
+        """
+        _valid_return = ('index','mask','table','track','trackid')
+        assert return_value in _valid_return, \
+            'return_value must be one of {0}'.format(_valid_return)
+        hostid = self.hostid[isnap]
+        # Rank is necessary for the definition of the Subhalos object
+        snap = Subhalos(
+            self.reader.LoadSubhalos(
+                isnap, ['TrackId','HostHaloId','Rank','Mbound']),
+            self.sim, isnap, load_hosts=False)
+        #hostid = snap.host(self.trackid, return_value='trackid')
+        return snap.host(self.trackid, return_value=return_value)
+        return self.reader.GetTrack(hostid)
+
+        sib = self.siblings(trackid, return_value='mask')
+        host_mask = sib & (self.catalog['Rank'] == 0)
+        if return_value == 'mask':
+            return host_mask
+        if return_value == 'track':
+            return self.reader.GetTrack(
+                self.catalog['TrackId'][host_mask][0])
+        if return_value == 'trackid':
+            return self.catalog['TrackId'][host_mask][0]
+        if return_value == 'index':
+            return self._range[host_mask][0]
+        return self.catalog[host_mask]
+
+    def infall(self, return_value='index', min_snap_range_brute=3):
+        """Last redshift at which the subhalo was not in its present
+        host
+
+        **Should be able to read the infall file if it exists**
+
+        Parameters
+        ----------
+        return_value : {'index', 'tlookback', 'redshift'}, optional
+            output value. Options are:
+        """
+        valid_outputs = ('index', 'redshift', 'tlookback')
+        assert return_value in valid_outputs, \
+            'return_value must be one of {0}. Got {1} instead'.format(
+                valid_outputs, return_value)
+        hostid = self.host(isnap=-1, return_value='trackid')
+        iinf = 0
+        # first jump by halves until we've narrowed it down to
+        # very few snapshots
+        imin = self.sim.snapshots.min()
+        imax = self.sim.snapshots.max()
+        while imax - imin > min_snap_range_brute:
+            isnap = (imin+imax) // 2
+            subs = self.reader.LoadSubhalos(
+                isnap, ['TrackId','HostHaloId'])
+            if len(subs) == 0:
+                imin = isnap
+                continue
+            snapcat = Subhalos(
+                subs, self.sim, isnap, load_hosts=False, logMmin=0)
+            sib = snapcat.siblings(hostid, 'trackid')
+            if sib is None or self.trackid not in sib:
+                imin = isnap
+            else:
+                imax = isnap
+        # once we've reached the minimum range allowed above,
+        # we just do backwards brute-force
+        for isnap in range(imax, imin-1, -1):
+            subs = self.reader.LoadSubhalos(
+                isnap, ['TrackId','HostHaloId'])
+            if len(subs) == 0:
+                iinf_backward = 0
+                break
+            snapcat = Subhalos(
+                subs, self.sim, isnap, load_hosts=False, logMmin=0)
+            sib = snapcat.siblings(hostid, 'trackid')
+            # this means we reached the beginning of the track
+            if sib is None:
+                iinf_backward = 0
+                break
+            elif self.trackid not in sib:
+                iinf_backward = isnap - self.sim.snapshots.max()
+                break
+        else:
+            iinf_backward = 0
+        iinf =  self._range[iinf_backward]
+        if return_value == 'tlookback':
+            return self.lookback_time(isnap=iinf)
+        if return_value == 'redshift':
+            return self.z[iinf]
+        return iinf
+
+    def is_central(self, isnap):
+        """Whether the subhalo is a central at a given moment
+
+        Parameters
+        ----------
+        isnap : int or array of int
+            snapshot index or indices
+
+        Returns
+        -------
+        is_central : bool or array of bool
+            whether the subhalo is a central at the specified time(s)
+        """
+        return (self.data['Rank'][isnap] == 0)
+
     def lookback_time(self, z=None, scale=None, snapshot=None):
         """This should probably be in Simulation"""
         if z is not None:
@@ -146,7 +404,6 @@ class Track(BaseSubhalo):
             return self.sim.cosmology.lookback_time(z)
         return self.sim.cosmology.lookback_time(self.z)
 
-    """
     def mass(self, mtype=None, index=None):
         assert mtype is not None or index is not None, \
             'must provide either ``mtype`` or ``index``'
@@ -157,9 +414,8 @@ class Track(BaseSubhalo):
         if index == -1:
             return self.Mbound
         return self.MboundType[:,index]
-    """
 
-    def mergers(self, output='index'):
+    def _mergers(self, output='index'):
         """Identify merging events
 
         A merging event is defined as one in which the host halo at a

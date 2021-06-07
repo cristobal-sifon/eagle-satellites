@@ -7,6 +7,9 @@ from glob import glob
 import numpy as np
 import os
 import six
+# debugging
+from icecream import ic
+import sys
 
 from HBTReader import HBTReader
 
@@ -30,14 +33,25 @@ class BaseSimulation(object):
 
 
 class Simulation(object):
+    """Simulation object
+
+    **Note**: all snapshot-related attributes include only those actually
+    found in the directory tree, except for ``self.snapshot_list``, which
+    includes all entries exactly as listed in ``snapshotlist.txt``
+    """
 
     def __init__(self, label):
         self.label = label
         self._cosmology = None
         self._family = None
         self._formatted_name = None
+        self._redshifts = None
         self._snapshots = None
+        self._snapshot_files = None
+        self._snapshot_list = None
+        self._snapshot_mask = None
         self._snapshot_indices = None
+        self._t_lookback = None
         self._virial_snapshots = None
         self.initialize_tree()
         print('Loaded {0} from {1}'.format(self.formatted_name, self.path))
@@ -113,40 +127,65 @@ class Simulation(object):
         return os.path.join('plots', self.name.replace('/', '_'))
 
     @property
-    def redshift(self):
-        snaplist = os.path.join(self.root, 'subcat', 'snapshotlist.txt')
-        snaplist = ascii.read(snaplist)
-        return np.array(
-            [x.split('_')[2][1:].replace('p', '.') for x in snaplist],
-            dtype=float)
+    def redshifts(self):
+        if self._redshifts is None:
+            self._redshifts =  np.array(
+                [x.split('_')[2][1:].replace('p', '.')
+                 for x in self.snapshot_list],
+                dtype=float)[self.snapshot_mask]
+        return self._redshifts
 
     @property
     def root(self):
         return '/cosma/home/durham/jvbq85/data/HBT/data'
 
     @property
+    def scale_factor(self):
+        return 1 / (1+self.redshifts)
+
+    @property
+    def snapshot_files(self):
+        if self._snapshot_files is None:
+            self._snapshot_files = sorted(glob(
+                os.path.join(self.path, 'SubSnap*')))
+        return self._snapshot_files
+
+    @property
+    def snapshot_list(self):
+        """All snapshots as listed in ``snapshotlist.txt``"""
+        if self._snapshot_list is None:
+            self._snapshot_list = np.loadtxt(
+                os.path.join(self.path, 'snapshotlist.txt'), dtype=str)
+        return self._snapshot_list
+
+    @property
+    def snapshot_mask(self):
+        if self._snapshot_mask is None:
+            self._snapshot_mask = np.array(
+                [(self.get_snapshot_file_from_index(i) in self.snapshot_files)
+                 for i in range(self.snapshot_list.size)])
+        return self._snapshot_mask
+
+    @property
     def snapshots(self):
         if self._snapshots is None:
-            try:
-                snaps = [
-                    i.split('/')[-1].split('_')[1].split('.')[0]
-                    for i in sorted(glob(os.path.join(self.path,'SubSnap*')))]
-            except IndexError:
-                snaps = []
-                for i in sorted(os.listdir(self.path)):
-                    try:
-                        snaps.append(int(i))
-                    except ValueError:
-                        pass
-            self._snapshots = np.array(snaps, dtype=int)
+            snaps = [i.split('/')[-1].split('_')[1].split('.')[0]
+                     for i in self.snapshot_files]
+            self._snapshots = np.array(snaps, dtype=np.uint16)
         return self._snapshots
 
     @property
     def snapshot_indices(self):
         if self._snapshot_indices is None:
             self._snapshot_indices = np.arange(
-                self.snapshots.size, dtype=int)
+                self.snapshots.size, dtype=int)[self.snapshot_mask]
         return self._snapshot_indices
+
+    @property
+    def t_lookback(self):
+        if self._t_lookback is None:
+            self._t_lookback = self.cosmology.lookback_time(self.redshifts)
+        return self._t_lookback
 
     @property
     def virial_path(self):
@@ -165,6 +204,9 @@ class Simulation(object):
         return self._virial_snapshots
 
     ### methods ###
+
+    def get_snapshot_file_from_index(self, idx):
+        return os.path.join(self.path, f'SubSnap_{idx:03d}.hdf5')
 
     def mass_to_sim_h(self, m, h, mtype='total', log=False):
         """Correction to mass measurement to account for different h
@@ -193,6 +235,20 @@ class Simulation(object):
         """
         return self.masstype_pandas_columns[self._masstype_index(mtype)]
 
+    def redshift(self, isnap: int):
+        """Redshift given snapshot index
+
+        Parameters
+        ----------
+        isnap : int
+            snapshot number (not index!)
+        """
+        try:
+            return self.redshifts[self.snapshots == isnap][0]
+        except IndexError:
+            msg = f'snapshot {isnap} not found in {self.name}'
+            raise IndexError(msg)
+
     def snapshot_index(self, snap):
         """Given a snapshot number, return the index to which it
         corresponds
@@ -216,7 +272,7 @@ class Simulation(object):
             os.makedirs(self.plot_path)
         return
 
-    def masslabel(self, latex=True, suffix=None, **kwargs):
+    def masslabel(self, latex=True, suffix=None, unit='Msun', **kwargs):
         """Return label of a given mass type
 
         Paramters
@@ -229,6 +285,9 @@ class Simulation(object):
             mass. Otherwise see ``self.masstypes``
         latex : bool, optional
             whether the label should be in latex or plain text format
+        unit : str, optional (NOT IMPLEMENTED)
+            which unit to include. Can be 'Msun' or a latex-formatted
+            string
         suffix : str, optional
             a suffix to add to the subscript, separated by a comma if
             ``latex=True`` and by an underscore otherwise
@@ -242,11 +301,12 @@ class Simulation(object):
         if latex:
             if suffix:
                 subscript = '{0},{1}'.format(subscript, suffix)
-            return r'M_\mathrm{{{0}}}'.format(subscript)
+            label = rf'M_\mathrm{{{subscript}}}'
         else:
             if suffix:
                 subscript = '{0}_{1}'.format(subscript, suffix)
-            return 'M{0}'.format(subscript.lower())
+            label = f'M{subscript.lower()}'
+        return label
 
     def masstype(self, mtype=None, index=None):
         assert mtype is not None or index is not None, \
@@ -266,5 +326,3 @@ class Simulation(object):
     def _masstype_index(self, mtype):
         rng = np.arange(self.masstypes.size, dtype=int)
         return rng[self.masstypes == mtype.lower()][0]
-
-

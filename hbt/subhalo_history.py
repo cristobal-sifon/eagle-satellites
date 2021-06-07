@@ -3,12 +3,12 @@ from astropy.cosmology import FlatLambdaCDM
 from astropy.io import fits
 from astropy.units import Quantity
 from glob import glob
+from icecream import ic
 from itertools import count
 from matplotlib import pyplot as plt, ticker, rcParams
 from matplotlib.colors import LogNorm
 from matplotlib.ticker import LogFormatterMathtext
 from mpl_toolkits.axes_grid1 import ImageGrid
-from mpl_toolkits.axes_grid1.colorbar import Colorbar
 import multiprocessing as mp
 import numpy as np
 import os
@@ -17,14 +17,15 @@ from time import sleep, time
 
 from plottery.plotutils import colorscale, savefig, update_rcParams
 update_rcParams()
-rcParams['text.latex.preamble'].append(r'\usepackage{color}')
+rcParams['text.latex.preamble'] += r',\usepackage{color}'
 
 from HBTReader import HBTReader
 
 # local
 from hbtpy import hbt_tools
 from hbtpy.simulation import Simulation
-from hbtpy.subhalo import Subhalos, Track
+from hbtpy.subhalo import Subhalos#, Track
+from hbtpy.track import Track
 #from core.subhalo_new import Subhalos, Track
 
 adjust_kwargs = dict(
@@ -54,11 +55,17 @@ def main():
 
     # sort host halos by mass
     print('Sorting by mass...')
-    rank = {'Mbound': np.argsort(-centrals.Mbound).values}
+    rank = {'Mbound': np.argsort(-centrals.Mbound).values,
+            'M200Mean': np.argsort(-centrals.catalog['M200Mean']).values}
+    ic(rank)
+    ic(np.log10(centrals.Mbound.iloc[rank['Mbound']][:5].values))
+    ic(np.log10(centrals.Mbound.iloc[rank['M200Mean']][:5].values))
+    ic(np.log10(centrals.catalog['M200Mean'].iloc[rank['Mbound']][:5].values))
+    ic(np.log10(centrals.catalog['M200Mean'].iloc[rank['M200Mean']][:5].values))
     # should not count on them being sorted by mass
     ids_cent = subs.centrals['TrackId']
 
-    do_plot_centrals = True
+    do_plot_centrals = False
     if do_plot_centrals:
         n = 20
         print('Plotting centrals...')
@@ -72,7 +79,7 @@ def main():
         print('Finished plot_centrals in {0:.2f} minutes'.format(
             (time()-to)/60))
 
-    do_plot_halos = False
+    do_plot_halos = True
     if do_plot_halos:
         print()
         print('Plotting halos...')
@@ -80,11 +87,13 @@ def main():
         # total, gas, halo, stars
         # ['gas', 'DM', 'disk', 'bulge', 'stars', 'BH']
         ti = time()
-        j = rank['Mbound'][:3]
-        suff = np.median(subs.centrals['Mbound'][j])
+        j = rank['M200Mean'][:3]
+        ic(centrals.catalog[['TrackId','Rank','Mbound','M200Mean']].iloc[j])
+        sys.exit()
+        suff = np.log10(np.median(centrals.catalog['Mbound'].iloc[j]))
         suff = '{0:.2f}'.format(suff).replace('.', 'p')
         plot_halos(args, sim, reader, subs,
-                   subs.centrals['TrackId'][j], suffix=suff)
+                   centrals.catalog['TrackId'].iloc[j], nsub=2)
         #print('Plotted mass #{0} in {1:.2f} minutes'.format(
             #massindex, (time()-to)/60))
         print('Finished plot_halos in {0:.2f} minutes'.format((time()-to)/60))
@@ -97,13 +106,14 @@ def member_indices(args, subcat, host_ids, nsub=10):
     centrals = (cat['Rank'] == 0)
     halos = np.intersect1d(cat['TrackId'], host_ids)
     to = time()
-    #if args.ncores == 1:
-    if True:
+    if args.ncores == 1:
+    #if True:
         idx = []
         for track in host_ids:
             idx.append(subcat.siblings(track, 'index')[:nsub+1])
     else:
         idx = [track for track in host_ids]
+        ic(len(idx))
         pool = mp.Pool(args.ncores)
         results = \
             [pool.apply_async(subcat.siblings, args=(track,),
@@ -111,9 +121,13 @@ def member_indices(args, subcat, host_ids, nsub=10):
              for track in host_ids]
         pool.close()
         pool.join()
-        for out in results:
+        for i, out in enumerate(results):
             out = out.get()
-            idx[out[0]] = out[1]
+            try:
+                idx[out[0]] = out[1]
+            except IndexError as e:
+                ic(i)
+                raise IndexError(e)
     print('member indices in {0:.2f} s'.format(time()-to))
     return idx
 
@@ -129,7 +143,7 @@ def plot_centrals(args, sim, reader, subcat, centrals, indices, massindex=-1,
     axes = (ax1, ax2)
     if title:
         fig.suptitle(title)
-    cscale, cmap = colorscale(10+np.log10(centrals['Mbound'][indices]))
+    cscale, cmap = colorscale(np.log10(centrals.Mbound[indices]))
     track_data = read_and_plot_track(
         args, axes, sim, reader, subcat, centrals, indices,
         show_history=False, label_host=False, show_label=False,
@@ -153,8 +167,11 @@ def make_halo_plot(args, sim, tracks, massindex=-1, includes_central=True,
     # this should include multiple clusters
     if not hasattr(tracks[0], '__iter__'):
         tracks = [tracks]
+    ic(includes_central)
     i0 = int(includes_central)
+    ic(i0)
     hostids = [t[-3] for t in tracks]
+    ic(hostids)
     ncl = np.unique(hostids).size
     nsub = [(hostids == i).sum() for i in np.unique(hostids)]
     nsat = [n-includes_central for n in nsub]
@@ -178,7 +195,10 @@ def make_halo_plot(args, sim, tracks, massindex=-1, includes_central=True,
     output = os.path.join(sim.plot_path, '{0}.pdf'.format(output))
     #title = '{0}: {1} most massive halos'.format(sim.formatted_name, ncl)
     fig, axes = plt.subplots(figsize=(14,5*(ncl+0.5)), ncols=2, nrows=ncl)
+    if ncl == 1:
+        axes = [axes]
     for i, row in enumerate(axes):
+        ic(i)
         n = int(np.sum(nsub[:i]))
         # the central track
         if includes_central:
@@ -189,6 +209,8 @@ def make_halo_plot(args, sim, tracks, massindex=-1, includes_central=True,
         _ = [plot_track(
                 row, sim, tracks[ji], massindex=massindex, color=colors[ji])
              for ji in j]
+        # need to pass the mass definition used to sort halos here,
+        # for the upper-left text
         setup_track_axes(
             row, sim, sim.cosmology, is_last_row=(i==len(axes)-1),
             masslabel=sim.masslabel(index=massindex, latex=True))
@@ -226,6 +248,8 @@ def plot_track(axes, sim, track_data, massindex=-1,
     Make sure `massindex` is consistent with `read_track()`
     """
     trackid, t, Mt, rank, depth, icent, isat, iinf, hostid, th, Mh = track_data
+    ic(trackid)
+    ic(rank[-1])
     if hasattr(massindex, '__iter__'):
         pass
     else:
@@ -239,6 +263,8 @@ def plot_track(axes, sim, track_data, massindex=-1,
         label = '_none_'
     axes[0].plot(t, Mt, label=label, color=color, **kwargs)
     axes[1].plot(t, Mt/Mo, color=color, **kwargs)
+    #ic()
+    #ic(label_host)
 
     if show_history:
         for ax, m in zip(axes, [Mt,Mt/Mo]):
@@ -264,6 +290,7 @@ def plot_track(axes, sim, track_data, massindex=-1,
         #axes[1].plot(th, Mh/Mh[-1], **host_kwargs)
         # some information on the host halo
         if label_host:
+            ic()
             text = r'log ${1}^\mathrm{{host}} = {0:.2f}$'.format(
                 np.log10(Mh[-1]),
                 sim.masslabel(index=massindex, latex=True))
@@ -358,9 +385,12 @@ def read_tracks(args, sim, reader, cat, indices, nsub=10, sort_mass=True,
 
 def read_track(sim, reader, cat, track_idx, load_history=True,
                massindex=None, verbose=True):
+    #ic()
     trackid = cat['TrackId'][track_idx]
     ti = time()
-    track = Track(reader.GetTrack(trackid), sim)
+    track = Track(trackid, sim)
+    #ic(track)
+    #sys.exit()
     if verbose:
         print('Loaded track #{2} (TrackID {0}) in {1:.2f} minutes'.format(
             trackid, (time()-ti)/60, track_idx))
@@ -378,6 +408,7 @@ def read_track(sim, reader, cat, track_idx, load_history=True,
     host = Track(host, sim)
     t = track.lookback_time()
     th = host.lookback_time()
+    #ic(massindex)
     if massindex is None:
         Mt = [track.mass(index=i) for i in range(6)]
         Mt.append(track.mass(index=-1))
@@ -388,6 +419,10 @@ def read_track(sim, reader, cat, track_idx, load_history=True,
     else:
         Mt = track.mass(index=massindex)
         Mh = host.mass(index=massindex)
+    #ic(Mt.shape)
+    #ic(Mt[-1])
+    #ic(Mh.shape)
+    #ic(Mh[-1])
     #print('Mt =', Mt.shape)
     #print(
     rank = track.track['Rank']
@@ -462,6 +497,8 @@ def save_tracks(track_data, output, sim=None, massindex=None, suffix=None):
             if np.any(c):
                 columns.append(fits.Column(name=n, array=c, format=fmt))
     fitstbl = fits.BinTableHDU.from_columns(columns)
+    if os.path.isfile(output):
+        os.remove(output)
     fitstbl.writeto(output)
     print('Saved to', output)
     return
