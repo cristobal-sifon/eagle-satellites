@@ -10,6 +10,7 @@ import numpy as np
 from numpy.lib.recfunctions import append_fields
 import os
 import pandas as pd
+from scipy.stats import binned_statistic as binstat
 import six
 from time import time
 import warnings
@@ -333,32 +334,6 @@ class HostHalos(BaseDataSet, BaseSimulation):
         return isnap
 
 
-class HostHaloTrack(BaseSubhalo):
-    """Class containing tracks of all subhalos in a given halo
-
-    """
-
-
-    def __init__(self, hosthaloid, subhalos, sim, isnap=-1):
-        self._hosthaloid = hosthaloid
-        self._subhalos = subhalos
-        self._isnap = isnap
-        super(HostHaloTrack, self).__init__(subhalos, sim)
-
-    @property
-    def children(self):
-        return self._children
-
-    @property
-    def hosthaloid(self):
-        return self._hosthaloid
-
-    @hosthaloid.setter
-    def hosthaloid(self, hostid):
-        self._hosthaloid = hostid
-        self._children = \
-            self._range[self.catalog['HostHaloId'] == self._hosthaloid]
-
 
 class Subhalos(BaseSubhalo):
     """Class to manage a sample of subhalos at a given snapshot
@@ -615,6 +590,61 @@ class Subhalos(BaseSubhalo):
         if return_value == 'index':
             return self._range[host_mask][0]
         return np.array(self.catalog[host_mask])
+
+    def _shmr_binning(self, x, bins, log):
+        if not np.iterable(bins):
+            bins = np.logspace(np.log10(x.min()), np.log10(x.max()), bins) \
+                if log else np.linspace(x.min(), x.max(), bins)
+        if log:
+            logbins = np.log10(bins)
+            xo = 10**((logbins[1:]+logbins[:-1]) / 2)
+        else:
+            xo = (bins[:-1]+bins[1:]) / 2
+        return bins, xo
+
+    def hsmr(self, bins=20, sample='all', log=True):
+        """Halo-to-stellar mass relation (HSMR)
+
+        Parameters
+        ----------
+        bins : int or array-like
+            `bins` argument of `np.histogram`
+        sample : {'all','centrals','satellites'}
+            over which subhaloes to calculate the HSMR
+        """
+        if sample == 'centrals':
+            mask = self.central_mask
+        elif sample == 'satellites':
+            mask = self.satellite_mask
+        elif sample == 'all':
+            mask = np.ones(self.central_mask.size, dtype=bool)
+        x = self.MboundType[mask,4]
+        y = self.Mbound[mask]
+        bins, xo = self._shmr_binning(x, bins, log)
+        hsmr = np.histogram(x, bins, weights=y)[0] / np.histogram(x, bins)[0]
+        return xo, hsmr
+
+    def shmr(self, bins=20, sample='all', log=True):
+        """Stellar-to-halo mass relation (SHMR)
+
+        Parameters
+        ----------
+        bins : int or array-like
+            `bins` argument of `np.histogram`
+        sample : {'all','centrals','satellites'}
+            over which subhaloes to calculate the HSMR
+        """
+        if sample == 'centrals':
+            mask = self.central_mask
+        elif sample == 'satellites':
+            mask = self.satellite_mask
+        elif sample == 'all':
+            mask = np.ones(self.central_mask.size, dtype=bool)
+        x = self.Mbound[mask]
+        y = self.MboundType[mask,4]
+        bins, xo = self._shmr_binning(x, bins, log)
+        shmr = np.histogram(x, bins, weights=y)[0] / np.histogram(x, bins)[0]
+        return xo, shmr
 
     def _mass_weighted_stat(self, values, mass, label):
         """Apply mass weighting
@@ -1147,12 +1177,14 @@ class _Track(BaseSubhalo):
         iinf = 0
         # first jump by halves until we've narrowed it down to
         # very few snapshots
-        imin = self.sim.snapshots.min()
+        #imin = self.sim.snapshots.min()
+        imin = self.track['SnapshotIndexOfBirth']
         imax = self.sim.snapshots.max()
         do_smart = True
         if do_smart:
             while imax - imin > min_snap_range_brute:
                 isnap = (imin+imax) // 2
+                # note that this will fail if isnap == 281
                 subs = self.reader.LoadSubhalos(
                     isnap, ['TrackId','HostHaloId'])
                 if len(subs) == 0:

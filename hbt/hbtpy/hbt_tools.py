@@ -1,7 +1,9 @@
 import argparse
 from functools import wraps
+import os
 from time import time
 
+from plottery.plotutils import savefig
 
 def timer(func):
     @wraps(func)
@@ -55,6 +57,11 @@ def read_args():
     return parser
 
 
-
-
-
+def save_plot(fig, output, sim, **kwargs):
+    if '/' in output:
+        path = os.path.join(sim.plot_path, os.path.split(output)[0])
+        if not os.path.isdir(path):
+            os.makedirs(path)
+    out = os.path.join(sim.plot_path, '{0}.pdf'.format(output))
+    savefig(out, fig=fig, **kwargs)
+    return
