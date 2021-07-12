@@ -52,6 +52,7 @@ def read_args():
     """
     parser = argparse.ArgumentParser()
     add = parser.add_argument
+    add('--debug', dest='debug', action='store_true')
     add('--ncores', dest='ncores', default=1, type=int)
     add('simulation', default='LR')
     return parser

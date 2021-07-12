@@ -54,6 +54,9 @@ class Simulation(object):
         self._t_lookback = None
         self._virial_snapshots = None
         self.initialize_tree()
+        self.history_file = os.path.join(
+            self.data_path, 'history', 'history.h5')
+        self.has_history = os.path.isfile(self.history_file)
         print('Loaded {0} from {1}'.format(self.formatted_name, self.path))
 
     ### attributes ###

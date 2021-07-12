@@ -84,22 +84,68 @@ def wrap_plot(reader, sim, subs, isnap, hostmass='logM200Mean',
     #return
     #test_velocities(subs)
 
+    units = {'mass': r'$\mathrm{M}_\odot$', 'time': 'Gyr'}
     xbins = {
         'ComovingMostBoundDistance': np.linspace(0, 3, 9),
         'logComovingMostBoundDistance': np.logspace(-2, 0.5, 9),
         'M200Mean': np.logspace(13, 14.7, 9),
         'mu': np.logspace(-5, 0, 9),
+        
         }
     binlabel = {
         'ComovingMostBoundDistance': r'$R_\mathrm{{com}}$ ($h^{{-1}}$Mpc)',
         'M200Mean': r'$M_\mathrm{200m}$ (M$_\odot$)',
         'mu': r'$\mu$',
+        'Mbound': '$m_\mathrm{sub}$',
+        'Mstar': '$m_\star$',
+        'Mdm': '$m_\mathrm{DM}$',
+        'Mgas': '$m_\mathrm{gas}$',
     }
+    for event in ('last_infall', 'first_infall', 'cent', 'sat'):
+        h = f'history:{event}'
+        event_label = event.split('_')[0]
+        if 'infall' in event:
+            infall_label = fr'\mathrm{{i({event_label})}}'
+        else:
+            infall_label = f'\mathrm{{{event_label}}}'
+        binlabel[f'{h}:Mbound'] = f'$m_\mathrm{{sub}}^{infall_label}$'
+        binlabel[f'{h}:Mstar'] = f'$m_\star^{infall_label}$'
+        binlabel[f'{h}:Mdm'] = f'$m_\mathrm{{DM}}^{infall_label}$'
+        binlabel[f'{h}:Mgas'] = f'$m_\mathrm{{gas}}^{infall_label}$'
+        binlabel[f'{h}:time'] = f'$t_\mathrm{{lookback}}^{infall_label}$'
 
     cshmr, sshmr, chsmr, shsmr = plot_shmr(
         sim, subs, hostmass_min=1e13, xlim=(8,14), ylim=(7,12))
     #plot_shmr_fmass(sim, subs, shsmr=shsmr, chsmr=chsmr)
     #return
+    for event in ('last_infall', 'first_infall', 'cent', 'sat'):
+        h = f'history:{event}'
+        for bincol in (f'{h}:Mbound', f'{h}:Mstar', f'{h}:Mdm',
+                       f'{h}:Mstar/{h}:Mbound', f'{h}:Mdm/{h}:Mbound',
+                       f'{h}:Mstar/{h}:Mdm',
+                       f'Mbound/{h}:Mbound', f'Mstar/{h}:Mbound',
+                       f'{h}:time'):
+            label = f'{bincol}'
+            for key, val in binlabel.items():
+                if key[:7] == 'history':
+                    label = label.replace(key, val)
+            # now for non-history quantities
+            for key, val in binlabel.items():
+                label = label.replace(key, val)
+            if '/' not in bincol:
+                unit = units['time'] if bincol[-4:] == 'time' \
+                    else units['mass']
+                label = f'{label} ({unit})'
+            ic(bincol, label)
+            if '/' in bincol:
+                bins = np.logspace(-3, 0.3, 8)
+            else: bins = 10
+            logbins = ('time' not in bincol)
+            plot_shmr_binned(
+                sim, subs, bincol=bincol, binlabel=label, bins=bins,
+                logbins=logbins)
+    return
+
     for bincol in ('mu','M200Mean'):
         plot_shmr_binned(
             sim, subs,
@@ -498,9 +544,11 @@ def plot_rv(sim, subs, hostmass='M200Mean', weights=None):
     return
 
 
-def plot_shmr_binned(sim, subs, shsmr=None, chsmr=None, hostmass='M200Mean',
+def plot_shmr_binned(sim, subs, xcol='stars', ycol='total',
+                     shsmr=None, chsmr=None, hostmass='M200Mean',
                      show_hist=True, xbin=None, bincol=None, bins=8,
-                     logbins=False, binlabel='', mask=None):
+                     logbins=False, binlabel='', mask=None,
+                     xlabel=None, ylabel=None):
     """Plot the SHMR and HSMR
 
     ``bincol`` and ``bins`` allow the relations to be binned in a
@@ -522,13 +570,15 @@ def plot_shmr_binned(sim, subs, shsmr=None, chsmr=None, hostmass='M200Mean',
         if xbin is None:
             if bincol == 'mu':
                 xbin = mtot / mhost
+            elif '/' in bincol:
+                bincol1, bincol2 = bincol.split('/')
+                xbin = subs[bincol1] / subs[bincol2]
             else:
-                xbin = subs.catalog[bincol]
-        ic(xbin.min())
-        ic(xbin.max())
+                xbin = subs[bincol]
         if not np.iterable(bins):
             j = np.isfinite(xbin)
             if logbins:
+                j = j & (xbin > 0)
                 bins = np.logspace(
                     np.log10(xbin[j].min()), np.log10(xbin[j].max()), bins+1)
             else:
@@ -569,13 +619,17 @@ def plot_shmr_binned(sim, subs, shsmr=None, chsmr=None, hostmass='M200Mean',
             label='Centrals', zorder=100)
     if shsmr is not None or chsmr is not None:
         ax.legend(fontsize=18)
-    ax.set_xlabel(r'$\log\,{0}$'.format(sim.masslabel(mtype='stars')))
-    ax.set_ylabel(r'$\log\,{0}$'.format(sim.masslabel(mtype='total')))
+    if xlabel is None:
+        xlabel = r'$\log\,{0}$'.format(sim.masslabel(mtype='stars'))
+    if ylabel is None:
+        ylabel = r'$\log\,{0}$'.format(sim.masslabel(mtype='total'))
+    ax.set(xlabel=xlabel, ylabel=ylabel)
     ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
     ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
     #ax.set_xlim(mslim)
     #ax.set_ylim(mlim)
-    output = f'shmr_log{bincol}' if logbins else f'shmr_{bincol}'
+    bincol = bincol.replace('/', '-over-').replace(':', '-')
+    output = f'shmr_{bincol}_log' if logbins else f'shmr_{bincol}'
     save_plot(fig, output, sim)
     #save_plot(fig, 'shmr_mu', sim)
     return

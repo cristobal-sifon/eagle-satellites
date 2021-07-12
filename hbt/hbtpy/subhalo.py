@@ -342,8 +342,8 @@ class Subhalos(BaseSubhalo):
 
     def __init__(self, catalog, sim, isnap,
                  logMmin=9, logM200Mean_min=12, exclude_non_FoF=True,
-                 as_dataframe=True,
-                 load_hosts=True, load_distances=True, load_velocities=True):
+                 as_dataframe=True, load_hosts=True, load_distances=True,
+                 load_velocities=True, load_history=True):
         """
         Parameters
         ----------
@@ -373,6 +373,10 @@ class Subhalos(BaseSubhalo):
             whether to load host information. If the first one is
             ``True``, then whether to load cluster-centric distances
             and peculiar velocities
+        load_history : bool
+            whether to load the histories of each subhalo, as stored
+            in ``{self.sim.data_path}/history/history.h5``. These
+            will be loaded as additional columns in ``self.catalog``
         """
         assert isinstance(as_dataframe, bool)
         assert isinstance(load_hosts, bool)
@@ -428,6 +432,26 @@ class Subhalos(BaseSubhalo):
             self.distance2host('Comoving')
         if self.load_velocities:
             self.host_velocities()
+        self.load_history = load_history
+        if self.load_history:
+            self.read_history()
+
+    def __getitem__(self, col):
+        if not isinstance(col, str):
+            raise IndexError('can only index Subhalo object with string')
+        cols = self.catalog.columns \
+            if isinstance(self.catalog, pd.DataFrame) \
+            else self.catalog.dtypes.names
+        if col in cols:
+            return self.catalog[col]
+        elif col == 'Mgas':
+            return self.catalog['MboundType0']
+        elif col == 'Mdm':
+            return self.catalog['MboundType1']
+        elif col == 'Mstar':
+            return self.catalog['MboundType4']
+        else:
+            raise IndexError(f'index `{col}` not found')
 
     ### attributes ###
 
@@ -437,15 +461,11 @@ class Subhalos(BaseSubhalo):
 
     @property
     def central_idx(self):
-        if self._central_idx is None:
-            self._central_idx = self._range[self._central_mask]
-        return self._central_idx
+        return self._range[self._central_mask]
 
     @property
     def central_mask(self):
-        if self._central_mask is None:
-            self._central_mask = (self.catalog['Rank'] == 0)
-        return self._central_mask
+        return (self.catalog['Rank'] == 0)
 
     @property
     def orphan(self):
@@ -456,19 +476,16 @@ class Subhalos(BaseSubhalo):
 
     @property
     def satellites(self):
-        return self.catalog[self.satellite_mask]
+        ic(self.catalog.shape, self.satellite_mask.shape)
+        return self.catalog.loc[self.satellite_mask]
 
     @property
     def satellite_idx(self):
-        if self._satellite_idx is None:
-            self._satellite_idx =  self._range[self.satellite_mask]
-        return self._satellite_idx
+        return self._range[self.satellite_mask]
 
     @property
     def satellite_mask(self):
-        if self._satellite_mask is None:
-            self._satellite_mask = (self.catalog['Rank'] > 0)
-        return self._satellite_mask
+        return (self.catalog['Rank'] > 0)
 
     ### hidden methods ###
 
@@ -883,6 +900,27 @@ class Subhalos(BaseSubhalo):
         self._has_host_properties = True
         self.as_dataframe = adf
         print('Loaded in {0:.2f} s'.format(time()-to))
+        return
+
+    def read_history(self):
+        file = os.path.join(self.sim.data_path, 'history', 'history.h5')
+        if not os.path.isfile(file):
+            wrn = f'cannot load history: history file {file} does not exist'
+            warnings.warn(wrn)
+            return
+        is_df = isinstance(self.catalog, pd.DataFrame)
+        if not is_df:
+            self.catalog = pd.DataFrame.from_records(self.catalog)
+        history = pd.DataFrame()
+        with h5py.File(file, 'r') as hdf:
+            for grp in hdf.keys():
+                group = hdf.get(grp)
+                for col in group.keys():
+                    dfcol = col if grp == 'trackids' else f'{grp}:{col}'
+                    history[f'history:{dfcol}'] = np.array(group.get(col))
+        self._catalog = self.catalog.merge(
+            history.reset_index(), how='left', left_on='TrackId',
+            right_on='history:TrackId')
         return
 
     def siblings(self, trackid, return_value='index'):

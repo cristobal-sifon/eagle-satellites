@@ -1,6 +1,7 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
+import h5py
 from icecream import ic
 import numpy as np
 import six
@@ -64,19 +65,49 @@ class HaloTracks:
 
 class TrackArray(BaseSubhalo):
 
-    def __init__(self, track_ids, sim):
-        if not np.iterable(track_ids):
-            track_ids = np.array([track_ids])
-        self.track_ids = track_ids
+    def __init__(self, trackid, sim):
+        if not np.iterable(trackid):
+            trackid = [trackid]
+        self.trackids = np.array(trackid, dtype=npt.int32)
         # load simulation
         if isinstance(sim, six.string_types):
             self.sim = Simulation(sim)
         else:
             self.sim = sim
-        super(TrackArray, self).__init__(self.track_ids, self.sim)
+        super(TrackArray, self).__init__(self.trackid, self.sim)
 
-    def infalls(self):
-        return
+    def history(self, cols=None, when='first_infall'):
+        """Return data from events in the history of the track
+
+        Parameters
+        ----------
+        cols : str or list of str, optional
+            what data to return
+        when : one of (None,'first_infall','last_infall','cent','sat')
+            event from which to retrieve data
+
+        Returns
+        -------
+        history : pd.DataFrame
+            requested elements
+        """
+        if not self.sim.has_history:
+            err = f'file {self.sim.history_file} not found'
+            raise ValueError(err)
+        assert when in (None, 'first_infall', 'last_infall', 'cent', 'sat')
+        with h5py.File(self.sim.history_file, 'r') as hdf:
+            trackids = hdf.get('trackids')
+            jsort = np.argsort(self.trackid)
+            j = np.isin(np.array(trackids.get('TrackId')), self.trackid)
+            if j.sum() != self.trackids.size:
+                err = f'not all TrackIds found in {self.sim.history_file}'
+                raise ValueError(err)
+            grp = hdf.get(when)
+            if isinstance(cols, str):
+                cols = [cols]
+            elif cols is None:
+                cols = grp.keys()
+            return [np.array(grp.get(col))[j][0] for col in cols]
 
 
 class Track(BaseSubhalo):
@@ -242,6 +273,7 @@ class Track(BaseSubhalo):
 
     @property
     def zcentral(self):
+        """NOTE: this is returning an array instead of a float"""
         if self._zcentral is None:
             if self.track['Rank'][-1] == 0:
                 self._zcentral = self.z[-1]
@@ -259,12 +291,6 @@ class Track(BaseSubhalo):
     def _load_track(self):
         """Load track, accounting for missing snapshots"""
         track = self.reader.GetTrack(self.trackid)
-        #ic(self.sim.snapshot_list)
-        #ic(self.sim.snapshots)
-        #ic(self.sim.snapshot_mask.size)
-        #ic(self.sim.snapshot_mask.sum())
-        #ic(self.sim.snapshot_mask[280:285])
-        #sys.exit()
         return track
 
     ### methods ###
@@ -316,6 +342,51 @@ class Track(BaseSubhalo):
             return self._range[host_mask][0]
         return self.catalog[host_mask]
 
+    def history(self, cols=None, when='first_infall', raise_error=True):
+        """Return data from events in the history of the track
+
+        Parameters
+        ----------
+        cols : str or list of str, optional
+            what data to return
+        when : one of (None,'first_infall','last_infall','cent','sat')
+            event from which to retrieve data
+        raise_error : bool
+            whether to raise an error if the TrackId cannot be found in
+            the history file. If ``False``, will return ``None``
+
+        Returns
+        -------
+        history : list
+            list with requested elements
+        """
+        if not self.sim.has_history:
+            err = f'file {self.sim.history_file} not found'
+            raise ValueError(err)
+        assert when in (None, 'first_infall', 'last_infall', 'cent', 'sat')
+        with h5py.File(self.sim.history_file, 'r') as hdf:
+            trackids = hdf.get('trackids')
+            j = (np.array(trackids.get('TrackId')) == self.trackid)
+            if j.sum() == 1:
+                grp = hdf.get(when)
+                if cols is None:
+                    cols = grp.keys()
+                if isinstance(cols, str):
+                    data = grp[cols][j][0]
+                else:
+                    data = [grp[col][j][0] for col in cols]
+                return data
+            elif j.sum() > 1:
+                err = f'ambiguous TrackId {self.trackid} match in' \
+                      f'{self.sim.history_file}.'
+            else:
+                err = f'TrackId {self.trackid} not found in' \
+                      f'{self.sim.history_file}.'
+            if raise_error:
+                raise IndexError(err)
+            else:
+                return None
+
     def infall(self, return_value='index', min_snap_range_brute=3):
         """Last redshift at which the subhalo was not in its present
         host
@@ -325,13 +396,14 @@ class Track(BaseSubhalo):
         Parameters
         ----------
         return_value : {'index', 'tlookback', 'redshift'}, optional
-            output value. Options are:
+            output value
         """
         valid_outputs = ('index', 'redshift', 'tlookback')
         assert return_value in valid_outputs, \
             'return_value must be one of {0}. Got {1} instead'.format(
                 valid_outputs, return_value)
         hostid = self.host(isnap=-1, return_value='trackid')
+        ic(hostid)
         iinf = 0
         # first jump by halves until we've narrowed it down to
         # very few snapshots
@@ -347,31 +419,39 @@ class Track(BaseSubhalo):
             snapcat = Subhalos(
                 subs, self.sim, isnap, load_hosts=False, logMmin=0)
             sib = snapcat.siblings(hostid, 'trackid')
+            ic(isnap, sib.size, (sib == self.trackid).sum())
             if sib is None or self.trackid not in sib:
                 imin = isnap
             else:
                 imax = isnap
         # once we've reached the minimum range allowed above,
         # we just do backwards brute-force
+        ic(imin, imax)
         for isnap in range(imax, imin-1, -1):
             subs = self.reader.LoadSubhalos(
                 isnap, ['TrackId','HostHaloId'])
             if len(subs) == 0:
-                iinf_backward = 0
-                break
+                #iinf_backward = 0
+                #break
+                continue
             snapcat = Subhalos(
                 subs, self.sim, isnap, load_hosts=False, logMmin=0)
             sib = snapcat.siblings(hostid, 'trackid')
+            ic(isnap, sib.size, (sib == self.trackid).sum())
             # this means we reached the beginning of the track
             if sib is None:
                 iinf_backward = 0
-                break
+                #break
             elif self.trackid not in sib:
                 iinf_backward = isnap - self.sim.snapshots.max()
+                #break
+            if isnap < 250:
                 break
         else:
             iinf_backward = 0
         iinf =  self._range[iinf_backward]
+        ic(isnap, iinf, iinf_backward, self.z[iinf])
+        ic(self.sim.snapshots)
         if return_value == 'tlookback':
             return self.lookback_time(isnap=iinf)
         if return_value == 'redshift':
