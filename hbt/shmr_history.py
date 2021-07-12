@@ -86,7 +86,7 @@ def halo_shmr_evolution(subs, sim, host_halo_id, seed=None, n=30,
                          np.random.randint(0, sats.shape[0], n))
         outputs = [f'shmr_track/shmr_track_{c}_seed{seed}_{when}'
                    for when in ('infall','present')]
-    # let's do the 15 most massive (in stars)
+    # let's do the n most massive (in stars)
     else:
         jsat = np.argsort(sats['MboundType4'])[-n:].values
         outputs = [f'shmr_track/shmr_track_{c}_n{n}_{when}'
@@ -103,6 +103,7 @@ def halo_shmr_evolution(subs, sim, host_halo_id, seed=None, n=30,
             pool.close()
             pool.join()
         out = [i.get() for i in out]
+        out = [i for i in out if i is not None]
         xy_infall = [i[0] for i in out]
         xy_present = [i[1] for i in out]
     else:
@@ -125,6 +126,7 @@ def halo_shmr_evolution(subs, sim, host_halo_id, seed=None, n=30,
         pass
     colors, cmap = colorscale(n=cent.z.size, vmin=vmin, vmax=vmax)
     # not plotting the central subhalo
+    ic(load_kwargs)
     xy_infall_c, xy_present_c = load_shmr_track(c, sim, **load_kwargs)
     # note that the third elemenf of x_*_c is `colors`, which is
     # the first kwarg of `plot_shmr_track`
@@ -162,7 +164,10 @@ def load_shmr_track(trackid, sim, mkey='Mbound', vmin=0, vmax=14):
         mass = track.track['M200Mean']
     x = np.log10(track.MboundType[:,4])
     y = np.log10(mass)
-    i = track.infall() + 1
+    i = track.history(cols='isnap', when='first_infall', raise_error=False)
+    #ic(i)
+    if i is None:
+        return None
     return [x[:i], y[:i], colors[:i]], [x[i:], y[i:], colors[i:]]
 
 
