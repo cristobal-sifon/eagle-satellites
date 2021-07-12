@@ -1,9 +1,12 @@
 from glob import glob
+import h5py
 from icecream import ic
 import numpy as np
 import os
+import pandas as pd
 from time import time
 from tqdm import tqdm
+import sys
 
 from HBTReader import HBTReader
 
@@ -15,8 +18,8 @@ from hbtpy.track import TrackArray
 
 
 def main():
-    #ic.disable()
     args = hbt_tools.parse_args()
+
     sim = Simulation(args.simulation)
     ic(f'Loaded {sim.name} with {sim.snapshots.size} snapshots!')
 
@@ -27,24 +30,27 @@ def main():
     isnap = -1
     ti = time()
     subs = reader.LoadSubhalos(isnap)
-    print(f'Loaded subhalos in {time()-ti:.2f} s!')
+    print(f'Loaded {subs.shape[0]} subhalos in {time()-ti:.2f} s!')
 
     subs = Subhalos(
         subs, sim, isnap, exclude_non_FoF=True,
-        load_distances=False, load_velocities=False)
+        logMmin=9, logM200Mean_min=12,
+        load_distances=False, load_velocities=False,
+        load_hosts=False, load_history=False)
     subhalos = subs.catalog
     sats = subs.satellites
     cents = subs.centrals
     ic(sats['TrackId'].shape)
     ic(cents['TrackId'].shape)
-    ti = time()
     host_halo_id = sats['HostHaloId'].to_numpy(dtype=np.int32)
+    ic(host_halo_id.shape)
     cent_track_id = cents['TrackId'].to_numpy(dtype=np.int32)
-    host_track_id = np.array(
+    ti = time()
+    host_track_id_today = np.array(
         [cent_track_id[cents['HostHaloId'] == hhi][0]
          for hhi in host_halo_id])
     print(f'host tracks in {time()-ti:.2f} s')
-    ic(host_track_id[:5])
+    ic(host_track_id_today[:5])
 
     # this is unnecessary really
     tracks = TrackArray(subs.satellites['TrackId'], sim)
@@ -59,192 +65,174 @@ def main():
     ic(ntracks_cent)
 
     nsnap = sim.snapshots.size
-    idx_infall, idx_sat, idx_cent \
-        = -99 * np.ones((3,ntracks), dtype=np.uint8)
-    t_infall, t_sat, t_cent \
-        = -99 * np.ones((3,ntracks), dtype=np.float16)
-    z_infall, z_sat, z_cent \
-        = -99 * np.ones((3,ntracks), dtype=np.float16)
-    Mbound_infall, Mbound_sat, Mbound_cent \
-        = -99 * np.ones((3,ntracks), dtype=np.float16)
-    Mstar_infall, Mstar_sat, Mstar_cent \
-        = -99 * np.ones((3,ntracks), dtype=np.float16)
-    Mdm_infall, Mdm_sat, Mdm_cent \
-        = -99 * np.ones((3,ntracks), dtype=np.float16)
-    TrackId_current_host, TrackId_previous_host \
-        = -99 * np.ones((2,ntracks), dtype=np.uint16)
 
-    path = os.path.join(sim.data_path, 'history')
-    os.makedirs(path, exist_ok=True)
-    history_keys = ('idx','t','z','Mbound','Mstar','Mdm')
-    output = {key: os.path.join(path, f'history_{key}.npy')
-              for key in history_keys}
-    # this one contains track IDs of our subhalos and their current
-    # and previous hosts
-    history_trackids = os.path.join(path, 'history_trackids.npy')
-    # save a file with all column names
-    output_log = os.path.join(path, 'history.log')
-    with open(output_log, 'w') as f:
-        filename = 'history_trackids'
-        columns = 'TrackId,TrackId_current_host,TrackId_previous_host'
-        print(f'{filename:<20s}  {columns}', file=f)
-        for key in history_keys:
-            filename = os.path.split(
-                output.get(key, f'history_{key}'))[1]
-            columns = ','.join(
-                [f'{key}_{inst}' for inst in ('infall','sat','cent')])
-            print(f'{filename:<20s}  {columns}', file=f)
-    print(f'Saved column names to {output_log}')
-    # for use below (but we didn't want to include it in the loop above)
-    output['trackids'] = history_trackids
+    #groups = ('trackids', 'infall', 'sat', 'cent')
+    groups = ('trackids', 'first_infall', 'last_infall', 'sat', 'cent')
+    names = [('TrackId', 'TrackId_current_host',
+              'TrackId_previous_host')] \
+        + 4*[('isnap', 'time', 'z', 'Mbound', 'Mstar', 'Mdm', 'Mgas')]
+    dtypes = [3*[np.int32]] + 4*[[np.int16] + 6*[np.float16]]
+    trackcols, firstinfcols, lastinfcols, satcols, centcols \
+        = [[f'{group}/{name}' for name in grnames]
+            for group, grnames in zip(groups, names)]
+    ic(satcols)
+    # DataFrame
+    history = {
+        f'{gr}/{name}': -np.ones(ntracks, dtype=dt)
+        for gr, grnames, dtype in zip(groups, names, dtypes)
+        for name, dt in zip(grnames, dtype)}
+    history['trackids/TrackId'] = track_ids
+    history['trackids/TrackId_current_host'] = host_track_id_today
+    history = pd.DataFrame(history).reset_index()
+    ic(np.sort(history.columns))
+    ic(history.shape)
+
+    # save everything to an hdf5 file
+    path_history = os.path.join(sim.data_path, 'history')
+    hdf = os.path.join(path_history, 'history.h5')
     ## now calculate things!
-    # this one is to store values across snapshots. The three
-    # arrays are Mbound, Mstar, Mdm
-    #Mbound_all = [[], [], []]
     snaps = np.arange(nsnap, -1, -1, dtype=np.uint16)
-    for i in tqdm(snaps):
-        subs_i = reader.LoadSubhalos(
-            i, selection=('TrackId','Rank','HostHaloId',
-                          'Mbound','MboundType'))
+
+    z, t = np.zeros((2,snaps.size))
+    selection = ('TrackId','Rank','HostHaloId', 'Mbound','MboundType')
+    if not args.debug: ic.disable()
+    for i, snap in enumerate(tqdm(snaps)):
+        ic(i, snap)
+        subs_i = reader.LoadSubhalos(snap, selection=selection)
         # snapshot 281 is missing
         if subs_i.size == 0:
             continue
-        z_i = sim.redshift(i)
-        t_i = sim.cosmology.lookback_time(z_i)
-        # find test track IDs in the current snapshot
-        isin = np.isin(tracks.track_ids, subs_i['TrackId'])
-        isin_reverse = np.isin(subs_i['TrackId'], tracks.track_ids)
-        # let's make sure!
-        assert np.array_equal(
-            tracks.track_ids[isin], subs_i['TrackId'][isin_reverse])
-        isin_reverse_rng = np.arange(isin_reverse.size)[isin_reverse]
-        # in the current snapshot, of those that exist in the last one,
-        # separate into centrals and satellites
-        snap_sat = (subs_i['Rank'][isin_reverse_rng] > 0)
-        snap_cent = (subs_i['Rank'][isin_reverse_rng] == 0)
-        # only change isat, icent of those that have never been
-        # recorded as centrals before (i.e., in later snapshots)
-        idx_cent_unassigned = (idx_cent[isin] == -99)
-        satmask = idx_cent_unassigned & snap_sat
-        if satmask.sum() > 0:
-            idx_sat[isin][satmask] = i
-            z_sat[isin][satmask] = z_i
-            t_sat[isin][satmask] = t_i
-            Mbound_sat[isin][satmask] \
-                = subs_i['Mbound'][isin_reverse_rng][snap_sat]
-            Mstar_sat[isin][satmask] \
-                = subs_i['MboundType'][isin_reverse_rng,4][snap_sat]
-            Mdm_sat[isin][satmask] \
-                = subs_i['MboundType'][isin_reverse_rng,1][snap_sat]
-        centmask = idx_cent_unassigned & snap_cent
-        if centmask.sum() > 0:
-            idx_cent[isin][centmask] = i
-            z_cent[isin][centmask] = z_i
-            t_cent[isin][centmask] = t_i
-            Mbound_cent[isin][centmask] \
-                = subs_i['Mbound'][isin_reverse_rng][snap_cent]
-            Mstar_cent[isin][centmask] \
-                = subs_i['MboundType'][isin_reverse_rng,4][snap_cent]
-            Mdm_cent[isin][centmask] \
-                = subs_i['MboundType'][isin_reverse_rng,1][snap_cent]
-        # now find out whether the hosts of these satellites are
-        # still the same as they are in our test snapshot
-        # if not, record i_infall
-        # satellites in our test snapshot
-        sat_i = subs_i[isin_reverse_rng][snap_sat]
-        track_id_i = sat_i['TrackId']
-        # the hosts of these satellites
-        host_halo_id_i = subs_i['HostHaloId'][isin_reverse_rng][snap_sat]
-        # all centrals in the snapshot
-        cent_i = subs_i[subs_i['Rank'] == 0]
-        # only those that host our satellites
-        cents_used = np.isin(cent_i['HostHaloId'], sat_i['HostHaloId'])
-        # HostHaloId of these centrals
-        cent_halo_id_i = cent_i['HostHaloId'][cents_used]
-        # and their track ids
-        cent_track_id_i = cent_i['TrackId'][cents_used]
-        # finally, get the track id of each central associated
-        # with every one of our satellites
-        host_track_id_i = np.array(
-            [cent_track_id_i[cent_halo_id_i == hhii][0]
-             for hhii in host_halo_id_i])
-        ic(host_track_id_i.shape)
-        # now we need to match them...
-        same_host = np.zeros(ntracks, dtype=bool)
-        # I'm only interested in those that have not been identified in
-        # later snapshots
-        inf_cand = (idx_infall == -99)
-        ic(inf_cand.shape, inf_cand.sum())
-        change_host = (host_track_id_i != host_track_id) & (idx_infall == -99)
-        ic(change_host.shape, change_host.sum())
-        if change_host.sum() > 0:
-            idx_infall[change_host] = i+1
-            z_infall_i = sim.redshift(i+1)
-            z_infall[change_host] = z_infall_i
-            t_infall[change_host] = sim.cosmology.lookback_time(z_infall_i)
-        continue
-        # same_host[inf_cand] = [()]
-        # I'm only interested in those hosts that are still in
-        # our test snapshot
-        isinc = isin & np.isin(host_track_id, host_track_id_i)
-        rng_isinc = jtracks[isinc]
-        for ii, test_track, test_host \
-                in zip(rng_isinc, track_ids[isinc], host_track_id[isinc]):
-            if not same_host[ii]:
-                continue
-            ji = (track_id_i == test_track)
-            if ji.sum() > 0:
-                same_host[ii] = (host_track_id_i[ji] == test_host)
-        # now I just need to update the indices of those that are not in the
-        # same host anymore (later test whether this reverses at any point)
-        continue
-        if (~same_host).sum() > 0:
-            idx_infall[~same_host] = i+1
-            z_infall_i = sim.redshift(i+1)
-            z_infall[~same_host] = z_infall_i
-            t_infall[~same_host] = sim.cosmology.lookback_time(z_infall_i)
-            # now masses
-            # same_host_i = np.zeros(track_id_i.size, dtype=bool)
-            # isinr = isin_reverse & np.isin(host_track_id_i, host_track_id)
-            # ic(isinr.shape, isinr.sum())
-            # rng_isinr = np.arange(track_id_i.size, dtype=np.int32)
-            # for ii, track_i, host_i \
-            #         in zip(rng_isinr, track_id_i[isinr],
-            #                host_track_id_i[isinr]):
-            #     ji = (track_ids == track_i)
-            #     if ji.sum() > 0:
-            #         same_host_i[ii] = (host_track_id[ji] == host_i)
-            # ic(same_host_i.shape, same_host_i.sum(), (~same_host_i).sum())
-            # # check later
-            # ic(Mbound_infall.shape)
-            # ic(same_host.shape, (~same_host).sum())
-            # ic(subs_i['Mbound'].shape)
-            # ic(isin_reverse.shape, isin_reverse.dtype)
-            # ic(snap_cent.shape, snap_cent.sum())
-            # Mbound_infall[~same_host] \
-            #     = subs_i['Mbound'][isin_reverse][snap_cent]
-            # Mstar_infall[~same_host] \
-            #     = subs_i['MboundType'][isin_reverse,4][snap_cent]
-            # Mdm_infall[~same_host] \
-            #     = subs_i['MboundType'][isin_reverse,1][snap_cent]
-        #but is this sorted the right way?
-        #TrackId_previous_host[~same_host] = host_track_id_i[isinc]
-        #return
-        #if i == nsnap-3: break
-        if i < nsnap and i % 20 == 0:
-            np.save(output['trackids'],
-                    [tracks.track_ids, TrackId_current_host,
-                     TrackId_previous_host])
-            np.save(output['idx'], [idx_infall, idx_sat, idx_cent])
-            np.save(output['t'], [t_infall, t_sat, t_cent])
-            np.save(output['z'], [z_infall, z_sat, z_cent])
-            np.save(output['Mbound'], [Mbound_infall, Mbound_sat, Mbound_cent])
-            np.save(output['Mstar'], [Mstar_infall, Mstar_sat, Mstar_cent])
-            np.save(output['Mdm'], [Mdm_infall, Mdm_sat, Mdm_cent])
+        subs_i = ({key: subs_i[key] for key in selection[:-1]},
+                  {f'MboundType{j}': 1e10 * subs_i['MboundType'][:,j]
+                   for j in (0,1,4)})
+        subs_i['Mbound'] = 1e10 * subs_i['Mbound']
+        subs_i = {**subs_i[0], **subs_i[1]}
+        subs_i = pd.DataFrame(subs_i)
+        z[i] = sim.redshift(snap)
+        t[i] = sim.cosmology.lookback_time(z[i]).to('Gyr').value
+        # first match subhaloes now and then
+        this = history.merge(
+            subs_i, left_on='trackids/TrackId', right_on='TrackId',
+            how='left', suffixes=('_test','_snap'))
+        if i == 0:
+            ic(np.sort(this.columns))
+        ic(this.shape)
+        # this one gets updated all the time
+        still_sat = (this['Rank'] > 0)
+        ic(still_sat.shape, still_sat.sum())
+        history.loc[still_sat, satcols[:3]] = [snap, t[i], z[i]]
+        history = assign_masses(history, this, still_sat, 'sat')
+        if i == 0:
+            continue
+        #history['sat/Mbound'].loc[still_sat] = this[
+        # this one is updated only once per subhalo
+        new_cent = (this['cent/isnap'] == -1) & (this['Rank'] == 0)
+        ic(new_cent.shape, new_cent.sum())
+        history.loc[new_cent, centcols[:3]] = [snap, t[i], z[i]]
+        history = assign_masses(history, this, new_cent, 'cent')
+        ic()
+        ic(this.shape)
+
+        ## infall
+        # first map HostHaloId to TrackId
+        this_cent_mask = (subs_i['Rank'] == 0) & (subs_i['HostHaloId'] > -1)
+        this_cent = subs_i[['TrackId','HostHaloId']].loc[this_cent_mask]
+        ic(this_cent)
+        this = this.merge(
+            this_cent, on='HostHaloId', how='left',
+            suffixes=('_sat','_cent'))
+        ic(np.sort(this.columns))
+        # first update the masses for all subhalos for which we have
+        # not registered infall already
+        jinfall_last = (this['last_infall/isnap'] == -1)
+        ic(jinfall_last.shape, jinfall_last.sum())
+        history = assign_masses(history, this, jinfall_last, 'last_infall')
+        # if they are no longer in the same host, then register
+        # the other columns. Once we've done this their masses
+        # will never be updated again
+        ic(this.shape, history.shape)
+        host_track = history['trackids/TrackId_current_host']
+        try:
+            jinfall_last = jinfall_last & (this['TrackId_cent'] != host_track)
+        except ValueError as e:
+            print(jinfall_last.shape, jinfall_last.sum(),
+                  this['TrackId_cent'].shape, host_track.shape)
+            raise ValueError(e)
+        ic(jinfall_last.sum())
+        history.loc[jinfall_last, lastinfcols[:3]] = [snap+1, t[i-1], z[i-1]]
+        # assign these same values to first_infall
+        history = assign_masses(history, this, jinfall_last, 'first_infall')
+        history.loc[jinfall_last, firstinfcols[:3]] = [snap+1, t[i-1], z[i-1]]
+        # here we record the first time each subhalo fell into its
+        # current host, i.e., the same as above but the info can be
+        # updated once set
+        left_host_and_back = (history['last_infall/isnap'] != -1) \
+            & (this['TrackId_cent'] == host_track)
+        ic(left_host_and_back.sum())
+        history.loc[left_host_and_back, firstinfcols[:3]] = [snap, t[i], z[i]]
+        history = assign_masses(
+            history, this, left_host_and_back, 'first_infall')
+        # TrackId_previous_host refers to the host prior to the first
+        # time the subhalo entered its current host (does it make a
+        # difference?), i.e. those for which we've already registered
+        # an infall in the *immediate* previous iteration
+        # this will be updated each time the subhalo leaves
+        jinfall_first = (history['first_infall/isnap'] == snap+1) \
+            & (this['TrackId_cent'] != host_track)
+        ic(jinfall_first.sum())
+        history.loc[jinfall_first, 'trackids/TrackId_previous_host'] \
+            = this['TrackId_cent'][jinfall_first]
+
+        #ic(np.unique(history['cent/isnap'], return_counts=True))
+        #ic(np.sort(history['sat/Mbound']))
+        #ic((history > -1).sum())
+        #ic(history.mean())
+        if i % 100 == 0:
+            store_h5(hdf, groups, names, history)
+            #store_npy(path, groups, names, history)
             #break
+
+    #ic(history)
+    store_h5(hdf, groups, names, history)
+    print(f'Finished! Stored everything to {hdf}.')
+
     return
 
 
+def assign_masses(history, this, mask, group):
+    history.loc[mask, f'{group}/Mbound'] = this.loc[mask, 'Mbound']
+    history.loc[mask, f'{group}/Mgas'] = this.loc[mask, 'MboundType0']
+    history.loc[mask, f'{group}/Mdm'] = this.loc[mask, 'MboundType1']
+    history.loc[mask, f'{group}/Mstar'] = this.loc[mask, 'MboundType4']
+    return history
+
+
+def store_h5(hdf, groups, names, data):
+    ic(np.sort(data.columns))
+    ic(names)
+    with h5py.File(hdf, 'w') as out:
+        for group, grnames in zip(groups, names):
+            ic(grnames)
+            gr = out.create_group(group)
+            for name in grnames:
+                col = f'{group}/{name}'
+                gr.create_dataset(
+                    name, data=data[col].to_numpy(), dtype=data[col].dtype)
+    ic(f'Saved to {hdf}')
+    return
+
+
+def store_npy(path, groups, names, history):
+    np.save(output['trackids'],
+            [tracks.track_ids, TrackId_current_host,
+             TrackId_previous_host])
+    np.save(output['idx'], [idx_infall, idx_sat, idx_cent])
+    np.save(output['t'], [t_infall, t_sat, t_cent])
+    np.save(output['z'], [z_infall, z_sat, z_cent])
+    np.save(output['Mbound'], [Mbound_infall, Mbound_sat, Mbound_cent])
+    np.save(output['Mstar'], [Mstar_infall, Mstar_sat, Mstar_cent])
+    np.save(output['Mdm'], [Mdm_infall, Mdm_sat, Mdm_cent])
+    return
+
 if __name__ == '__main__':
     main()
-
