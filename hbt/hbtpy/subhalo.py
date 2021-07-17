@@ -105,6 +105,24 @@ class BaseSubhalo(BaseDataSet):
         #self.NboundType = self.catalog['NboundType']
         self.as_dataframe = as_dataframe
         self.pvref = pvref
+        self._update_mass_columns()
+
+    def __getitem__(self, col):
+        #if not isinstance(col, str):
+            #raise IndexError('can only index Subhalo object with string')
+        cols = self.catalog.columns \
+            if isinstance(self.catalog, pd.DataFrame) \
+            else self.catalog.dtypes.names
+        if (isinstance(col, str) and col in cols) or not isinstance(col, str):
+            return self.catalog[col]
+        elif col == 'Mgas':
+            return self.catalog['MboundType0']
+        elif col == 'Mdm':
+            return self.catalog['MboundType1']
+        elif col == 'Mstar':
+            return self.catalog['MboundType4']
+        else:
+            raise IndexError(f'index `{col}` not found')
 
     ### hidden properties ###
 
@@ -116,14 +134,14 @@ class BaseSubhalo(BaseDataSet):
 
     @property
     def Mbound(self):
-        return 1e10 * self.catalog['Mbound']
+        return self.catalog['Mbound']
 
     @property
     def MboundType(self):
         if self.as_dataframe:
             cols = ['MboundType{0}'.format(i) for i in range(6)]
-            return 1e10 * np.array(self.catalog[cols])
-        return 1e10 * self.catalog['MboundType']
+            return np.array(self.catalog[cols])
+        return self.catalog['MboundType']
 
     @property
     def mvir(self):
@@ -151,6 +169,15 @@ class BaseSubhalo(BaseDataSet):
             raise ValueError(err)
         assert ax in [0, 1, 2]
         return 'xyz'[[0, 1, 2].index(ax)]
+
+    def _update_mass_columns(self):
+        cols = self.catalog.columns \
+            if isinstance(self.catalog, pd.DataFrame) \
+            else self.catalog.dtypes.names
+        for col in cols:
+           if np.any([i in col for i in ('Mbound','Mgas','Mdm','Mstar')]):
+                if self.catalog[col].max() < 1e10:
+                    self.catalog[col] = 1e10 * self.catalog[col]
 
     ### methods ###
 
@@ -436,23 +463,6 @@ class Subhalos(BaseSubhalo):
         if self.load_history:
             self.read_history()
 
-    def __getitem__(self, col):
-        if not isinstance(col, str):
-            raise IndexError('can only index Subhalo object with string')
-        cols = self.catalog.columns \
-            if isinstance(self.catalog, pd.DataFrame) \
-            else self.catalog.dtypes.names
-        if col in cols:
-            return self.catalog[col]
-        elif col == 'Mgas':
-            return self.catalog['MboundType0']
-        elif col == 'Mdm':
-            return self.catalog['MboundType1']
-        elif col == 'Mstar':
-            return self.catalog['MboundType4']
-        else:
-            raise IndexError(f'index `{col}` not found')
-
     ### attributes ###
 
     @property
@@ -486,6 +496,10 @@ class Subhalos(BaseSubhalo):
     @property
     def satellite_mask(self):
         return (self.catalog['Rank'] > 0)
+
+    @property
+    def shape(self):
+        return self.catalog.shape
 
     ### hidden methods ###
 
@@ -608,7 +622,7 @@ class Subhalos(BaseSubhalo):
             return self._range[host_mask][0]
         return np.array(self.catalog[host_mask])
 
-    def _shmr_binning(self, x, bins, log):
+    def _shmr_binning(self, x, bins, log=False):
         if not np.iterable(bins):
             bins = np.logspace(np.log10(x.min()), np.log10(x.max()), bins) \
                 if log else np.linspace(x.min(), x.max(), bins)
@@ -619,48 +633,101 @@ class Subhalos(BaseSubhalo):
             xo = (bins[:-1]+bins[1:]) / 2
         return bins, xo
 
-    def hsmr(self, bins=20, sample='all', log=True):
+    def _shmr_xy(self, relation, mask=None):
+        if relation == 'hsmr':
+            x = self.MboundType[:,4]
+            y = self.Mbound
+        elif relation == 'shmr':
+            x = self.Mbound
+            y = self.MboundType[:,4]
+        if mask is None:
+            return x, y
+        return x[mask], y[mask]
+
+    def _shmr_wrapper(self, relation, plot_kwargs={}, **kwargs):
+        if kwargs['sample'] == 'centrals':
+            mask = self.central_mask
+        elif kwargs['sample'] == 'satellites':
+            mask = self.satellite_mask
+        elif kwargs['sample ']== 'all':
+            mask = np.ones(self.central_mask.size, dtype=bool)
+        ic(kwargs['sample'])
+        ic(mask.sum())
+        if kwargs['min_hostmass'] is not None:
+            hostmass = kwargs['hostmass'] # for clearer error message
+            assert hostmass in ('M200Mean','MVir','Mbound')
+            mask = mask & (self.catalog[hostmass] >= kwargs['min_hostmass'])
+            ic(mask.sum())
+        x, y = self._shmr_xy(relation, mask=mask)
+        bins, xo = self._shmr_binning(x, kwargs['bins'])
+        mr = np.histogram(x, bins, weights=y)[0] / np.histogram(x, bins)[0]
+        ic(mr)
+        if kwargs['ax'] is not None:
+            kwargs['ax'].plot(xo, mr, **plot_kwargs)
+        return xo, mr
+
+    def hsmr(self, bins=10, sample='all',
+             hostmass='M200Mean', min_hostmass=None, ax=None, **kwargs):
         """Halo-to-stellar mass relation (HSMR)
 
         Parameters
         ----------
         bins : int or array-like
-            `bins` argument of `np.histogram`
+            ``bins`` argument of ``np.histogram``
         sample : {'all','centrals','satellites'}
             over which subhaloes to calculate the HSMR
+
+        Optional parameters
+        -------------------
+        min_hostmass : float
+            minimum host mass to consider
+        hostmass : one of {'M200Mean','MVir','Mbound'}
+            host mass definition
+        ax : ``matplotlib.axes.Axes`` instance
+            axis over which to plot the HSMR
+        kwargs : dict
+            arguments passed to ``plt.plot``
+
+        Returns
+        -------
+        xo, hsmr : ndarray
+            central values of stellar mass and mean subhalo mass
         """
-        if sample == 'centrals':
-            mask = self.central_mask
-        elif sample == 'satellites':
-            mask = self.satellite_mask
-        elif sample == 'all':
-            mask = np.ones(self.central_mask.size, dtype=bool)
-        x = self.MboundType[mask,4]
-        y = self.Mbound[mask]
-        bins, xo = self._shmr_binning(x, bins, log)
-        hsmr = np.histogram(x, bins, weights=y)[0] / np.histogram(x, bins)[0]
+        xo, hsmr = self._shmr_wrapper(
+            'hsmr', bins=bins, sample=sample, hostmass=hostmass,
+            min_hostmass=min_hostmass, ax=ax, plot_kwargs=kwargs)
         return xo, hsmr
 
-    def shmr(self, bins=20, sample='all', log=True):
+    def shmr(self, bins=10, sample='all',
+             hostmass='M200Mean', min_hostmass=None, ax=None, **kwargs):
         """Stellar-to-halo mass relation (SHMR)
 
         Parameters
         ----------
         bins : int or array-like
-            `bins` argument of `np.histogram`
+            ``bins`` argument of ``np.histogram``
         sample : {'all','centrals','satellites'}
             over which subhaloes to calculate the HSMR
+
+        Optional parameters
+        -------------------
+        min_hostmass : float
+            minimum host mass to consider
+        hostmass : one of {'M200Mean','MVir','Mbound'}
+            host mass definition
+        ax : ``matplotlib.axes.Axes`` instance
+            axis over which to plot the SHMR
+        kwargs : dict
+            arguments passed to ``plt.plot``
+
+        Returns
+        -------
+        xo, hsmr : ndarray
+            central values of subhalo mass and mean stellar mass
         """
-        if sample == 'centrals':
-            mask = self.central_mask
-        elif sample == 'satellites':
-            mask = self.satellite_mask
-        elif sample == 'all':
-            mask = np.ones(self.central_mask.size, dtype=bool)
-        x = self.Mbound[mask]
-        y = self.MboundType[mask,4]
-        bins, xo = self._shmr_binning(x, bins, log)
-        shmr = np.histogram(x, bins, weights=y)[0] / np.histogram(x, bins)[0]
+        xo, shmr = self._shmr_wrapper(
+            'shmr', bins=bins, sample=smple, hostmass=hostmass,
+            min_hostmass=min_hostmass, ax=ax, plot_kwargs=kwargs)
         return xo, shmr
 
     def _mass_weighted_stat(self, values, mass, label):
@@ -921,6 +988,7 @@ class Subhalos(BaseSubhalo):
         self._catalog = self.catalog.merge(
             history.reset_index(), how='left', left_on='TrackId',
             right_on='history:TrackId')
+        self._update_mass_columns()
         return
 
     def siblings(self, trackid, return_value='index'):

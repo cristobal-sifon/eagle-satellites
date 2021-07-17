@@ -1,5 +1,6 @@
 import argparse
 from functools import wraps
+from icecream import ic
 import os
 from time import time
 
@@ -36,6 +37,8 @@ def parse_args(parser=None):
     if parser is None:
         parser = read_args()
     args = parser.parse_args()
+    if not args.debug:
+        ic.disable()
     return args
 
 
