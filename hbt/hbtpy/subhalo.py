@@ -108,21 +108,35 @@ class BaseSubhalo(BaseDataSet):
         self._update_mass_columns()
 
     def __getitem__(self, col):
-        #if not isinstance(col, str):
-            #raise IndexError('can only index Subhalo object with string')
+        index_err = f'index `{col}` not found'
         cols = self.catalog.columns \
             if isinstance(self.catalog, pd.DataFrame) \
             else self.catalog.dtypes.names
         if (isinstance(col, str) and col in cols) or not isinstance(col, str):
             return self.catalog[col]
-        elif col == 'Mgas':
-            return self.catalog['MboundType0']
-        elif col == 'Mdm':
-            return self.catalog['MboundType1']
-        elif col == 'Mstar':
-            return self.catalog['MboundType4']
-        else:
-            raise IndexError(f'index `{col}` not found')
+        colmap = {'Mgas': 'MboundType0', 'Mdm': 'MboundType1',
+                  'Mstar': 'MboundType4'}
+        if col in colmap:
+            return self.catalog[colmap[col]]
+        if '/' in col:
+            col = col.split('/')
+            if len(col) != 2:
+                raise ValueError('Can only calculate ratio of two columns,' \
+                        f' received {col}')
+            if col[0] in cols:
+                X = self.catalog[col[0]]
+            elif col[0] in colmap:
+                X = self.catalog[colmap[col[0]]]
+            else:
+                raise IndexError(index_err)
+            if col[1] in cols:
+                X = X / self.catalog[col[1]]
+            elif col[0] in colmap:
+                X = X / self.catalog[colmap[col[1]]]
+            else:
+                raise IndexError(index_err)
+            return X
+        raise IndexError(index_err)
 
     ### hidden properties ###
 
