@@ -97,6 +97,11 @@ class Simulation(object):
         return os.path.join('data', self.name.replace('/', '_'), 'infall.txt')
 
     @property
+    def mass_columns(self):
+        return ['LastMaxMass', 'Mbound', 'Mstar', 'Mdm', 'Mgas', 'Mass',
+                'M200', 'MVir']
+
+    @property
     def masstypes(self):
         return np.array(['gas', 'dm', 'disk', 'bulge', 'stars', 'bh'])
 
