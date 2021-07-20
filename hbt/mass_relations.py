@@ -91,7 +91,7 @@ def wrap_plot(reader, sim, subs, isnap, hostmass='logM200Mean',
         #'logComovingMostBoundDistance': np.logspace(-2, 0.5, 9),
         'M200Mean': np.logspace(13, 14.7, 9),
         'mu': np.logspace(-5, 0, 9),
-        'Mstar': np.logspace(8, 11.5, 7),
+        'Mstar': np.logspace(7.7, 12, 11),
         }
     binlabel = {
         #'ComovingMostBoundDistance': '$R_\mathrm{com}$ ($h^{-1}$Mpc)',
@@ -128,9 +128,29 @@ def wrap_plot(reader, sim, subs, isnap, hostmass='logM200Mean',
             unit_key = 'mass' if ismass else (
                 'time' if 'time' in key else 'distance')
             un = units[unit_key].replace('$', '')
-            axlabel[key] = rf'${label}\,({un})$'
+            axlabel[key] = rf'${label}$ $({un})$'
         else:
             axlabel[key] = label
+
+    def get_axlabel(col, statistic):
+        if col in axlabel:
+            label = axlabel[col]
+        else:
+            label = col
+        if statistic == 'mean':
+            return label
+        label = label.replace('$', '')
+        label = label.split()
+        if len(label) == 2:
+            unit = label[1]
+        label = label[0]
+        if statistic == 'std':
+            lab = fr'$\sigma({label})$'
+            if len(label) == 2:
+                lab = fr'{lab} ${unit}$'
+        elif statistic == 'std/mean':
+            lab = fr'$\sigma({label})/\langle {label} \rangle$'
+        return lab
 
     def get_bins(n=8):
         if bincol in xbins:
@@ -148,10 +168,7 @@ def wrap_plot(reader, sim, subs, isnap, hostmass='logM200Mean',
         # now for non-history quantities
         for key, val in binlabel.items():
             label = label.replace(key, val)
-        if statistic == 'mean':
-            label = rf'$\langle {label} \rangle$'
-        elif statistic == 'std':
-            label = rf'$\sigma({label})$'
+        ic(label)
         if '/' not in bincol:
             if np.any([i in bincol for i in massnames]):
                 unit = units['mass']
@@ -164,15 +181,18 @@ def wrap_plot(reader, sim, subs, isnap, hostmass='logM200Mean',
 
     if do_plot_relations:
         # x-axis: cluster-centric distance
+        #wrap_relation_distance(sim, subs
         xscale = 'log'
-        for event in ('last_infall', 'first_infall', 'cent', 'sat'):
+        #for event in ('last_infall', 'first_infall', 'cent', 'sat'):
+        for event in []:
             for bincol in ('Mstar', f'{h}:Mstar', f'{h}:Mbound', f'{h}:time'):
                 bins = get_bins()
                 logbins = ('time' not in bincol)
                 xb = np.logspace(-2, 0.5, 9) if xscale == 'log' \
                     else np.linspace(0, 3, 9)
-                for statistic in ('mean', 'std'):
+                for statistic in ('std', 'mean'):
                     label = get_label_bincol()
+                    showsat = (statistic == 'mean')
                     for ycol in ('Mbound/Mstar', 'Mstar/Mbound',
                                  f'Mstar/{h}:Mbound', f'Mbound/{h}:Mbound',
                                  f'Mstar/{h}:Mstar', f'Mbound/{h}:Mstar'):
@@ -183,16 +203,18 @@ def wrap_plot(reader, sim, subs, isnap, hostmass='logM200Mean',
                                 selection='Mstar', selection_min=1e8,
                                 statistic=statistic, xscale=xscale, bincol=bincol,
                                 binlabel=label, bins=bins, logbins=logbins,
-                                xlabel=axlabel[xcol], ylabel=ycol,
+                                xlabel=axlabel[xcol],
+                                ylabel=get_axlabel(ycol, statistic),
                                 show_satellites=True, show_centrals=False)
 
         relation_kwargs = dict(
             satellites_label='Present-day satellites',
             centrals_label='Present-day centrals',
-            min_hostmass=logM200Mean_min, xlim=(3e7,1e12), ylim=(5e8,2e14))
+            min_hostmass=logM200Mean_min, xlim=(3e7,1e12))
 
         # historical HSMR binned by present-day quantities
-        for event in ('last_infall', 'first_infall', 'cent', 'sat'):
+        #for event in ('last_infall', 'first_infall', 'cent', 'sat'):
+        for event in []:
             h = f'history:{event}'
             bincols = ('Mbound', 'Mstar', 'Mstar/Mbound', f'{h}:time',
                        'ComovingMostBoundDistance','ComovingMostBoundDistance0',
@@ -206,13 +228,15 @@ def wrap_plot(reader, sim, subs, isnap, hostmass='logM200Mean',
                         sim, subs, xcol=f'{h}:Mstar', ycol=f'{h}:Mbound',
                         statistic=statistic,
                         bincol=bincol, binlabel=label, bins=bins, logbins=logbins,
-                        xlabel=axlabel[f'{h}:Mstar'], ylabel=axlabel[f'{h}:Mbound'],
+                        xlabel=axlabel[f'{h}:Mstar'],
+                        ylabel=get_axlabel(f'{h}:Mbound', statistic),
                         show_satellites=True, show_centrals=False, **relation_kwargs)
 
+        # present-day HSMR binned by historical quantities
         relation_kwargs['satellites_label'] = 'All satellites'
         relation_kwargs['centrals_label'] = 'All centrals'
-        # present-day HSMR binned by historical quantities
-        for event in ('last_infall', 'first_infall', 'cent', 'sat'):
+        #relation_kwargs['xbins'] = np.logspace(8, 12, 11)
+        for event in ('first_infall', 'last_infall', 'cent', 'sat'):
             h = f'history:{event}'
             bincols = (f'{h}:Mbound', f'{h}:Mstar', f'{h}:Mdm',
                        f'{h}:Mstar/{h}:Mbound', f'{h}:Mdm/{h}:Mbound',
@@ -220,6 +244,7 @@ def wrap_plot(reader, sim, subs, isnap, hostmass='logM200Mean',
                        f'Mstar/{h}:Mbound', f'{h}:time',
                        'ComovingMostBoundDistance','ComovingMostBoundDistance0',
                        'LastMaxMass', 'Mbound/LastMaxMass', 'Mstar/LastMaxMass')
+            bincols = (f'{h}:time',)
             for bincol in bincols:
                 if bincol in xbins:
                     bins = xbins[bincol]
@@ -227,13 +252,17 @@ def wrap_plot(reader, sim, subs, isnap, hostmass='logM200Mean',
                     bins = np.logspace(-3, 0.3, 8)
                 else: bins = 10
                 logbins = ('time' not in bincol)
-                for statistic in ('mean', 'std'):
+                for statistic in ('std/mean',):#'mean', 'std'):
                     label = get_label_bincol()
+                    yscale = 'linear' if statistic == 'std/mean' else 'log'
+                    ylim = (0, 1) if statistic == 'std/mean' else (5e8,2e14)
                     plot_relation(
                         sim, subs, bincol=bincol, binlabel=label, bins=bins,
-                        statistic=statistic, logbins=logbins,
-                        xlabel=axlabel['Mstar'], ylabel=axlabel['Mbound'],
-                        show_satellites=True, show_centrals=False, **hsmr_kwargs)
+                        statistic=statistic, logbins=logbins, yscale=yscale,
+                        xlabel=axlabel['Mstar'],
+                        ylabel=get_axlabel('Mbound', statistic), ylim=ylim,
+                        show_satellites=True, show_centrals=False,
+                        **relation_kwargs)
 
     ## mass functions
     if do_plot_massfunctions:
@@ -264,6 +293,14 @@ def wrap_plot(reader, sim, subs, isnap, hostmass='logM200Mean',
     #for ax, projection in zip(projections):
 
     return
+
+def get_relation_kwargs(xcol, ycol, bincol=None, statistic='mean'):
+    yscale = 'linear' if statistic == 'std/mean' else 'log'
+    if statistic == 'std/mean':
+        ylim = (0, 1)
+    elif ycol in massnames:
+        ylim = (5e8, 5e14)
+    return dict(ylim=ylim, yscale=yscale)
 
 
 def dark_fraction(sim, subs, mhost_norm=True, plot_path=None):
@@ -671,8 +708,10 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
     dark = dark[mask]
     cen = cen[mask]
     gsat = sat & ~dark
+    ic(xbins)
     if isinstance(xbins, int):
         if xscale == 'log':
+            gsat = gsat & (xdata > 0)
             xbins = np.linspace(
                 np.log10(xdata[gsat].min()), np.log10(xdata[gsat].max()),
                 xbins+1)
@@ -696,9 +735,21 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
     # as a function of third variable
     fig, ax = plt.subplots(figsize=(8,6))
     # fix bins here
-    relation = binstat_dd(
-        [bindata[gsat], xdata[gsat]], ydata[gsat], statistic, [bins,xbins])
-    relation = relation.statistic
+    if '/' in statistic:
+        stat = statistic.split('/')
+        relation = binstat_dd(
+                [bindata[gsat], xdata[gsat]], ydata[gsat], stat[0],
+                [bins,xbins]).statistic \
+            / binstat_dd(
+                [bindata[gsat], xdata[gsat]], ydata[gsat], stat[1],
+                [bins,xbins]).statistic
+    else:
+        relation = binstat_dd(
+            [bindata[gsat], xdata[gsat]], ydata[gsat], statistic,
+            [bins,xbins]).statistic
+    # this will make the plot look nicer
+    if 'std' in statistic:
+        relation[relation == 0] = np.nan
     ic(relation)
     ic(relation.shape)
     for i in range(bins.size-1):
@@ -711,13 +762,13 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
         if bins[0] >= 0.001 and bins[-1] <= 1000:
             cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%s'))
     # compare to overall and last touches
-    if show_satellites:
+    if show_satellites and '/' not in statistic:
         j = mask & gsat
         satrel = binstat(mstar[j], mtot[j], statistic, xbins)[0]
         plot_line(
             ax, xcenters, satrel, marker='+', lw=3, color=scolor,
             label=satellites_label, zorder=100)
-    if show_centrals:
+    if show_centrals and '/' not in statistic:
         j = mask & cen
         cenrel = binstat(mstar[j], mtot[j], statistic, xbins)[0]
         plot_line(
