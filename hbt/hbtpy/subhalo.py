@@ -112,10 +112,15 @@ class BaseSubhalo(BaseDataSet):
         cols = self.catalog.columns \
             if isinstance(self.catalog, pd.DataFrame) \
             else self.catalog.dtypes.names
-        if (isinstance(col, str) and col in cols) or not isinstance(col, str):
+        if (isinstance(col, str) and col in cols):
             return self.catalog[col]
         colmap = {'Mgas': 'MboundType0', 'Mdm': 'MboundType1',
                   'Mstar': 'MboundType4'}
+        if not isinstance(col, str):
+            X = pd.DataFrame()
+            for c in col:
+                X[c] = self.__getitem__(c)
+            return X
         if col in colmap:
             return self.catalog[colmap[col]]
         if '/' in col:
@@ -131,7 +136,7 @@ class BaseSubhalo(BaseDataSet):
                 raise IndexError(index_err)
             if col[1] in cols:
                 X = X / self.catalog[col[1]]
-            elif col[0] in colmap:
+            elif col[1] in colmap:
                 X = X / self.catalog[colmap[col[1]]]
             else:
                 raise IndexError(index_err)
@@ -189,7 +194,8 @@ class BaseSubhalo(BaseDataSet):
             if isinstance(self.catalog, pd.DataFrame) \
             else self.catalog.dtypes.names
         for col in cols:
-           if np.any([i in col for i in ('Mbound','Mgas','Mdm','Mstar')]):
+           if np.any([i in col for i
+                      in ('Mbound','Mgas','Mdm','Mstar','LastMaxMass')]):
                 if self.catalog[col].max() < 1e10:
                     self.catalog[col] = 1e10 * self.catalog[col]
 
