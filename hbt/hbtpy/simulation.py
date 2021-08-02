@@ -99,7 +99,7 @@ class Simulation(object):
     @property
     def mass_columns(self):
         return ['LastMaxMass', 'Mbound', 'Mstar', 'Mdm', 'Mgas', 'Mass',
-                'M200', 'MVir']
+                'M200', 'M200Mean', 'MVir']
 
     @property
     def masstypes(self):
@@ -251,6 +251,8 @@ class Simulation(object):
         isnap : int
             snapshot number (not index!)
         """
+        if isnap < 0:
+            isnap = self.snapshots[-1] + 1 + isnap
         try:
             return self.redshifts[self.snapshots == isnap][0]
         except IndexError:

@@ -99,6 +99,7 @@ class BaseSubhalo(BaseDataSet):
         #super(BaseSubhalo, self).__init__(catalog, as_dataframe=False)
         super(BaseSubhalo, self).__init__(catalog, as_dataframe=as_dataframe)
         BaseSimulation.__init__(self, sim)
+        self.cosmology = self.sim.cosmology
         #self.Mbound = 1e10 * self.catalog['Mbound']
         #self.MboundType = 1e10 * self.catalog['MboundType']
         #self.Nbound = self.catalog['Nbound']
@@ -452,7 +453,7 @@ class Subhalos(BaseSubhalo):
                 self._catalog = append_fields(
                     self.catalog, 'IsDark', (self.nbound('stars') == 0))
         self.isnap = isnap
-        #self.redshift = self.redshift[self.isnap]
+        self.redshift = self.sim.redshift(self.isnap)
         self._central_idx = None
         self._central_mask = None
         self._centrals = None
@@ -496,6 +497,13 @@ class Subhalos(BaseSubhalo):
     @property
     def central_mask(self):
         return (self.catalog['Rank'] == 0)
+
+    @property
+    def columns(self):
+        if isinstance(self.catalog, pd.DataFrame):
+            return self.catalog.columns
+        else:
+            return self.catalog.dtypes.names
 
     @property
     def orphan(self):
@@ -984,6 +992,13 @@ class Subhalos(BaseSubhalo):
             if verbose:
                 print('Joined hosts in {0:.2f} s'.format(time()-to))
             del hosts
+        # R200Mean
+        if 'M200Mean' in self.catalog.columns:
+            rho_m = self.cosmology.critical_density(self.redshift) \
+                * self.cosmology.Om0
+            rho_m = rho_m.to('Msun/Mpc^3').value
+            self.catalog['R200Mean'] \
+                = (3*self.catalog['M200Mean'] / (4*np.pi*200*rho_m))**(1/3)
         self._has_host_properties = True
         self.as_dataframe = adf
         print('Loaded in {0:.2f} s'.format(time()-to))
