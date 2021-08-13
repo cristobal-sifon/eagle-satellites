@@ -64,7 +64,7 @@ class BaseDataSet(object):
     @property
     def colnames(self):
         if self.as_dataframe:
-            return list(self.catalog)
+            return self.catalog.columns
         else:
             return self.catalog.dtype.names
 
@@ -109,12 +109,10 @@ class BaseSubhalo(BaseDataSet):
         self._update_mass_columns()
 
     def __getitem__(self, col):
-        index_err = f'index `{col}` not found'
-        cols = self.catalog.columns \
-            if isinstance(self.catalog, pd.DataFrame) \
-            else self.catalog.dtypes.names
+        cols = self.colnames
         if (isinstance(col, str) and col in cols):
             return self.catalog[col]
+        # conveninence names
         colmap = {'Mgas': 'MboundType0', 'Mdm': 'MboundType1',
                   'Mstar': 'MboundType4'}
         if not isinstance(col, str):
@@ -122,27 +120,25 @@ class BaseSubhalo(BaseDataSet):
             for c in col:
                 X[c] = self.__getitem__(c)
             return X
-        if col in colmap:
-            return self.catalog[colmap[col]]
         if '/' in col:
             col = col.split('/')
             if len(col) != 2:
-                raise ValueError('Can only calculate ratio of two columns,' \
-                        f' received {col}')
-            if col[0] in cols:
-                X = self.catalog[col[0]]
-            elif col[0] in colmap:
-                X = self.catalog[colmap[col[0]]]
-            else:
-                raise IndexError(index_err)
-            if col[1] in cols:
-                X = X / self.catalog[col[1]]
-            elif col[1] in colmap:
-                X = X / self.catalog[colmap[col[1]]]
-            else:
-                raise IndexError(index_err)
-            return X
-        raise IndexError(index_err)
+                raise ValueError('Can only calculate ratio of two columns,'
+                                 f' received {col}')
+            return self.__getitem__(col[0]) / self.__getitem__(col[1])
+        if col in cols:
+            return self.catalog[col]
+        if col in colmap:
+            return self.catalog[colmap[col]]
+        if col in ('Mtot', 'Mtotal'):
+            return self._get_total_mass()
+        raise IndexError(f'column {col} not found')
+
+    def _get_total_mass(self):
+        x = self.catalog['M200Mean']
+        mask = self.satellite_mask
+        x.loc[mask] = self.catalog['Mbound'][mask]
+        return x
 
     ### hidden properties ###
 
@@ -151,6 +147,39 @@ class BaseSubhalo(BaseDataSet):
         return ('', '0', '1', '2', '01', '02', '12')
 
     ### properties ###
+
+    @property
+    def centrals(self):
+        return self.catalog[self.central_mask]
+
+    @property
+    def central_idx(self):
+        return self._range[self._central_mask]
+
+    @property
+    def central_mask(self):
+        return (self.catalog['Rank'] == 0)
+
+    @property
+    def orphan(self):
+        """boolean mask, True if object is orphan"""
+        return (self.catalog['Nbound'] == 1)
+
+    @property
+    def satellites(self):
+        return self.catalog.loc[self.satellite_mask]
+
+    @property
+    def satellite_idx(self):
+        return self._range[self.satellite_mask]
+
+    @property
+    def satellite_mask(self):
+        return (self.catalog['Rank'] > 0)
+
+    @property
+    def shape(self):
+        return self.catalog.shape
 
     @property
     def Mbound(self):
@@ -454,13 +483,6 @@ class Subhalos(BaseSubhalo):
                     self.catalog, 'IsDark', (self.nbound('stars') == 0))
         self.isnap = isnap
         self.redshift = self.sim.redshift(self.isnap)
-        self._central_idx = None
-        self._central_mask = None
-        self._centrals = None
-        self._orphan = None
-        self._satellite_idx = None
-        self._satellite_mask = None
-        self._satellites = None
         self._has_host_properties = False
         self._has_distances = False
         self._has_velocities = []
@@ -485,49 +507,6 @@ class Subhalos(BaseSubhalo):
             self.read_history()
 
     ### attributes ###
-
-    @property
-    def centrals(self):
-        return self.catalog[self.central_mask]
-
-    @property
-    def central_idx(self):
-        return self._range[self._central_mask]
-
-    @property
-    def central_mask(self):
-        return (self.catalog['Rank'] == 0)
-
-    @property
-    def columns(self):
-        if isinstance(self.catalog, pd.DataFrame):
-            return self.catalog.columns
-        else:
-            return self.catalog.dtypes.names
-
-    @property
-    def orphan(self):
-        """boolean mask, True if object is orphan"""
-        if self._orphan is None:
-            self._orphan = (self.catalog['Nbound'] == 1)
-        return self._orphan
-
-    @property
-    def satellites(self):
-        ic(self.catalog.shape, self.satellite_mask.shape)
-        return self.catalog.loc[self.satellite_mask]
-
-    @property
-    def satellite_idx(self):
-        return self._range[self.satellite_mask]
-
-    @property
-    def satellite_mask(self):
-        return (self.catalog['Rank'] > 0)
-
-    @property
-    def shape(self):
-        return self.catalog.shape
 
     ### hidden methods ###
 
