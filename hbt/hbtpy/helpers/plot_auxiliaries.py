@@ -90,7 +90,7 @@ def get_axlabel(col, statistic):
         label = bincol[col]
     else:
         label = col
-    if statistic == 'mean':
+    if statistic in ('count', 'mean'):
         return f'${label}$'
     label = label.replace('$', '')
     label = label.split()
@@ -120,6 +120,9 @@ def get_bins(bincol, logbins=True, n=5):
 
 
 def get_label_bincol(bincol):
+    # let's assume this refers to a 2d histogram
+    if bincol is None:
+        return '$N$'
     label = f'{bincol}'
     for key, val in binlabel.items():
         if key[:7] == 'history':
@@ -127,7 +130,13 @@ def get_label_bincol(bincol):
     # now for non-history quantities
     for key, val in binlabel.items():
         label = label.replace(key, val).replace('$', '')
-    ic(label)
+    # fix projected distances
+    if 'Distance' in bincol:
+        label = label.split('/')
+        if label[0][-1] in '0123':
+            label[0] = f'{label[0][:-1]}_{label[0][-1]}'
+        label = '/'.join(label)
+    ic(bincol, label)
     if '/' not in bincol:
         if np.any([i in bincol for i in massnames]):
             unit = units['mass']
@@ -153,10 +162,11 @@ def massbins(sim, mtype='stars'):
     return bins[sim.family][mtype]
 
 
-def plot_line(ax, *args, marker='+', **kwargs):
-    """For now, forcing thick dots; lines not supported"""
-    if 'ls' in kwargs:
-        kwargs.pop('ls')
+def plot_line(ax, *args, ls='-', **kwargs):
+    # """For now, forcing thick dots; lines not supported"""
+    if ls in ('--', ':', '-.') or 'dashes' in kwargs:
+        err = 'segmented lines not supported'
+        raise ValueError(err)
     kwargs_bg = kwargs.copy()
     #if dashes is not None:
         #kwargs['dashes'] = dashes
@@ -168,17 +178,16 @@ def plot_line(ax, *args, marker='+', **kwargs):
         kwargs_bg.pop('label')
     #kwargs_bg['ls'] = ls
     #if 'dashes' in kwargs or ls in ('-', '-.', ':', '--'):
-    #    if 'lw' not in kwargs:
-    #        kwargs['lw'] = 4
-    #    kwargs_bg['lw'] = kwargs['lw'] + 2
+    if 'lw' not in kwargs:
+        kwargs['lw'] = 4
+    kwargs_bg['lw'] = kwargs['lw'] + 2
+    # in case we're showing points, not lines
     if 'ms' not in kwargs:
         kwargs['ms'] = 8
     if 'mew' not in kwargs:
         kwargs['mew'] = 3
     kwargs_bg['ms'] = kwargs['ms'] + 2
-    kwargs_bg['mew'] = kwargs['mew'] + 2
-    ax.plot(*args, marker, **kwargs_bg, color='w', label='_none_')
-    ax.plot(*args, marker, **kwargs)
+    kwargs_bg['mew']= kwargs['mew'] + 2
+    ax.plot(*args, ls, **kwargs_bg, color='w', label='_none_')
+    ax.plot(*args, ls, **kwargs)
     return
-
-
