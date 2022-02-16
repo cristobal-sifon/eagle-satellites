@@ -1,6 +1,7 @@
 data/
 subcat/
 plots/
+tmp*
 
 # Backup files
 *~
@@ -13,6 +14,9 @@ __pycache__
 
 # IPython notebook
 *.ipynb_checkpoints
+
+# Spyder
+.spyproject
 
 # Latex auxiliary files
 *.aux
