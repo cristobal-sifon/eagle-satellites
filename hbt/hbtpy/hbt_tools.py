@@ -20,7 +20,7 @@ def timer(func):
     return wrapper
 
 
-def parse_args(parser=None):
+def parse_args(parser=None, args=None):
     """Parse command-line arguments
 
     Parameters
@@ -29,6 +29,12 @@ def parse_args(parser=None):
         pass this parameter if, for instance, you add command-line
         arguments to your own script beyond the basic ones defined
         in `read_args`. Otherwise the basic arguments will be loaded.
+    args : `list`-like, optional
+        additional arguments to include in the parser. Each element in
+        ``args`` should contain two elements: the string(s) enabling the
+        argument and the kwargs to add it to the parser. For instance,
+            args=(('--foo', {'type': int, 'default': 1}),
+                  ('--bar', {'action': 'store_true'}))
 
     Returns
     -------
@@ -36,6 +42,11 @@ def parse_args(parser=None):
     """
     if parser is None:
         parser = read_args()
+    if args is not None:
+        if isinstance(args[0], str):
+            args = (args,)
+        for argname, kwargs in args:
+            parser.add_argument(argname, **kwargs)
     args = parser.parse_args()
     if not args.debug:
         ic.disable()
@@ -68,4 +79,4 @@ def save_plot(fig, output, sim, **kwargs):
             os.makedirs(path)
     out = os.path.join(sim.plot_path, '{0}.pdf'.format(output))
     savefig(out, fig=fig, **kwargs)
-    return
+    return out
