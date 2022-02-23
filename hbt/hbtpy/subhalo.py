@@ -110,6 +110,8 @@ class BaseSubhalo(BaseDataSet):
 
     def __getitem__(self, col):
         cols = self.colnames
+        if np.iterable(col):
+            return self.catalog[col]
         if (isinstance(col, str) and col in cols):
             return self.catalog[col]
         # conveninence names
@@ -132,7 +134,7 @@ class BaseSubhalo(BaseDataSet):
             return self.catalog[colmap[col]]
         if col in ('Mtot', 'Mtotal'):
             return self._get_total_mass()
-        raise IndexError(f'column {col} not found')
+        raise KeyError(f'column {col} not found')
 
     def _get_total_mass(self):
         x = self.catalog['M200Mean']
