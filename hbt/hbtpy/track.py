@@ -152,7 +152,7 @@ class Track(BaseSubhalo):
         self.hostid = np.array(self.track['HostHaloId'])
         self.scale = self.track['ScaleFactor']
         self.z = 1/self.scale - 1
-        self.lookback_time = self.sim.cosmology.lookback_time(self.z)
+        self.t_lookback = self.sim.cosmology.lookback_time(self.z)
         self._birth_snapshot = self._none_value
         self._first_satellite_snapshot = self._none_value
         self._first_satellite_snapshot_index = self._none_value
@@ -427,6 +427,7 @@ class Track(BaseSubhalo):
         # once we've reached the minimum range allowed above,
         # we just do backwards brute-force
         ic(imin, imax)
+        iinf_backward = 0
         for isnap in range(imax, imin-1, -1):
             subs = self.reader.LoadSubhalos(
                 isnap, ['TrackId','HostHaloId'])
