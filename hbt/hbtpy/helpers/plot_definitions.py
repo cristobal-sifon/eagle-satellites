@@ -14,11 +14,14 @@ xbins = {
     #'logComovingMostBoundDistance': np.logspace(-2, 0.5, 9),
     'M200Mean': np.logspace(13, 14.7, 6),
     'mu': np.logspace(-5, 0, 9),
-    'Mstar': np.logspace(7.7, 11.3, 9),
+    'Mstar': np.logspace(7.7, 12, 10),
+    'Mgas': np.logspace(7, 12, 10),
     'Mbound': np.logspace(8, 12.5, 11),
     'time': np.arange(0, 13.5, 2),
+    'z': np.array([0, 0.5, 1, 1.5, 2, 3, 5]),
     # some common ratios
-    'ComovingMostBoundDistance/R200Mean': np.logspace(-1.7, 0.5, 9)
+    'ComovingMostBoundDistance/R200Mean': np.logspace(-1.7, 0.5, 9),
+    'ComovingMostBoundDistance/R200MeanComoving': np.logspace(-1.7, 0.5, 9)
     }
 ylims = {'Mbound/history:first_infall:Mbound': (5e-3, 2),
          'Mdm/history:first_infall:Mdm': (5e-4, 2),
@@ -28,6 +31,7 @@ binlabel = {
     #'ComovingMostBoundDistance': '$R_\mathrm{com}$ ($h^{-1}$Mpc)',
     'ComovingMostBoundDistance': 'R',
     'R200Mean': r'R_\mathrm{200m}',
+    'R200MeanComoving': r'R_\mathrm{200m}',
     'M200Mean': r'M_\mathrm{200m}',
     'mu': r'\mu',
     'Mbound': r'm_\mathrm{sub}',
@@ -35,7 +39,8 @@ binlabel = {
     'Mdm': r'm_\mathrm{DM}',
     'Mgas': r'm_\mathrm{gas}',
     'LastMaxMass': 'm_\mathrm{sub,max}',
-    'time': 't_\mathrm{lookback}'
+    'time': 't_\mathrm{lookback}',
+    'z': 'z',
     }
 _xx = 'ComovingMostBoundDistance'
 for i in '012':
@@ -53,8 +58,10 @@ for event, event_label in events.items():
     binlabel[f'{h}:Mdm'] = fr'm_\mathrm{{DM}}^{infall_label}'
     binlabel[f'{h}:Mgas'] = rf'm_\mathrm{{gas}}^{infall_label}'
     binlabel[f'{h}:time'] = rf't_\mathrm{{lookback}}^{infall_label}'
+    binlabel[f'{h}:z'] = rf'z^{infall_label}'
     xbins[f'{h}:Mbound/{h}:Mstar'] = np.logspace(1, 2.7, 6)
     xbins[f'Mstar/{h}:Mbound'] = np.logspace(-4, -1, 6)
+    xbins[f'{h}:z'] = xbins['z']
 axlabel = {}
 for key, label in binlabel.items():
     ismass = np.any([mn in key for mn in massnames])

@@ -98,17 +98,25 @@ def get_axlabel(col, statistic):
         unit = label[1]
     label = label[0]
     if statistic == 'std':
-        lab = fr'$\sigma({label})$'
-        if len(label) == 2:
-            lab = fr'{lab} $({unit})$'
+        lab = fr'$\sigma({label})$ (dex)'
+        # because sigma is in dex the argument is unitless
+        # if len(label) == 2:
+        #     lab = fr'{lab} $({unit})$'
     elif statistic == 'std/mean':
         lab = fr'$\sigma({label})/\langle {label} \rangle$'
     return lab
 
 
 def get_bins(bincol, logbins=True, n=5):
+    # if bincol is not None:
+    #     if 'time' in bincol:
+    #         print('***')
+    #         ic()
+    #         ic(bincol, logbins, n)
     if bincol in xbins:
         bins = xbins[bincol]
+        if n is None:
+            return bins
         if logbins:
             bins = np.logspace(
                 np.log10(bins[0]), np.log10(bins[-1]), n+1)
@@ -116,6 +124,10 @@ def get_bins(bincol, logbins=True, n=5):
             bins = np.linspace(bins[0], bins[-1], n+1)
     else:
         bins = n+1
+    # if bincol is not None:
+    #     if 'time' in bincol:
+    #         ic(bins)
+    #         print('***')
     return bins
 
 
@@ -144,7 +156,8 @@ def get_label_bincol(bincol):
             unit = units['time']
         elif 'Distance' in bincol:
             unit = units['distance']
-        label = rf'{label}\,({unit})'
+        else: unit = None
+        if unit: label = rf'{label}\,({unit})'
     return f'${label}$'
 
 
@@ -163,10 +176,6 @@ def massbins(sim, mtype='stars'):
 
 
 def plot_line(ax, *args, ls='-', **kwargs):
-    # """For now, forcing thick dots; lines not supported"""
-    if ls in ('--', ':', '-.') or 'dashes' in kwargs:
-        err = 'segmented lines not supported'
-        raise ValueError(err)
     kwargs_bg = kwargs.copy()
     #if dashes is not None:
         #kwargs['dashes'] = dashes
@@ -188,6 +197,7 @@ def plot_line(ax, *args, ls='-', **kwargs):
         kwargs['mew'] = 3
     kwargs_bg['ms'] = kwargs['ms'] + 2
     kwargs_bg['mew']= kwargs['mew'] + 2
+    ls_bg = ls.replace('--', '-').replace('-.', '-')
     ax.plot(*args, ls, **kwargs_bg, color='w', label='_none_')
     ax.plot(*args, ls, **kwargs)
     return
