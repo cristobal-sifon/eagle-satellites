@@ -203,8 +203,6 @@ class Simulation(object):
     def virial_snapshots(self):
         if self._virial_snapshots is None:
             lsdir = glob(os.path.join(self.virial_path, 'HaloSize_*.hdf5'))
-            print(lsdir[0])
-            print(lsdir[0].split('/')[-1].split('.')[0].split('_')[1])
             self._virial_snapshots = np.sort(
                 [int(i.split('/')[-1].split('.')[0].split('_')[1])
                  for i in glob(os.path.join(

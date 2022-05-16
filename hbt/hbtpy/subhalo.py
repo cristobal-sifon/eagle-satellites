@@ -10,6 +10,7 @@ import numpy as np
 from numpy.lib.recfunctions import append_fields
 import os
 import pandas as pd
+#import cudf as pd
 from scipy.stats import binned_statistic as binstat
 import six
 from time import time
@@ -54,6 +55,7 @@ class BaseDataSet(object):
             self._catalog = self.DataFrame(self._catalog)
         elif not self.as_dataframe \
                 and isinstance(self._catalog, pd.DataFrame):
+            ic(self._catalog.dtype.names)
             self._catalog = self._catalog.to_records()
         return self._catalog
 
@@ -64,9 +66,18 @@ class BaseDataSet(object):
     @property
     def colnames(self):
         if self.as_dataframe:
-            return self.catalog.columns
+            colnames = self.catalog.columns
         else:
-            return self.catalog.dtype.names
+            colnames = self.catalog.dtype.names
+        return np.array(colnames, dtype=str)
+
+    @property
+    def size(self):
+        return self.catalog[self.colnames[0]].size
+
+    @property
+    def shape(self):
+        return (len(self.colnames),self.size)
 
     ### methods ###
 
@@ -110,7 +121,7 @@ class BaseSubhalo(BaseDataSet):
 
     def __getitem__(self, col):
         cols = self.colnames
-        if np.iterable(col):
+        if np.iterable(col) and not isinstance(col, str):
             return self.catalog[col]
         if (isinstance(col, str) and col in cols):
             return self.catalog[col]
@@ -224,7 +235,7 @@ class BaseSubhalo(BaseDataSet):
     def _update_mass_columns(self):
         cols = self.catalog.columns \
             if isinstance(self.catalog, pd.DataFrame) \
-            else self.catalog.dtypes.names
+            else self.catalog.dtype.names
         for col in cols:
            if np.any([i in col for i
                       in ('Mbound','Mgas','Mdm','Mstar','LastMaxMass')]):
@@ -422,7 +433,8 @@ class Subhalos(BaseSubhalo):
     def __init__(self, catalog, sim, isnap,
                  logMmin=9, logM200Mean_min=12, exclude_non_FoF=True,
                  as_dataframe=True, load_hosts=True, load_distances=True,
-                 load_velocities=True, load_history=True):
+                 load_velocities=True, load_history=True,
+                 verbose_when_loading=True):
         """
         Parameters
         ----------
@@ -463,8 +475,7 @@ class Subhalos(BaseSubhalo):
         assert isinstance(load_velocities, bool)
         super(Subhalos, self).__init__(
               catalog, sim, as_dataframe=as_dataframe)
-        #print('{0} objects in the full catalog'.format(
-            #catalog['TrackId'].size))
+        self.verbose_when_loading = verbose_when_loading
         self.exclude_non_FoF = exclude_non_FoF
         self.non_FoF = (self.catalog['HostHaloId'] == -1)# \
                         #| np.isnan(self.catalog['HostHaloId']))
@@ -514,7 +525,7 @@ class Subhalos(BaseSubhalo):
 
     ### methods ###
 
-    def distance2host(self, frame='Physical', verbose=True):
+    def distance2host(self, frame='Physical', verbose=False):
         """Calculate the distance of all subhalos to the center of
         their host
 
@@ -530,7 +541,8 @@ class Subhalos(BaseSubhalo):
         #if self._has_distances:
             #print('Distances already calculated')
             #return
-        print('Calculating distances...')
+        if self.verbose_when_loading:
+            print('Calculating distances...')
         input_fmt = self.as_dataframe
         self.as_dataframe = True
         # alias
@@ -540,7 +552,8 @@ class Subhalos(BaseSubhalo):
         hosts = sub[columns].join(
             sub[columns][sub['Rank'] == 0].set_index('HostHaloId'),
             on='HostHaloId', rsuffix='_h')
-        print('hosts:', np.sort(hosts.columns))
+        if self.verbose_when_loading:
+            print('hosts:', np.sort(hosts.columns))
         j = (hosts['HostHaloId'] > 100) & (hosts['HostHaloId'] <= 102)
         #print('j =', j.sum())
         """
@@ -549,38 +562,47 @@ class Subhalos(BaseSubhalo):
         hdu = fits.BinTableHDU.from_columns(cols)
         hdu.writeto('test_hosthalo.fits')
         """
-        print('Joined hosts in {0:.2f} min'.format((time()-to)/60))
+        if self.verbose_when_loading:
+            print('Joined hosts in {0:.2f} min'.format((time()-to)/60))
         # 1d
-        ti = time()
-        print('1d:')
-        print(self.pcols())
+        if self.verbose_when_loading:
+            ti = time()
+            print('1d:')
+            print(self.pcols())
         for dcol, pcol in zip(self.dcols(1, frame), self.pcols(frame)):
-            print(dcol, pcol)
             self.catalog[dcol] = ((hosts[pcol] - hosts[pcol+'_h'])**2)**0.5
-            print('percentiles:', np.percentile(self.satellites[dcol],
-                  [0,1,25,50,99,100]))
-        #print(hosts[['HostHaloId','HostHaloId_h','Rank','Rank_h']][j])
-        #print(hosts[['ComovingMostBoundPosition0'[j])
-        print('1d distances in {0:.2f} s'.format(time()-ti))
+            if self.verbose_when_loading:
+                print(dcol, pcol)
+                print('percentiles:', np.percentile(self.satellites[dcol],
+                      [0,1,25,50,99,100]))
+        if self.verbose_when_loading:
+            #print(hosts[['HostHaloId','HostHaloId_h','Rank','Rank_h']][j])
+            #print(hosts[['ComovingMostBoundPosition0'[j])
+            print('1d distances in {0:.2f} s'.format(time()-ti))
         # 2d
-        ti = time()
+        if self.verbose_when_loading:
+            ti = time()
         for dcol in self.dcols(2, frame):
             dcols = [self.dcol(dcol[-i], frame) for i in (2,1)]
             self.catalog[dcol] = np.sum(
                 self.catalog[dcols]**2, axis=1)**0.5
-            print(dcol)
-            print('percentiles:', np.percentile(self.satellites[dcol],
-                  [0,1,25,50,99,100]))
-        print('2d distances in {0:.2f} s'.format(time()-ti))
+            if self.verbose_when_loading:
+                print(dcol)
+                print('percentiles:', np.percentile(self.satellites[dcol],
+                      [0,1,25,50,99,100]))
+        if self.verbose_when_loading:
+            print('2d distances in {0:.2f} s'.format(time()-ti))
         # 3d
-        ti = time()
+        if self.verbose_when_loading:
+            ti = time()
         self.catalog[self.dcol(frame=frame)] = np.sum(
             self.catalog[self.dcols(frame=frame)]**2, axis=1)**0.5
-        print('3d distances in {0:.2f} s'.format(time()-ti))
-        print('percentiles:',
-              np.percentile(self.satellites[self.dcol(frame=frame)],
-              [0,1,25,50,99,100]))
-        if verbose:
+        if self.verbose_when_loading:
+            print('3d distances in {0:.2f} s'.format(time()-ti))
+            print('percentiles:',
+                  np.percentile(self.satellites[self.dcol(frame=frame)],
+                  [0,1,25,50,99,100]))
+        if verbose or self.verbose_when_loading:
             print('Calculated distances in {0:.2f} s'.format(time()-to))
         self.as_dataframe = input_fmt
         self._has_distances = True
@@ -805,7 +827,8 @@ class Subhalos(BaseSubhalo):
             return
         if not self._has_host_properties:
             self.host_properties()
-        print('Calculating velocities...')
+        if self.verbose_when_loading:
+            print('Calculating velocities...')
         to = time()
         adf = self.as_dataframe
         self.as_dataframe = True
@@ -847,8 +870,9 @@ class Subhalos(BaseSubhalo):
             hosts[vhcol+str(i)] = wmean[mvcol] / msum
         hosts[vhcol] = np.sum(wmean[mvcols]**2, axis=1)**0.5
         ## velocity dispersions
-        print('velocity dispersions...')
-        ti = time()
+        if self.verbose_when_loading:
+            print('velocity dispersions...')
+            ti = time()
         hostkeys = np.append(['HostHaloId', vhcol], vhcols)
         cx = cx.join(hosts[hostkeys].set_index('HostHaloId'), on='HostHaloId',
                      rsuffix='_h')
@@ -870,9 +894,11 @@ class Subhalos(BaseSubhalo):
         # -1 or not?
         for col in np.append(scol, scols):
             cx[col] = cx[col] / (cx['Nsat']-1)**0.5
-        print('dispersions in {0:.1f} seconds'.format(time()-ti))
+            if self.verbose_when_loading:
+                print('dispersions in {0:.1f} seconds'.format(time()-ti))
         # peculiar velocities
-        ti = time()
+        if self.verbose_when_loading:
+            ti = time()
         vpcol = 'Physical{0}PeculiarVelocity'.format(self.pvref)
         vpcols = [vpcol+str(i) for i in range(3)]
         for col in (vhcol, vhcols, scol, scols):
@@ -887,13 +913,15 @@ class Subhalos(BaseSubhalo):
             * np.sign(np.sum(cx[self.vcols1d()], axis=1))
         cx[vpcol] = cx['Physical{0}Velocity'.format(self.pvref)] \
             - cx['Physical{0}HostMeanVelocity'.format(self.pvref)]
-        print('peculiar velocities in {0:.2f} min'.format((time()-ti)/60))
+        if self.verbose_when_loading:
+                print(f'Peculiar velocities in {time()-ti:.2f} seconds')
         cx.drop(columns=mvcols)
         self._catalog = cx
         self._has_velocities.append(mass_weighting)
         self.as_dataframe = adf
-        print('Calculated velocities in {0:.2f} min'.format((time()-to)/60))
-        print()
+        if self.verbose_when_loading:
+            print(f'Calculated velocities in {time()-to:.1f} seconds')
+            print()
         return
 
 
@@ -945,8 +973,9 @@ class Subhalos(BaseSubhalo):
         if self._has_host_properties:
             print('Hosts already loaded')
             return
-        print('Loading hosts...')
-        to = time()
+        if self.verbose_when_loading:
+            print('Loading hosts...')
+            to = time()
         adf = self.as_dataframe
         self.as_dataframe = True
         if self.isnap not in self.sim.virial_snapshots:
@@ -982,7 +1011,8 @@ class Subhalos(BaseSubhalo):
                 = (3*self.catalog['M200Mean'] / (4*np.pi*200*rho_m))**(1/3)
         self._has_host_properties = True
         self.as_dataframe = adf
-        print('Loaded in {0:.2f} s'.format(time()-to))
+        if self.verbose_when_loading:
+            print('Loaded in {0:.2f} s'.format(time()-to))
         return
 
     def read_history(self):
