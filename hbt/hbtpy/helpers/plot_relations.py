@@ -11,6 +11,7 @@ from scipy.stats import (
     binned_statistic as binstat, binned_statistic_dd as binstat_dd)
 import sys
 from time import time
+import warnings
 
 from plottery.plotutils import colorscale, savefig, update_rcParams
 from plottery.statsplots import contour_levels
@@ -25,8 +26,10 @@ from .plot_auxiliaries import (
 from .plot_definitions import (
     ccolor, scolor, massnames, units, xbins, binlabel, events, axlabel, ylims)
 
+warnings.simplefilter('ignore', RuntimeWarning)
 
-def run(sim, subs, logM200Mean_min, which_relations, ncores=1):
+
+def run(args, sim, subs, logM200Mean_min, which_relations, ncores=1):
     def print_header(relation_type):
         print(f'\n########\n### {relation_type} relations\n########')
 
@@ -35,41 +38,45 @@ def run(sim, subs, logM200Mean_min, which_relations, ncores=1):
     #plotter = RelationPlotter(sim, subs)
     #label = ColumnLabel()
 
-    args = []
+    plot_args = []
     pool = mp.Pool(ncores) if use_mp else None
     # x-axis: time since historical event
-    if 'time' in which_relations:
-        print_header('time')
-        out = wrap_relations_time()
-        args.extend(out)
+    for stat in args.stats:
+        if 'time' in which_relations:
+            print_header('time')
+            out = wrap_relations_time(args, stat)
+            plot_args.extend(out)
 
-    # x-axis: cluster-centric distance
-    if 'distance' in which_relations:
-        print_header('distance')
-        out = wrap_relations_distance(sim, subs, pool)
-        args.extend(out)
+        # x-axis: cluster-centric distance
+        if 'distance' in which_relations:
+            print_header('distance')
+            out = wrap_relations_distance(args, stat)
+            plot_args.extend(out)
 
-    relation_kwargs = dict(
-        satellites_label='Satellites today',
-        centrals_label='Centrals today', show_centrals=True,
-        min_hostmass=logM200Mean_min)#, xlim=(3e7,1e12))
+        relation_kwargs = dict(
+            satellites_label='Satellites today',
+            centrals_label='Centrals today', show_centrals=True,
+            min_hostmass=logM200Mean_min)#, xlim=(3e7,1e12))
 
-    # historical HSMR binned by present-day quantities
-    if 'hsmr-history' in which_relations:
-        print_header('HSMR history')
-        out = wrap_relations_hsmr_history(**relation_kwargs)
-        args.extend(out)
+        # historical HSMR binned by present-day quantities
+        if 'hsmr-history' in which_relations:
+            print_header('HSMR history')
+            out = wrap_relations_hsmr_history(
+                args, stat, **relation_kwargs)
+            plot_args.extend(out)
 
-    # present-day HSMR binned by historical quantities
-    relation_kwargs['satellites_label'] = 'All satellites'
-    relation_kwargs['centrals_label'] = 'Centrals'
-    if 'hsmr' in which_relations:
-        print_header('HSMR')
-        out = wrap_relations_hsmr(**relation_kwargs)
-        args.extend(out)
+        # present-day HSMR binned by historical quantities
+        relation_kwargs['satellites_label'] = 'All satellites'
+        relation_kwargs['centrals_label'] = 'Centrals'
+        if 'hsmr' in which_relations:
+            print_header('HSMR')
+            out = wrap_relations_hsmr(args, stat, **relation_kwargs)
+            plot_args.extend(out)
 
     print()
-    print(f"Producing {len(args)} plots, let's go!")
+    print()
+    print(f"Producing {len(plot_args)} plots, let's go!")
+    print()
     print()
 
     # ic(len(args))
@@ -79,23 +86,22 @@ def run(sim, subs, logM200Mean_min, which_relations, ncores=1):
     # return
 
     if use_mp:
-        _ = [pool.apply_async(wrap_relations, args=(sim,subs,*args_i),
+        _ = [pool.apply_async(wrap_relations, args=(args,sim,subs,*args_i),
                               kwds=kwargs_i)
-             for args_i, kwargs_i in args]
+             for args_i, kwargs_i in plot_args]
         pool.close()
         pool.join()
     else:
-        _ = [wrap_relations(sim, subs, *args_i, **kwargs_i)
+        _ = [wrap_relations(args, sim, subs, *args_i, **kwargs_i)
              #for args_i, kwargs_i in zip(args[:1], kwargs[:1])]
-             for args_i, kwargs_i in args]
+             for args_i, kwargs_i in plot_args]
 
     return
 
 
-def wrap_relations(sim, subs, xcol, ycol, bincol, x_bins=10, bins=None,
+def wrap_relations(args, sim, subs, xcol, ycol, bincol, x_bins=10, bins=None,
                    xscale='log', logbins=None, show_satellites=False,
-                   #stats=('mean','std','std/mean'), **kwargs):
-                   stats=('mean',), **kwargs):
+                   statistic='mean', **kwargs):
     label = get_label_bincol(bincol)
     #print('\n'*5)
     ic()
@@ -111,40 +117,34 @@ def wrap_relations(sim, subs, xcol, ycol, bincol, x_bins=10, bins=None,
             logbins = False
     if bins is None:
         bins = get_bins(bincol, logbins)
-    if isinstance(stats, str):
-        stats = (stats,)
-    for statistic in stats:
-        #showsat = (statistic == 'mean') * show_satellites
-        # since this is the last one we run there shouldn't be
-        # any problem in overwriting these
-        #if statistic == 'count' or bincol is None:
-            #kwargs['yscale'] = 'linear'
-            #kwargs['ylim'] = None
-        if statistic == 'mean':
-            kwargs['yscale'] = 'log'
-            #kwargs['ylim'] = None
-        else:
-            kwargs['yscale'] = 'linear'
-            kwargs['ylim'] = (0, 0.8) if statistic == 'std' else (0, 1.5)
-            #kwargs['ylim'] = (0, 1.5)
-        plot_relation(
-            sim, subs, xcol=xcol, ycol=ycol, xbins=x_bins,
-            xscale=xscale, bincol=bincol,
-            statistic=statistic, binlabel=label, bins=bins,
-            logbins=logbins, xlabel=get_axlabel(xcol, 'mean'),
-            ylabel=get_axlabel(ycol, statistic), cmap='viridis',
-            show_satellites=show_satellites, **kwargs)
-            #selection=selection, selection_min=selection_min,
-            #show_satellites=show_satellites, show_centrals=show_centrals)
+    #showsat = (statistic == 'mean') * show_satellites
+    # since this is the last one we run there shouldn't be
+    # any problem in overwriting these
+    #if statistic == 'count' or bincol is None:
+        #kwargs['yscale'] = 'linear'
+        #kwargs['ylim'] = None
+    if 'yscale' not in kwargs:
+        kwargs['yscale'] = 'log' if statistic == 'mean' else 'linear'
+    if statistic != 'mean':
+        kwargs['ylim'] = (0, 0.8) if statistic == 'std' else (0, 1.5)
+    plot_relation(
+        sim, subs, xcol=xcol, ycol=ycol, xbins=x_bins,
+        xscale=xscale, bincol=bincol,
+        statistic=statistic, binlabel=label, bins=bins,
+        logbins=logbins, xlabel=get_axlabel(xcol, 'mean'),
+        ylabel=get_axlabel(ycol, statistic), cmap='viridis',
+        show_satellites=show_satellites, **kwargs)
+        #selection=selection, selection_min=selection_min,
+        #show_satellites=show_satellites, show_centrals=show_centrals)
     return
 
 
-def wrap_relations_distance(sim, subs, pool):
+def wrap_relations_distance(args, stat):
     xscale = 'log'
     xb = np.logspace(-2, 0.5, 9) if xscale == 'log' \
         else np.linspace(0, 3, 9)
     d = 'ComovingMostBoundDistance'
-    args = []
+    plot_args = []
     # defined here to avoid repetition
     ycols_present = ['Mbound/Mstar', 'Mstar/Mbound', 'Mstar', 'Mbound',
                      'Mbound/M200Mean']
@@ -160,45 +160,50 @@ def wrap_relations_distance(sim, subs, pool):
                    f'{h}:Mbound/{h}:Mstar'] \
                   + bincols_present
         # uncomment when testing
-        # ycols = ['Mbound/Mstar']
-        # bincols = ['M200Mean']
+        #ycols = ['Mbound/Mstar']
+        #bincols = ['Mstar']
         for ycol in ycols:
-            ylim = (4, 110) \
+            ylim = (2, 150) \
                 if ycol in ('Mbound/Mstar', f'{h}:Mbound/{h}:Mstar') else None
             #ylim = None
             for xyz in ('', 0):
                 for xcol in (f'{d}{xyz}', f'{d}{xyz}/R200MeanComoving'):
                 #for xcol in (f'{d}{xyz}/R200MeanComoving',):
                     # 2d histogram
-                    kwds = dict(x_bins=np.logspace(-2, 0.7, 26), ybins=20,
-                                selection='Mstar', selection_min=1e8,
-                                xscale='log', stats=('count',), bins=None,
-                                lines_only=False, ylim=ylims.get(ycol))
-                    args.append([[xcol, ycol, None], kwds.copy()])
+                    if stat == 'count':
+                        kwds = dict(
+                            x_bins=np.logspace(-2, 0.7, 26), ybins=20,
+                            selection='Mstar', selection_min=1e8,
+                            xscale='log', statistic='count', bins=None,
+                            lines_only=False, ylim=ylims.get(ycol))
+                        plot_args.append([[xcol, ycol, None], kwds.copy()])
                     # line plots
-                    kwds = dict(
-                        x_bins=xb, xscale=xscale,
-                        selection='Mstar', selection_min=1e8, ylim=ylim,
-                        show_satellites=False, show_centrals=False,
-                        show_ratios=True)
-                    for bincol in bincols:
-                        # avoid repetition and trivial plots
-                        if (ie > 0 and bincol in bincols_present \
-                                and ycol in ycols_present) \
-                                or bincol == ycol:
-                            continue
-                        logbins = ('time' not in bincol)
-                        kwds['bins'] = get_bins(bincol, logbins, n=5)
-                        if ycol == 'Mbound/Mstar' and bincol == 'M200Mean':
-                            kwds['ylim_ratios'] = (0.5, 1.5)
-                        else:
-                            kwds['ylim_ratios'] = None
-                        args.append([[xcol, ycol, bincol], kwds.copy()])
-                        #wrap_relations(sim, subs, *args[-1], **kwargs[-1])
-    return args
+                    else:
+                        kwds = dict(
+                            x_bins=xb, xscale=xscale,
+                            selection='Mstar', selection_min=1e8, ylim=ylim,
+                            show_satellites=False, show_centrals=False,
+                            show_ratios=False, statistic=stat)
+                        for bincol in bincols:
+                            # avoid repetition and trivial plots
+                            if (ie > 0 and bincol in bincols_present \
+                                    and ycol in ycols_present) \
+                                    or bincol == ycol:
+                                continue
+                            logbins = ('time' not in bincol)
+                            kwds['bins'] = get_bins(bincol, logbins, n=5)
+                            if ycol == 'Mbound/Mstar' and bincol == 'M200Mean':
+                                kwds['ylim_ratios'] = (0.5, 1.5)
+                            else:
+                                kwds['ylim_ratios'] = None
+                            plot_args.append(
+                                [[xcol, ycol, bincol], kwds.copy()])
+                            #wrap_relations(sim, subs, *args[-1], **kwargs[-1])
+        #break
+    return plot_args
 
 
-def wrap_relations_hsmr(**relation_kwargs):
+def wrap_relations_hsmr(args, stat, **relation_kwargs):
     x_bins = {'Mstar': np.logspace(7.5, 11.7, 10),
               'Mbound': np.logspace(8.5, 12.7, 10)}
     events = [f'history:{e}'
@@ -215,43 +220,54 @@ def wrap_relations_hsmr(**relation_kwargs):
                'LastMaxMass', 'Mbound/LastMaxMass', 'Mstar/LastMaxMass',
                'M200Mean', 'Mbound/M200Mean', 'Mbound']
     bincols = bincols + [col for cols in history_bincols for col in cols]
+    bincols = [i for i in bincols if 'time' in i]
     #bincols = ['Mstar/history:last_infall:Mbound']
     #bincols = ['ComovingMostBoundDistance/R200MeanComoving',
                #'ComovingMostBoundDistance0/R200MeanComoving']
     #bincols = ['Mbound']
     ic(bincols)
     #for ycol in ('Mbound', 'Mbound/Mstar', 'Mtotal', 'Mtotal/Mstar'):
-    args = []
+    plot_args = []
     for ycol, ylim in zip(('Mstar/Mbound', 'Mbound/Mstar', 'Mbound'),
-                          ((2e-3,0.5), (5,300), (5e8,2e14))):
+                          ((2e-3,0.5), (3,300), (5e8,2e14))):
         # histograms
-        kwds = dict(x_bins=20, ybins=20,
-                    #selection='Mstar', selection_min=1e8,
-                    stats=('count',), lines_only=False,
-                    show_centrals=True)
-        args.append([['Mstar', ycol, None], kwds.copy()])
+        if stat == 'count':
+            kwds = dict(x_bins=20, ybins=20,
+                        #selection='Mstar', selection_min=1e8,
+                        statistic='count', lines_only=False,
+                        show_centrals=True)
+            args.append([['Mstar', ycol, None], kwds.copy()])
         # lines
-        for bincol in bincols:
-            #if bincol != 'M200Mean': continue
-            logbins = ('time' not in bincol)
-            bins = get_bins(bincol, logbins, n=5)
-            kwds = {**dict(bins=bins, ylim=ylim, show_ratios=True,
-                           show_satellites=False, show_centrals=True),
-                    **relation_kwargs}
-            for xcol in ('Mstar', 'Mbound'):
-                xb = xbins.get(xcol)
-                args.append([[xcol, ycol, bincol, xb], kwds.copy()])
-            #break
+        else:
+            for bincol in bincols:
+                #if bincol != 'M200Mean': continue
+                logbins = ('time' not in bincol)
+                if ':time' in bincol:
+                    bins = np.arange(0, 11.1, 2.2)
+                else:
+                    bins = get_bins(bincol, logbins, n=5)
+                kwds = {**dict(bins=bins, ylim=ylim, statistic=stat,
+                               show_ratios=False,
+                               show_satellites=False, show_centrals=True),
+                        **relation_kwargs}
+                for xcol in ('Mstar', 'Mbound'):
+                    if ycol == xcol or xcol == bincol:
+                        continue
+                    xb = xbins.get(xcol)
+                    plot_args.append([[xcol, ycol, bincol, xb], kwds.copy()])
+                #break
         #break
-    return args
+    return plot_args
 
 
-def wrap_relations_hsmr_history(do_mass=True, do_ratios=True,
+def wrap_relations_hsmr_history(args, stat, do_mass=True, do_ratios=False,
                                 xlim=None, **relation_kwargs):
     """Plot historical quantities on the x-axis"""
-    args = []
-    kwds = dict(**relation_kwargs)
+    plot_args = []
+    kwds = dict(statistic=stat, **relation_kwargs)
     ii = 0
+    if not np.any(np.in1d([stat], ('mean','std','std/mean'))):
+        return []
     for event in ('first_infall', 'last_infall', 'cent', 'sat'):
     #for event in ('cent',):
         h = f'history:{event}'
@@ -263,7 +279,10 @@ def wrap_relations_hsmr_history(do_mass=True, do_ratios=True,
             #for bincol in (f'{h}:time',):
                 logbins = ('time' not in bincol)
                 ic(bincol, logbins)
-                bins = get_bins(bincol, logbins, n=5)
+                if ':time' in bincol:
+                    bins = np.arange(0, 11.1, 2.2)
+                else:
+                    bins = get_bins(bincol, logbins, n=5)
                 xcol = (f'{h}:Mbound/Mbound', f'{h}:Mstar/Mstar',
                         f'{h}:Mstar/Mstar',  f'{h}:Mbound/{h}:Mstar')
                 ycol = (f'{h}:Mstar/Mstar', f'{h}:Mbound/Mbound',
@@ -281,7 +300,7 @@ def wrap_relations_hsmr_history(do_mass=True, do_ratios=True,
                 kwds['xlim'] = (x_bins[0], x_bins[-1])
                 kwds['show_1to1'] = False
                 for ycol in ('Mbound', 'Mstar'):
-                    args.append(
+                    plot_args.append(
                         [[f'{h}:Mbound', ycol, bincol, x_bins], kwds.copy()])
         # stellar mass in the x-axis
         if do_mass:
@@ -290,63 +309,78 @@ def wrap_relations_hsmr_history(do_mass=True, do_ratios=True,
                        'ComovingMostBoundDistance','ComovingMostBoundDistance0',
                        'LastMaxMass', 'Mbound/LastMaxMass', 'Mstar/LastMaxMass',
                        'M200Mean', 'Mbound/M200Mean')
+            ycols = (f'{h}:Mbound', f'{h}:Mbound/{h}:Mstar',
+                        f'Mbound/{h}:Mbound')
+            ylims = ((1e9, 1e13), (3, 300), (0.01, 2))
+            bincols = bincols[:2]
             for bincol in bincols:
                 logbins = ('time' not in bincol \
                     and bincol.split(':')[-1] != 'z')
                 ic(bincol, logbins)
-                bins = get_bins(bincol, logbins,
-                                n=None if bincol.split(':')[-1] == 'z' else 5)
-                kwds = {**dict(bins=bins, logbins=logbins),
+                if ':time' in bincol:
+                    bins = np.arange(0, 11.1, 2.2)
+                else:
+                    bins = get_bins(bincol, logbins,
+                                    n=None if bincol.split(':')[-1] == 'z' else 5)
+                kwds = {**dict(bins=bins, statistic=stat, logbins=logbins),
                         **relation_kwargs}
-                ycols = (f'{h}:Mbound', f'{h}:Mbound/{h}:Mstar',
-                         f'Mbound/{h}:Mbound')
-                ylims = ((1e9, 1e13), (3, 300), (0.01, 2))
                 for ycol, ylim in zip(ycols, ylims):
                     for xcol in ('Mstar', f'{h}:Mstar'):
                         xb = xbins[xcol.split(':')[-1]]
                         kwds['ylim'] = ylim
-                        args.append([[xcol, ycol, bincol, xb], kwds.copy()])
+                        plot_args.append(
+                            [[xcol, ycol, bincol, xb], kwds.copy()])
                 #break
-    return args
+    return plot_args
 
 
-def wrap_relations_time(do_lines=True, do_hist=False):
+def wrap_relations_time(args, stat):
     #x_bins = np.arange(0, 14, 1)
-    args = []
+    plot_args = []
     kwds_count = dict(
         x_bins=30, ybins=30, selection='Mstar', selection_min=1e8,
-        xscale='linear', stats=('count',), yscale='log', lines_only=False)
+        xscale='linear', statistics='count', yscale='log', lines_only=False)
     kwds = dict(
         x_bins=xbins['time'], logbins=True, selection='Mstar',
-        xscale='linear', yscale='log', selection_min=1e8,
-        show_satellites=False)
-    for event in ('first_infall', 'last_infall', 'cent', 'sat'):
-    #for event in ('first_infall',):
+        statistic=stat, xscale='linear', yscale='log', selection_min=1e8,
+        show_satellites=False, show_ratios=False)
+    events = ('cent', 'sat', 'first_infall', 'last_infall')
+    for i_e, event in enumerate(events):
         h = f'history:{event}'
-        for xcol in (f'{h}:z', f'{h}:time'):
+        time_diffs = [f'{h}:time-history:{e}:time' for e in events[:i_e]]
+        xcols = [f'{h}:time'] + time_diffs # redshift is giving trouble, leave for later
+        for xcol in xcols:
         #xcol = f'{h}:time'
             # histograms
-            if do_hist:
-                for ycol in ('Mbound', 'Mbound/Mstar', f'{h}:Mbound',
-                             f'Mbound/{h}:Mbound', f'Mstar/{h}:Mbound',
-                             f'Mstar/{h}:Mstar', 'M200Mean', 'Mbound/M200Mean',
-                             f'Mdm/{h}:Mdm', f'Mgas/{h}:Mgas',
-                             f'Mstar/Mbound', f'Mdm/Mbound', f'Mgas/Mbound',
-                             'ComovingMostBoundDistance/R200MeanComoving'):
+            if stat == 'count':
+                # for ycol in ('Mbound', 'Mbound/Mstar', f'{h}:Mbound',
+                #              f'Mbound/{h}:Mbound', f'Mstar/{h}:Mbound',
+                #              f'Mstar/{h}:Mstar', 'M200Mean', 'Mbound/M200Mean',
+                #              f'Mdm/{h}:Mdm', f'Mgas/{h}:Mgas',
+                #              f'Mstar/Mbound', f'Mdm/Mbound', f'Mgas/Mbound',
+                #              'ComovingMostBoundDistance/R200MeanComoving'):
+                for ycol in (f'{h}:time',
+                             f'history:first_infall:Mdm/{h}:Mdm',
+                             f'history:first_infall:Mstar/{h}:Mstar'):
                     kwds_count['ylim'] = ylims.get(ycol)
-                    args.append([[xcol, ycol, None], kwds_count.copy()])
+                    plot_args.append([[xcol, ycol, None], kwds_count.copy()])
             # lines
-            if do_lines:
-                for ycol in (f'Mdm/{h}:Mdm', f'Mstar/{h}:Mstar', 'Mbound/Mstar',
-                             f'Mbound/{h}:Mbound',
-                             f'Mstar/{h}:Mbound', 'Mbound/M200Mean',
-                             f'{h}:Mbound/{h}:Mstar'):
-                    for bincol in (f'{h}:Mbound/{h}:Mstar', f'{h}:Mstar/{h}:Mbound',
-                                   'M200Mean', 'Mbound/Mstar', 'Mstar/Mbound',
-                                   'Mstar', 'Mbound', f'{h}:Mbound', f'{h}:Mstar'):
-                #for ycol in (f'Mdm/{h}:Mdm',):
-                    #for bincol in (f'{h}:Mbound',):
-                        if bincol == ycol:
+            else:
+                ycols = [f'Mdm/{h}:Mdm', f'Mstar/{h}:Mstar', 'Mbound/Mstar',
+                         f'Mbound/{h}:Mbound', f'{h}:Mbound/{h}:Mstar',
+                         f'Mstar/{h}:Mbound', 'Mbound/M200Mean',
+                         'ComovingMostBoundDistance/R200MeanComoving']
+                if xcol.count('time') == 1:
+                    ycols += time_diffs
+                ycols += [f'{h}:{m}/history:{e}:{m}'
+                          for e in events[:i_e] for m in ('Mbound','Mdm','Mstar')] 
+                bincols = [f'{h}:time',
+                           f'{h}:Mbound/{h}:Mstar', f'{h}:Mstar/{h}:Mbound',
+                           'M200Mean', 'Mbound/Mstar', 'Mstar/Mbound',
+                           'Mstar', 'Mbound', f'{h}:Mbound', f'{h}:Mstar']
+                for ycol in ycols[:3]:
+                    for bincol in bincols[:3]:
+                        if bincol == ycol or bincol == xcol:
                             continue
                         bins = np.logspace(8, 12, 7) \
                             if ('Mstar' in bincol and '/' not in bincol) \
@@ -354,11 +388,15 @@ def wrap_relations_time(do_lines=True, do_hist=False):
                         kwds['yscale'] = 'linear' \
                             if ycol in (f'Mstar/{h}:Mstar', f'Mdm/{h}:Mdm') \
                             else 'log'
+                        kwds['yscale'] = 'linear'
+                        kwds['ylim'] = (0, 1) if ycol == f'Mdm/{h}:Mdm' \
+                            else None
                         kwds['bins'] = bins
+                        kwds['logbins'] = ('time' not in bincol)
                         kwds['show_centrals'] = (not h in ycol)
-                        args.append([[xcol, ycol, bincol], kwds.copy()])
+                        plot_args.append([[xcol, ycol, bincol], kwds.copy()])
         #break
-    return args
+    return plot_args
 
 
 ################################################
@@ -391,8 +429,7 @@ def do_xbins(X, mask, xbins, xlim=None, xscale='log'):
     return xbins, xcenters
 
 
-def relation_lines(x, y, xbins, statistic, mask=None,
-                   bindata=None, bins=10):
+def relation_lines(x, y, xbins, statistic, mask=None, bindata=None, bins=10):
     if mask is not None:
         x = x[mask]
         y = y[mask]
@@ -403,10 +440,7 @@ def relation_lines(x, y, xbins, statistic, mask=None,
     # std in dex
     if statistic == 'std':
         y = np.log10(y)
-    if '/' in statistic:
-        statistic = statistic.split('/')
-    else:
-        statistic = [statistic]
+    statistic = statistic.split('/')
     if bindata is None or statistic == ['count']:
         func = binstat
         args = [x, y]
@@ -415,19 +449,12 @@ def relation_lines(x, y, xbins, statistic, mask=None,
         func = binstat_dd
         args = [[bindata, x], y]
         bin_arg = (bins, xbins)
+    ic(x)
+    ic(func.__name__)
     relation = func(*args, statistic[0], bin_arg).statistic
     if len(statistic) == 2:
         relation = relation \
              / func(*args, statistic[1], bin_arg).statistic
-    # elif '/' in statistic:
-    #     stat = statistic.split('/')
-    #     relation = binstat_dd(
-    #             [bindata, x], y, stat[0], [bins,xbins]).statistic \
-    #         / binstat_dd(
-    #             [bindata, x], y, stat[1], [bins,xbins]).statistic
-    # else:
-    #     relation = binstat_dd(
-    #         [bindata, x], y, statistic, [bins,xbins]).statistic
     # this will make the plot look nicer
     if 'std' in statistic:
         relation[relation == 0] = np.nan
@@ -447,7 +474,8 @@ def relation_surface(x, y, xbins, ybins, statistic, mask=None,
             bindata = bindata[mask]
     if bindata is None or statistic == 'count':
         relation = np.histogram2d(x, y, (xbins,ybins))[0]
-        vmin, vmax = np.percentile(relation, [1, 99])
+        rel = relation[relation > 0] if logbins else relation
+        vmin, vmax = np.percentile(rel, [1, 99])
         colornorm = mplcolors.LogNorm()
     elif '/' in statistic:
         stat = statistic.split('/')
@@ -504,16 +532,16 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
                   lines_only=True, statistic='mean', selection='Mstar',
                   selection_min=1e8, selection_max=None, xlim=None,
                   ylim=None, xbins=12, xscale='log', ybins=12, yscale='log',
-                  hostmass='M200Mean', min_hostmass=13, show_hist=True,
+                  hostmass='M200Mean', min_hostmass=13,
                   bindata=None, bincol=None, bins=6, logbins=False,
                   binlabel='', mask=None, xlabel=None, ylabel=None,
                   with_alpha=False, cmap='viridis', lw=4,
-                  colornorm=mplcolors.LogNorm(),
-                  show_contours=True, contour_kwargs={},
+                  colornorm=mplcolors.LogNorm(), show_histograms=False,
+                  show_contours=False, contour_kwargs={},
                   show_satellites=True, show_centrals=False,
                   satellites_label='All satellites',
                   centrals_label='Centrals', literature=False,
-                  show_ratios=True, ylim_ratios=None, show_1to1=False):
+                  show_ratios=False, ylim_ratios=None, show_1to1=False):
     """Plot the SHMR and HSMR
 
     ``bincol`` and ``bins`` allow the relations to be binned in a
@@ -623,7 +651,9 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
         ic(ycenters)
     ic(xlim, ylim)
 
-    relation_overall = relation_lines(xdata, ydata, xbins, statistic, gsat)
+    mask_ = (bindata >= bins[0]) & (bindata <= bins[-1])
+    relation_overall = relation_lines(
+        xdata[mask_], ydata[mask_], xbins, statistic, gsat[mask_])
     ic(relation_overall)
     # at least for now
     show_ratios = show_ratios * lines_only
@@ -639,22 +669,27 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
     else:
         fig, ax = plt.subplots(figsize=(8,6), constrained_layout=True)
         axes = [ax]
-    if show_contours:
-        for key, val in zip(('zorder','color','linestyles'), (5,'k','solid')):
-            contour_kwargs[key] = val
-        try:
+    if show_contours or show_histograms:
+        counts = relation_surface(
+            xdata, ydata, xbins, ybins, 'count', gsat,
+            logbins=logbins, cmap=cmap)
+        if show_contours:
+            for key, val in zip(('zorder','color','linestyles'), (5,'k','solid')):
+                contour_kwargs[key] = val
+            #try:
             if 'levels' not in contour_kwargs:
                 contour_kwargs['levels'] \
                     = contour_levels(
                         xdata[gsat], ydata[gsat], 12, (0.1,0.5,0.9))
-            ax.contour(xdata[gsat], ydata[gsat], contour_kwargs['levels'])
-        except: # which exception was it again?
-            pass
+            #ax.contour(xdata[gsat], ydata[gsat], contour_kwargs['levels'])
+            #except: # which exception was it again?
+                #pass
+            #else:
+            ax.contour(xcenters, ycenters, counts, **contour_kwargs)
         else:
-            counts = relation_surface(
-                xdata, ydata, xbins, ybins, 'count', gsat,
-                logbins=logbins, cmap=cmap)
-            plt.contour(xcenters, ycenters, counts, **contour_kwargs)
+            twinx = ax.twinx()
+            twinx.hist(xdata[gsat], bins=xbins, histtype='step', color='k')
+            twinx.set(yticks=[])
     if lines_only:
         ic(np.percentile(bindata, [1,50,99]))
         ic(bins)
@@ -692,6 +727,9 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
         sm = cm.ScalarMappable(cmap=cmap_lines, norm=boundary_norm)
         sm.set_array([])
         cbar = plt.colorbar(sm, ax=axes, ticks=bins)
+        # if ':time' in bincol:
+        #     cbar.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.1f'))
+        cbar.ax.yaxis.set_minor_locator(ticker.NullLocator())
     else:
         cbar = plt.colorbar(colormap, ax=axes)
     if statistic == 'count':
@@ -746,14 +784,16 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
             cydata = subs[yc][jcen]
             if statistic == 'std':
                 cydata = np.log10(cydata)
-            if 'time' in xcol or 'Distance' in xcol:
+            if 'time' in xcol or 'Distance' in xcol \
+                    or xcol.split(':')[-1] == 'z':
                 ncen = -np.ones(xcenters.size, dtype=int)
             else:
                 xc = '/'.join([i.split(':')[-1] for i in xcol.split('/')])
                 cxdata = subs[xc][jcen]
                 ncen = np.histogram(cxdata, xbins)[0]
             # in this case just show overall mean
-            if 'time' in xcol or ('Distance' in xcol and '/' in ycol):
+            if 'time' in xcol or ('Distance' in xcol and '/' in ycol) \
+                    or xcol.split(':')[-1] == 'z':
                 if statistic == 'mean':
                     c0 = np.mean(cydata)
                 elif statistic == 'std':
@@ -861,27 +901,28 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
     #     str(np.random.randint(1000)), xy=(0.96,0.96), xycoords='axes fraction',
     #     fontsize=14, va='top', ha='right', color='C3')
     # format filename
-    xcol = xcol.replace('/', '-over-').replace(':', '-')
-    ycol = ycol.replace('/', '-over-').replace(':', '-')
+    xcol = xcol.replace('-', '-minus-').replace('/', '-over-').replace(':', '-')
+    ycol = ycol.replace('-', '-minus-').replace('/', '-over-').replace(':', '-')
     statistic = statistic.replace('/', '-over-')
     outcols = f'{xcol}_{ycol}'
     outdir = f'{statistic}__{outcols}'
     if bincol is None:
         outname = outdir
     else:
-        bincol = bincol.replace('/', '-over-').replace(':', '-')
+        bincol = bincol.replace('-', '-minus-').replace('/', '-over-').replace(':', '-')
         outname = f'{outdir}__bin__{bincol}'
     if show_centrals:
         outname = f'{outname}__withcen'
     if show_satellites:
         outname = f'{outname}__withsat'
     if show_ratios:
-        outname = f'{outname}_ratios'
+        outname = f'{outname}__ratios'
     root = 'relations/lines' if lines_only else 'relations/surface'
     output = os.path.join(root, ycol, outcols, outdir, outname)
     output = save_plot(fig, output, sim, tight=False)
     txt = output.replace('.pdf', '.txt')
     # note that this is only the mean relation, not binned by bincol
-    np.savetxt(txt, np.transpose([xcenters, nsat, satrel, ncen, cenrel]),
-               fmt='%.5e', header=f'{xcol} Nsat {ycol}__sat Ncen {ycol}__cen')
+    #np.savetxt(txt, np.transpose([xcenters, nsat, satrel, ncen, cenrel]),
+               #fmt='%.5e', header=f'{xcol} Nsat {ycol}__sat Ncen {ycol}__cen')
+    np.savetxt(txt, np.vstack([xcenters, relation]), fmt='%.5e')
     return relation

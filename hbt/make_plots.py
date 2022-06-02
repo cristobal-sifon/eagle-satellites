@@ -46,6 +46,9 @@ def main():
         ('--relations',
          {'choices': ('distance','hsmr','hsmr-history','time'),
           'nargs': '+', 'default': ['hsmr']}),
+        ('--stats',
+         {'choices': ('count','mean','std','std/mean'),
+          'nargs': '+', 'default': ['mean','std']})
            )
     args = hbt_tools.parse_args(args=args)
     sim = Simulation(args.simulation)
@@ -63,16 +66,14 @@ def main():
 
 
 def wrap_plot(args, reader, sim, subs, isnap, hostmass='logM200Mean',
-              logM200Mean_min=13, logMmin=8, debug=True,
+              logM200Mean_min=13, logMmin=9, debug=True,
               do_plot_relations=True, do_plot_massfunctions=False):
 
     subs = Subhalos(
         subs, sim, isnap, exclude_non_FoF=True, logMmin=logMmin,
-        logM200Mean_min=logMmin)
+        logM200Mean_min=logMmin, verbose_when_loading=False)
     print(np.sort(subs.colnames))
     ic(np.unique(subs['HostHaloId']).size)
-    ic(np.log10(subs['M200Mean'].min()))
-    ic(np.log10(subs['M200Mean'].max()))
     print('{0} objects'.format(subs[subs.colnames[0]].size))
     print()
 
@@ -112,7 +113,7 @@ def wrap_plot(args, reader, sim, subs, isnap, hostmass='logM200Mean',
 
     ### HSMR relations ###
     if do_plot_relations:
-        pr.run(sim, subs, logM200Mean_min, args.relations,
+        pr.run(args, sim, subs, logM200Mean_min, args.relations,
                ncores=args.ncores)
 
     ### mass functions ###
@@ -276,188 +277,6 @@ def plot_rv(sim, subs, hostmass='M200Mean', weights=None):
     savefig(output, fig=fig)
     print('Finished!')
     return
-
-
-def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
-                  statistic='mean', selection=None,
-                  selection_min=None, selection_max=None, xlim=None,
-                  ylim=None, xbins=10, xscale='log', yscale='log',
-                  hostmass='M200Mean', min_hostmass=13, show_hist=True,
-                  bindata=None, bincol=None, bins=6, logbins=False,
-                  binlabel='', mask=None, xlabel=None, ylabel=None,
-                  show_satellites=True, show_centrals=False,
-                  satellites_label='All satellites',
-                  centrals_label='Centrals', literature=True):
-    """Plot the SHMR and HSMR
-
-    ``bincol`` and ``bins`` allow the relations to be binned in a
-    third quantity
-
-    """
-    cen, sat, mtot, mstar, mhost, dark, Nsat, Ndark, Ngsat = \
-        definitions(subs, hostmass=hostmass, min_hostmass=min_hostmass)
-    xdata = subs[xcol]
-    ydata = subs[ycol]
-    if bincol is not None:
-        bindata = subs[bincol]
-        if not np.iterable(bins):
-            j = np.isfinite(bindata)
-            if logbins:
-                j = j & (bindata > 0)
-                vmin, vmax = np.log10(np.percentile(bindata[j], [1,99]))
-                bins = np.logspace(vmin, vmax, bins)
-            else:
-                vmin, vmax = np.percentile(bindata[j], [1,99])
-                bins = np.linspace(vmin, vmax, bins)
-        ic(bincol, logbins)
-        ic(bins)
-        ic(bindata.min(), bindata.max())
-        ic(np.histogram(bindata, bins)[0])
-        if not binlabel:
-            binlabel = f'{statistic}({bincol})'
-        if logbins:
-            lb = np.log10(bins)
-            bin_centers = 10**((lb[1:]+lb[:-1])/2)
-        else:
-            bin_centers = (bins[1:]+bins[:-1]) / 2
-        colors, cmap = colorscale(array=bin_centers, log=logbins)
-    mask = np.isfinite(xdata) & np.isfinite(ydata) & np.isfinite(bindata)
-    if selection is not None:
-        seldata = subs[selection]
-        if selection_min is not None:
-            mask = mask & (seldata >= selection_min)
-        if selection_max is not None:
-            mask = mask & (seldata <= selection_max)
-    ic(mask.sum())
-    xdata = xdata[mask]
-    ydata = ydata[mask]
-    bindata = bindata[mask]
-    sat = sat[mask]
-    dark = dark[mask]
-    cen = cen[mask]
-    gsat = sat & ~dark
-    ic(xbins)
-    if isinstance(xbins, int):
-        if xscale == 'log':
-            gsat = gsat & (xdata > 0)
-            xbins = np.linspace(
-                np.log10(xdata[gsat].min()), np.log10(xdata[gsat].max()),
-                xbins+1)
-        else:
-            xbins = np.linspace(xdata[gsat].min(), xdata[gsat].max(), xbins+1)
-        if xscale == 'log':
-            xbins = 10**xbins
-    if xscale == 'log':
-        xb = np.log10(xbins)
-        xcenters = 10**((xb[:-1]+xb[1:])/2)
-    else:
-        xcenters = (xbins[:-1]+xbins[1:]) / 2
-    ic(xcol, xbins)
-    ic(xdata.min(), xdata.max())
-    ic(np.histogram(xdata, xbins)[0])
-    ic(xcenters)
-    ic(xlim, ylim)
-    logx = np.log10(xcenters)
-
-    lw = 4
-    # as a function of third variable
-    fig, ax = plt.subplots(figsize=(8,6))
-    # fix bins here
-    if '/' in statistic:
-        stat = statistic.split('/')
-        relation = binstat_dd(
-                [bindata[gsat], xdata[gsat]], ydata[gsat], stat[0],
-                [bins,xbins]).statistic \
-            / binstat_dd(
-                [bindata[gsat], xdata[gsat]], ydata[gsat], stat[1],
-                [bins,xbins]).statistic
-    else:
-        relation = binstat_dd(
-            [bindata[gsat], xdata[gsat]], ydata[gsat], statistic,
-            [bins,xbins]).statistic
-    # this will make the plot look nicer
-    if 'std' in statistic:
-        relation[relation == 0] = np.nan
-    ic(relation)
-    ic(relation.shape)
-    for i in range(bins.size-1):
-        ax.plot(xcenters, relation[i], '-', color=colors[i],
-                lw=4, zorder=10+i)
-    cbar = plt.colorbar(cmap, ax=ax)
-    cbar.set_label(binlabel)
-    if logbins:
-        cbar.ax.set_yscale('log')
-        if bins[0] >= 0.001 and bins[-1] <= 1000:
-            cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%s'))
-    # compare to overall and last touches
-    if show_satellites:
-        j = mask & gsat
-        if '/' in statistic:
-            st = statistic.split('/')
-            satrel = binstat(xdata[j], ydata[j], st[0], xbins)[0] \
-                / binstat(xdata[j], ydata[j], st[1], xbins)[0]
-        else:
-            satrel = binstat(xdata[j], ydata[j], statistic, xbins)[0]
-        plot_line(
-            ax, xcenters, satrel, marker='+', lw=3, color=scolor,
-            label=satellites_label, zorder=100)
-    if show_centrals:
-        j = mask & cen
-        if j.sum() == 0:
-            show_centrals = False
-        else:
-            if '/' in statistic:
-                st = statistic.split('/')
-                cenrel = binstat(xdata[j], ydata[j], st[0], xbins)[0] \
-                    / binstat(xdata[j], ydata[j], st[1], xbins)[0]
-            else:
-                cenrel = binstat(xdata[j], ydata[j], statistic, xbins)[0]
-            plot_line(
-                ax, xcenters, cenrel, marker='x', lw=3, color=ccolor,
-                label=centrals_label, zorder=100)
-    if literature:
-        xcol_split = xcol.split(':')
-        if len(xcol_split) <= 3 and xcol_split[-1] == 'Mstar':
-            xlit = 10**np.array([9.51, 10.01, 10.36, 10.67, 11.01])
-            #ylit = read_literature('sifon18_mstar', 'Msat_rbg')
-        elif 'Distance' in xcol:
-            # Rsat (Mpc) - missing normalization
-            xlit = np.array([0.23, 0.52, 0.90, 1.55])
-            #ylit = read_literature('sifon18_Rbcg', 'Msat_rbg')
-    if show_satellites or show_centrals:
-        ax.legend(fontsize=18)
-    if xlabel is None:
-        #xlabel = r'$\log\,{0}$'.format(sim.masslabel(mtype='stars'))
-        xlabel = xcol
-    if ylabel is None:
-        #ylabel = r'$\log\,{0}$'.format(sim.masslabel(mtype='total'))
-        ylabel = ycol
-    # cheap hack
-    xlabel = xlabel.replace('$$', '$')
-    ylabel = ylabel.replace('$$', '$')
-    ax.set(xlabel=xlabel, ylabel=ylabel, xscale=xscale, yscale=yscale,
-           xlim=xlim, ylim=ylim)
-    if 'Distance' in xcol and xscale == 'log':
-        ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%s'))
-    if 'time' in xcol:
-        ax.xaxis.set_major_locator(ticker.MultipleLocator(2))
-        ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%d'))
-    # add a random number to see whether they update
-    #ax.annotate(
-        #f'{np.random.randint(1000)}', xy=(0.96,0.96), xycoords='axes fraction',
-        #fontsize=14, va='top', ha='right', color='C3')
-    # format filename
-    bincol = bincol.replace('/', '-over-').replace(':', '-')
-    xcol = xcol.replace('/', '-over-').replace(':', '-')
-    ycol = ycol.replace('/', '-over-').replace(':', '-')
-    statistic = statistic.replace('/', '-over-')
-    outcols = f'{xcol}_{ycol}'
-    outname = f'{statistic}__{outcols}'
-    output = os.path.join(
-        'relations', ycol, outcols, outname,
-        f'{outname}__bin__{bincol}')
-    save_plot(fig, output, sim)
-    return relation
 
 
 def plot_occupation(sim, subs, hostmass='M200Mean'):

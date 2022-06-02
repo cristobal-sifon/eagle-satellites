@@ -80,16 +80,19 @@ def definitions(subs, hostmass='M200Mean', min_hostmass=13, as_dict=False):
 
 
 def get_axlabel(col, statistic):
-    if '/' in col:
-        cols = col.split('/')
-        label = [binlabel[col] if col in binlabel else col for col in cols]
-        label = '/'.join(label)
-    elif col in axlabel:
-        label = axlabel[col]
-    elif col in binlabel:
-        label = bincol[col]
+    for op in ('/','-'):
+        if op in col:
+            cols = col.split(op)
+            label = [binlabel[col] if col in binlabel else col for col in cols]
+            label = op.join(label)
+            break
     else:
-        label = col
+        if col in axlabel:
+            label = axlabel[col]
+        elif col in binlabel:
+            label = bincol[col]
+        else:
+            label = col
     if statistic in ('count', 'mean'):
         return f'${label}$'
     label = label.replace('$', '')
@@ -118,6 +121,8 @@ def get_bins(bincol, logbins=True, n=5):
         if n is None:
             return bins
         if logbins:
+            if bincol.split(':')[-1] == 'z':
+                bins[0] = 0.01
             bins = np.logspace(
                 np.log10(bins[0]), np.log10(bins[-1]), n+1)
         else:
