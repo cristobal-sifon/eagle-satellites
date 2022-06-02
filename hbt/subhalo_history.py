@@ -34,36 +34,43 @@ adjust_kwargs = dict(
 
 def main():
     print('Running...')
-    args = hbt_tools.parse_args()
+    args = (
+        ('--demographics',
+            {'action': 'store_true'},),
+        )
+    args = hbt_tools.parse_args(args=args)
     sim = Simulation(args.simulation)
 
     to = time()
     reader = HBTReader(sim.path)
-    print('Loaded reader in {0:.1f} seconds'.format(time()-to))
+    print(f'Loaded reader in {time()-to:.1f} seconds')
     to = time()
-    subs = Subhalos(reader.LoadSubhalos(-1), sim, -1, as_dataframe=False)
+    subs = Subhalos(reader.LoadSubhalos(-1), sim, -1, as_dataframe=True)
     #subs.sort(order='Mbound')
-    print('Loaded subhalos in {0:.2f} minutes'.format((time()-to)/60))
+    print(f'Loaded subhalos in {(time()-to)/60:.2f} minutes')
 
     print('In total there are {0} central and {1} satellite subhalos'.format(
         subs.centrals.size, subs.satellites.size))
 
     centrals = Subhalos(
-        subs.centrals, sim, -1, load_distances=False, load_velocities=False)
+        subs.centrals, sim, -1, load_distances=False, load_velocities=False,
+        load_history=False)
     satellites = Subhalos(
-        subs.satellites, sim, -1, load_distances=False, load_velocities=False)
+        subs.satellites, sim, -1, load_distances=False, load_velocities=False,
+        load_history=False)
+    print(np.sort(satellites.colnames))
 
     # sort host halos by mass
     print('Sorting by mass...')
     rank = {'Mbound': np.argsort(-centrals.Mbound).values,
             'M200Mean': np.argsort(-centrals.catalog['M200Mean']).values}
-    ic(rank)
-    ic(np.log10(centrals.Mbound.iloc[rank['Mbound']][:5].values))
-    ic(np.log10(centrals.Mbound.iloc[rank['M200Mean']][:5].values))
-    ic(np.log10(centrals.catalog['M200Mean'].iloc[rank['Mbound']][:5].values))
-    ic(np.log10(centrals.catalog['M200Mean'].iloc[rank['M200Mean']][:5].values))
     # should not count on them being sorted by mass
     ids_cent = subs.centrals['TrackId']
+
+    # some quick demographics
+    demographics(satellites)
+    if args.demographics:
+        return
 
     do_plot_centrals = False
     if do_plot_centrals:
@@ -89,7 +96,7 @@ def main():
         ti = time()
         j = rank['M200Mean'][:3]
         ic(centrals.catalog[['TrackId','Rank','Mbound','M200Mean']].iloc[j])
-        sys.exit()
+        #sys.exit()
         suff = np.log10(np.median(centrals.catalog['Mbound'].iloc[j]))
         suff = '{0:.2f}'.format(suff).replace('.', 'p')
         plot_halos(args, sim, reader, subs,
@@ -100,6 +107,41 @@ def main():
 
     return
 
+
+def demographics(subs):
+    def demographic_stats(colname, a=(99.5,95,90,68,50)):
+        print(f'  {colname}')
+        x = subs[f'{colname}']
+        med = np.median(x)
+        print(f'    median = {med:.2f}')
+        for ai in a:
+            p = np.percentile(x, [50-ai/2,50+ai/2])
+            print(f'    {ai}th range = {p[0]:.2e} - {p[1]:.2e}')
+        return #nothing for now
+
+    fig_times, ax_times = plt.subplots(constrained_layout=True)
+    tbins = np.arange(0, 12, 0.2)
+    for event in ('cent', 'sat', 'first_infall', 'last_infall'):
+        print(event)
+        h = f'history:{event}'
+        ax_times.hist(
+            subs.satellites[f'{h}:time'], tbins, histtype='step', label=event)
+        for t in ('time', 'z'):
+            demographic_stats(f'{h}:{t}')
+        print()
+    ax_times.legend()
+    hbt_tools.save_plot(fig_times, 'times_hist', subs.sim, tight=False)
+    print('\n'*2)
+    for event in ('cent', 'sat', 'first_infall', 'last_infall'):
+        h = f'history:{event}'
+        print(event)
+        for col in ('Mbound','Mdm','Mstar','Mgas',
+                    'Mstar/Mbound','Mgas/Mbound','Mgas/Mstar','Mbound/Mstar'):
+            col = '/'.join([f'{h}:{c}' for c in col.split('/')])
+            demographic_stats(col)
+        print()
+    return
+    
 
 def member_indices(args, subcat, host_ids, nsub=10):
     cat = subcat.catalog
@@ -406,6 +448,8 @@ def read_track(sim, reader, cat, track_idx, load_history=True,
         icent = isat = iinf = track._none_value
     host = track.host(-1, return_value='track')
     host = Track(host, sim)
+    ic(track)
+    ic(track.lookback_time)
     t = track.lookback_time()
     th = host.lookback_time()
     #ic(massindex)
@@ -569,7 +613,3 @@ def get_ytext(ax, height=0.05):
 
 
 main()
-
-
-
-
