@@ -139,6 +139,13 @@ class BaseSubhalo(BaseDataSet):
                 raise ValueError('Can only calculate ratio of two columns,'
                                  f' received {col}')
             return self.__getitem__(col[0]) / self.__getitem__(col[1])
+        if '-' in col:
+            col = col.split('-')
+            if len(col) != 2:
+                raise ValueError(
+                    'can only calculate difference of two columns,'
+                    f' received {col}')
+            return self.__getitem__(col[0]) - self.__getitem__(col[1])
         if col in cols:
             return self.catalog[col]
         if col in colmap:
@@ -172,6 +179,30 @@ class BaseSubhalo(BaseDataSet):
     @property
     def central_mask(self):
         return (self.catalog['Rank'] == 0)
+
+    @property
+    def galaxies(self):
+        return self.catalog[self.galaxy_mask]
+
+    @property
+    def galaxy_idx(self):
+        return self._range[self._galaxy_mask]
+
+    @property
+    def galaxy_mask(self):
+        return (self.catalog['Mstar'] > 0)
+
+    @property
+    def n(self):
+        return self.catalog['Rank'].size
+
+    @property
+    def ncen(self):
+        return self.central_mask.sum()
+
+    @property
+    def nsat(self):
+        return self.satellite_mask.sum()
 
     @property
     def orphan(self):
@@ -428,9 +459,19 @@ class HostHalos(BaseDataSet, BaseSimulation):
 class Subhalos(BaseSubhalo):
     """Class to manage a sample of subhalos at a given snapshot
 
+    An object can be indexed by column name or by the ratio or
+    difference of two columns:
+    ```
+    sub = Subhalos(*args, **kwargs)
+    mass_ratio = sub['Mbound/Mstar']
+    time_diff = sub['history:first_infall:time-history:last_infall:time']
+    ```
+    This is useful for automatic pipelines as it is not
+    necessary to index the table twice when one wants one
+    of these operations
     """
 
-    def __init__(self, catalog, sim, isnap,
+    def __init__(self, catalog, sim, isnap=None,
                  logMmin=9, logM200Mean_min=12, exclude_non_FoF=True,
                  as_dataframe=True, load_hosts=True, load_distances=True,
                  load_velocities=True, load_history=True,
@@ -495,7 +536,8 @@ class Subhalos(BaseSubhalo):
                 self._catalog = append_fields(
                     self.catalog, 'IsDark', (self.nbound('stars') == 0))
         self.isnap = isnap
-        self.redshift = self.sim.redshift(self.isnap)
+        if self.isnap is not None:
+            self.redshift = self.sim.redshift(self.isnap)
         self._has_host_properties = False
         self._has_distances = False
         self._has_velocities = []
@@ -518,6 +560,10 @@ class Subhalos(BaseSubhalo):
         self.load_history = load_history
         if self.load_history:
             self.read_history()
+
+    # @classmethod
+    # def from_sample(cls, mask, load_hosts=False, ):
+    #     return cls(self.catalog[mask], self.sim,)
 
     ### attributes ###
 
