@@ -4,7 +4,13 @@ from icecream import ic
 import os
 from time import time
 
+from icecream import install
+install()
+
 from plottery.plotutils import savefig
+
+from HBTReader import HBTReader
+
 
 def timer(func):
     @wraps(func)
@@ -18,6 +24,19 @@ def timer(func):
         print(f'Finished {func.__name__!r} in {m:02d}m{1:02d}s')
         return value
     return wrapper
+
+
+def load_subhalos(args, isnap=None, selection=None):
+    """Convenience function to load subhalos from a simulation"""
+    sim = Simulation(args.simulation)
+    reader = HBTReader(sim.path)
+    if isnap is None:
+        if hasattr(args, 'isnap'):
+            isnap = args.isnap
+        else:
+            isnap = -1
+    subs = reader.LoadSubhalos(isnap, selection=selection)
+    return subs
 
 
 def parse_args(parser=None, args=None):
