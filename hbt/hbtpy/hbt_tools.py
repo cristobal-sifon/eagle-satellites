@@ -10,6 +10,8 @@ install()
 from plottery.plotutils import savefig
 
 from HBTReader import HBTReader
+from .simulation import Simulation
+from .subhalo import Subhalos
 
 
 def timer(func):
@@ -27,7 +29,7 @@ def timer(func):
 
 
 def load_subhalos(args, isnap=None, selection=None):
-    """Convenience function to load subhalos from a simulation"""
+    """Convenience function to load subhalos with HBTReader"""
     sim = Simulation(args.simulation)
     reader = HBTReader(sim.path)
     if isnap is None:
@@ -36,7 +38,7 @@ def load_subhalos(args, isnap=None, selection=None):
         else:
             isnap = -1
     subs = reader.LoadSubhalos(isnap, selection=selection)
-    return subs
+    return sim, subs
 
 
 def parse_args(parser=None, args=None):

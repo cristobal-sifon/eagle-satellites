@@ -1,5 +1,6 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
+from cmath import log
 
 from astropy.io import fits
 from astropy.table import Table
@@ -72,6 +73,10 @@ class BaseDataSet(object):
         return np.array(colnames, dtype=str)
 
     @property
+    def columns(self):
+        return self.colnames
+
+    @property
     def size(self):
         return self.catalog[self.colnames[0]].size
 
@@ -92,6 +97,22 @@ class BaseDataSet(object):
                 for i in range(recarray[name].shape[1]):
                     df['{0}{1}'.format(name, i)] = recarray[name][:,i]
         return pd.DataFrame(df)
+
+    def groupby(self, *args, **kwargs):
+        """Wrapper for ``pandas.DataFrame.groupby``"""
+        return self.catalog.groupby(*args, **kwargs)
+
+    def merge(self, right, *args, **kwargs):
+        """Wrapper for ``pandas.DataFrame.merge``.
+        Returns a ``Subhalos`` object
+        ``right`` can be a ``Subhalos`` object or a ``DataFrame``
+        """
+        if isinstance(right, Subhalos):
+            right = right.catalog
+        return Subhalos(
+            self.catalog.merge(right, *args, **kwargs), self.sim, self.isnap,
+            load_any=False)
+
 
 
 class BaseSubhalo(BaseDataSet):
@@ -268,8 +289,9 @@ class BaseSubhalo(BaseDataSet):
             if isinstance(self.catalog, pd.DataFrame) \
             else self.catalog.dtype.names
         for col in cols:
-           if np.any([i in col for i
-                      in ('Mbound','Mgas','Mdm','Mstar','LastMaxMass')]):
+           if np.any([i in col and 'SnapshotIndex' not in col for i in
+                      ('Mbound','MboundType',
+                       'Mgas','Mdm','Mstar','LastMaxMass')]):
                 if self.catalog[col].max() < 1e10:
                     self.catalog[col] = 1e10 * self.catalog[col]
 
@@ -432,8 +454,7 @@ class HostHalos(BaseDataSet, BaseSimulation):
     def filename(self):
         if self._filename is None:
             self._filename = os.path.join(
-                self.sim.path, 'HaloSize',
-                'HaloSize_{0}.hdf5'.format(self.isnap))
+                self.sim.path, 'HaloSize', f'HaloSize_{self.isnap:03d}.hdf5')
         return self._filename
 
     ### private methods
@@ -471,7 +492,7 @@ class Subhalos(BaseSubhalo):
     of these operations
     """
 
-    def __init__(self, catalog, sim, isnap=None,
+    def __init__(self, catalog, sim, isnap=None, load_any=True,
                  logMmin=9, logM200Mean_min=12, exclude_non_FoF=True,
                  as_dataframe=True, load_hosts=True, load_distances=True,
                  load_velocities=True, load_history=True,
@@ -516,25 +537,41 @@ class Subhalos(BaseSubhalo):
         assert isinstance(load_velocities, bool)
         super(Subhalos, self).__init__(
               catalog, sim, as_dataframe=as_dataframe)
+        ic(self.catalog.shape)
+        if not load_any:
+            logMmin = None
+            logM200Mean_min = None
+            exclude_non_FoF = False
+            load_hosts = False
+            load_distances = False
+            load_velocities = False
+            load_history = False
         self.verbose_when_loading = verbose_when_loading
         self.exclude_non_FoF = exclude_non_FoF
-        self.non_FoF = (self.catalog['HostHaloId'] == -1)# \
-                        #| np.isnan(self.catalog['HostHaloId']))
+        self.non_FoF = (self.catalog['HostHaloId'] == -1)
+        if logMmin is not None and logMmin > 100:
+            logMmin = np.log10(logMmin)
+        self.logMmin = logMmin
+        if logM200Mean_min is not None and logM200Mean_min > 100:
+            logM200Mean_min = np.log10(logM200Mean_min)
+        self.logM200Mean_min = logM200Mean_min
         if self.exclude_non_FoF:
-            #print('Excluding {0} non-FoF subhalos'.format(self.non_FoF.sum()))
+            print('Excluding {0} non-FoF subhalos'.format(self.non_FoF.sum()))
             self._catalog = self.catalog[~self.non_FoF]
-        if 'Mbound' in self.colnames:
-            self.logMmin = logMmin
+        ic(self.catalog.shape)
+        if 'Mbound' in self.colnames and self.logMmin is not None:
             self._catalog = self.catalog[self.mass('total') > 10**self.logMmin]
         else:
-            self.logMmin = 0
-            warnings.warn('No Mbound column. Not applying Mbound cut')
+            self.logMmin = None
+            #warnings.warn('No Mbound column. Not applying Mbound cut')
+        ic(self.catalog.shape)
         if 'Nbound' in self.colnames:
             if self.as_dataframe:
                 self.catalog['IsDark'] = (self.nbound('stars') == 0)
             else:
                 self._catalog = append_fields(
                     self.catalog, 'IsDark', (self.nbound('stars') == 0))
+        ic(self.catalog.shape)
         self.isnap = isnap
         if self.isnap is not None:
             self.redshift = self.sim.redshift(self.isnap)
@@ -544,9 +581,6 @@ class Subhalos(BaseSubhalo):
         self.load_hosts = load_hosts
         if self.load_hosts:
             self.host_properties()
-            self.logM200Mean_min = logM200Mean_min
-            mask = (self.catalog['M200Mean'] > 10**self.logM200Mean_min)
-            self._catalog = self.catalog[mask]
         else:
             load_distances = False
             load_velocities = False
@@ -560,6 +594,8 @@ class Subhalos(BaseSubhalo):
         self.load_history = load_history
         if self.load_history:
             self.read_history()
+        ic(self.catalog.shape)
+        ic()
 
     # @classmethod
     # def from_sample(cls, mask, load_hosts=False, ):
@@ -1024,30 +1060,31 @@ class Subhalos(BaseSubhalo):
             to = time()
         adf = self.as_dataframe
         self.as_dataframe = True
-        if self.isnap not in self.sim.virial_snapshots:
-            hosts = HostHalos(self.sim, self.isnap, force_isnap=force_isnap)
-            ti = time()
-            # number of star particles, to identify dark subhalos
-            cols = ['HostHaloId']
-            if 'IsDark' in self.colnames:
-                cols.append('IsDark')
-            grouped = self.catalog[cols].groupby('HostHaloId')
-            nmdict = {'Nsat': grouped.size()-1}
-            if 'IsDark' in self.colnames:
-                 nmdict['Ndark'] = grouped['IsDark'].sum()
-            nm = pd.DataFrame(nmdict)
-            self._catalog = self.catalog.join(nm, on='HostHaloId', rsuffix='_h')
-            self._catalog = self.catalog.join(
-                hosts.catalog, on='HostHaloId', rsuffix='_h')
-            # update host masses
-            for col in list(self.catalog):
-                if 'M200' in col or col == 'MVir':
-                    # otherwise I think this happens twice?
-                    if self.catalog[col].max() < 1e10:
-                        self.catalog[col] = 1e10 * self.catalog[col]
-            if verbose:
-                print('Joined hosts in {0:.2f} s'.format(time()-to))
-            del hosts
+        ic(self.isnap)
+        hosts = HostHalos(self.sim, self.isnap, force_isnap=force_isnap)
+        ti = time()
+        # number of star particles, to identify dark subhalos
+        cols = ['HostHaloId']
+        if 'IsDark' in self.colnames:
+            cols.append('IsDark')
+        grouped = self.catalog[cols].groupby('HostHaloId')
+        nmdict = {'Nsat': grouped.size()-1}
+        if 'IsDark' in self.colnames:
+                nmdict['Ndark'] = grouped['IsDark'].sum()
+        nm = pd.DataFrame(nmdict)
+        self._catalog = self.catalog.join(nm, on='HostHaloId', rsuffix='_h')
+        self._catalog = self.catalog.join(
+            hosts.catalog, on='HostHaloId', rsuffix='_h')
+        # update host masses
+        for col in list(self.catalog):
+            if 'M200' in col or col == 'MVir':
+                # otherwise I think this happens twice?
+                if self.catalog[col].max() < 1e10:
+                    self.catalog[col] = 1e10 * self.catalog[col]
+        if verbose:
+            print('Joined hosts in {0:.2f} s'.format(time()-to))
+        del hosts
+        ic(self.catalog.columns)
         # R200Mean
         if 'M200Mean' in self.catalog.columns:
             rho_m = self.cosmology.critical_density(self.redshift) \
@@ -1055,6 +1092,8 @@ class Subhalos(BaseSubhalo):
             rho_m = rho_m.to('Msun/Mpc^3').value
             self.catalog['R200Mean'] \
                 = (3*self.catalog['M200Mean'] / (4*np.pi*200*rho_m))**(1/3)
+        mask = (self.catalog['M200Mean'] > 10**self.logM200Mean_min)
+        self._catalog = self.catalog[mask]
         self._has_host_properties = True
         self.as_dataframe = adf
         if self.verbose_when_loading:

@@ -24,7 +24,7 @@ update_rcParams()
 
 from HBTReader import HBTReader
 from hbtpy import hbt_tools
-from hbtpy.hbt_tools import save_plot, timer
+from hbtpy.hbt_tools import load_subhalos, save_plot, timer
 from hbtpy.hbtplots import RelationPlotter
 from hbtpy.helpers import plot_massfuncs as pmf, plot_relations as pr
 from hbtpy.helpers.plot_auxiliaries import (
@@ -35,11 +35,9 @@ from hbtpy.helpers.plot_definitions import (
 #from hbtpy.hbtplots.core import ColumnLabel
 from hbtpy.simulation import Simulation
 from hbtpy.subhalo import HostHalos, Subhalos
-from hbtpy.track import Track
 
 
 def main():
-
     # these arguments allow us to choose easily which set of
     # relations to run
     args = (
@@ -51,24 +49,15 @@ def main():
           'nargs': '+', 'default': ['mean','std']})
            )
     args = hbt_tools.parse_args(args=args)
-    sim = Simulation(args.simulation)
-
-    to = time()
-    reader = HBTReader(sim.path)
-    print('Loaded reader in {0:.1f} seconds'.format(time()-to))
-
     isnap = -1
-    subs = reader.LoadSubhalos(isnap)
-    print('Loaded subhalos!')
-
-    wrap_plot(args, reader, sim, subs, isnap)
+    sim, subs = load_subhalos(args, isnap=isnap)
+    wrap_plot(args, sim, subs, isnap)
     return
 
 
-def wrap_plot(args, reader, sim, subs, isnap, hostmass='logM200Mean',
+def wrap_plot(args, sim, subs, isnap, hostmass='logM200Mean',
               logM200Mean_min=13, logMmin=9, debug=True,
               do_plot_relations=True, do_plot_massfunctions=False):
-
     subs = Subhalos(
         subs, sim, isnap, exclude_non_FoF=True, logMmin=logMmin,
         logM200Mean_min=logMmin, verbose_when_loading=False)
@@ -83,9 +72,6 @@ def wrap_plot(args, reader, sim, subs, isnap, hostmass='logM200Mean',
     # fraction of dark satellites - less than 1% througout
     #dark_fraction(sim, subs, plot_path=plot_path)
     #dark_fraction(sim, subs, mhost_norm=False, plot_path=plot_path)
-
-    # dark matter mass fraction as a function of time-since-infall
-    #plot_dmfrac(reader, sim, subs, 'tinfall')
 
     """
     plotter = RelationPlotter(sim, subs)
@@ -225,23 +211,6 @@ def mass_sigma_host(sim, subs):
     out = os.path.join(sim.plot_path, '{0}.pdf'.format(output))
     savefig(out, fig=fig)
     return
-
-
-#@timer
-def plot_dmfrac(reader, sim, subs, xparam, bins=None, hostmass='M200Mean',
-                ncores=1):
-    """Plot the dark matter fraction as a function of a few things
-
-    """
-    #cen, sat, mtot, mstar, mhost, dark, Nsat, Ndark, Ngsat = \
-        #definitions(subs, hostmass=hostmass)
-    mdm = subs.mass('dm')
-    mtot = subs.mass('total')
-    dmfrac = mdm / mtot
-    # plot
-    #fig, ax = plt.subplots(figsize=(7,6))
-
-    return infall
 
 
 def plot_rv(sim, subs, hostmass='M200Mean', weights=None):

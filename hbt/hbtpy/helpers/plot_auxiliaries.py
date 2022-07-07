@@ -79,6 +79,12 @@ def definitions(subs, hostmass='M200Mean', min_hostmass=13, as_dict=False):
     return cen, sat, mtot, mstar, mhost, dark, Nsat, Ndark, Ngsat
 
 
+def format_filename(name):
+    name = name.replace('-', '-minus-').replace('/', '-over-')
+    name = name.replace(':', '-')
+    return name
+
+
 def get_axlabel(col, statistic):
     for op in ('/','-'):
         if op in col:
@@ -149,9 +155,12 @@ def get_label_bincol(bincol):
         label = label.replace(key, val).replace('$', '')
     # fix projected distances
     if 'Distance' in bincol:
+        label = label.replace('Comoving', '')
         label = label.split('/')
+        ic(label)
         if label[0][-1] in '0123':
             label[0] = f'{label[0][:-1]}_{label[0][-1]}'
+        ic(label)
         label = '/'.join(label)
     ic(bincol, label)
     if '/' not in bincol:

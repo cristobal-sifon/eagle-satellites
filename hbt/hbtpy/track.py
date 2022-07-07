@@ -68,7 +68,7 @@ class TrackArray(BaseSubhalo):
     def __init__(self, trackid, sim):
         if not np.iterable(trackid):
             trackid = [trackid]
-        self.trackids = np.array(trackid, dtype=npt.int32)
+        self.trackids = np.array(trackid, dtype=np.int32)
         # load simulation
         if isinstance(sim, six.string_types):
             self.sim = Simulation(sim)
