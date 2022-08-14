@@ -14,9 +14,9 @@ xbins = {
     #'logComovingMostBoundDistance': np.logspace(-2, 0.5, 9),
     'M200Mean': np.logspace(13, 14.7, 6),
     'mu': np.logspace(-5, 0, 9),
-    'Mstar': np.logspace(8, 11.5, 10),
-    'Mgas': np.logspace(7, 12, 10),
-    'Mbound': np.logspace(8, 12.5, 11),
+    'Mstar': np.logspace(9, 11.5, 10),
+    'Mgas': np.logspace(8, 12, 10),
+    'Mbound': np.logspace(9, 13, 10),
     'time': np.arange(0, 13.5, 2),
     'z': np.array([0, 0.5, 1, 1.5, 2, 3, 5]),
     # some common ratios

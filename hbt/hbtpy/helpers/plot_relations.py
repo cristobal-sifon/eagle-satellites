@@ -16,6 +16,8 @@ from plottery.plotutils import colorscale, savefig, update_rcParams
 from plottery.statsplots import contour_levels
 update_rcParams()
 
+from lnr import to_linear, to_log
+
 from ..hbt_tools import save_plot
 #from hbtpy.hbtplots import RelationPlotter
 #from hbtpy.hbtplots.core import ColumnLabel
@@ -115,8 +117,8 @@ def wrap_relations(args, sim, subs, xcol, ycol, bincol, x_bins=10, bins=None,
         bins = get_bins(bincol, logbins)
     if 'yscale' not in kwargs:
         kwargs['yscale'] = 'log' if statistic == 'mean' else 'linear'
-    if statistic != 'mean' and 'ylim' not in kwargs:
-        kwargs['ylim'] = (0, 0.8) if statistic == 'std' else (0, 1.5)
+    if statistic != 'mean' and 'ylim' not in kwargs or kwargs['ylim'] is None:
+        kwargs['ylim'] = (0, 0.6) if statistic == 'std' else (0, 1.5)
     plot_relation(
         sim, subs, xcol=xcol, ycol=ycol, xbins=x_bins, statistic=statistic,
         xscale=xscale, bincol=bincol, binlabel=label, bins=bins,
@@ -148,9 +150,9 @@ def wrap_relations_distance(args, stat):
         bincols = [f'{h}:time', f'{h}:Mstar', f'{h}:Mbound',
                    f'{h}:Mbound/{h}:Mstar'] \
                   + bincols_present
-        # uncomment when testing
-        #ycols = ['Mbound/Mstar']
-        #bincols = ['Mstar']
+        # uncomment when testsing
+        ycols = ['Mbound/Mstar']
+        bincols = ['Mstar']
         for ycol in ycols:
             ylim = (2, 150) \
                 if ycol in ('Mbound/Mstar', f'{h}:Mbound/{h}:Mstar') else None
@@ -169,7 +171,7 @@ def wrap_relations_distance(args, stat):
                     # line plots
                     else:
                         kwds = dict(
-                            x_bins=xb, xscale=xscale,
+                            x_bins=xb, xscale=xscale, literature=True,
                             selection='Mstar', selection_min=1e8, ylim=ylim,
                             show_satellites=False, show_centrals=False,
                             show_ratios=False, statistic=stat)
@@ -188,7 +190,7 @@ def wrap_relations_distance(args, stat):
                             plot_args.append(
                                 [[xcol, ycol, bincol], kwds.copy()])
                             #wrap_relations(sim, subs, *args[-1], **kwargs[-1])
-        #break
+        break
     return plot_args
 
 
@@ -232,11 +234,12 @@ def wrap_relations_hsmr(args, stat, **relation_kwargs):
             for bincol in bincols:
                 #if bincol != 'M200Mean': continue
                 logbins = ('time' not in bincol)
-                bins = get_bins(bincol, logbins, n=5)
-                kwds = {**dict(bins=bins, ylim=ylim, statistic=stat,
+                bins = get_bins(bincol, logbins, n=4)
+                kwds = {**dict(bins=bins, statistic=stat,
                                show_ratios=False,
                                show_satellites=False, show_centrals=True),
                         **relation_kwargs}
+                kwds['ylim'] = ylim if stat == 'mean' else None
                 for xcol in ('Mstar', 'Mbound'):
                     xb = xbins.get(xcol)
                     plot_args.append([[xcol, ycol, bincol, xb], kwds.copy()])
@@ -325,26 +328,33 @@ def wrap_relations_time(args, stat):
         statistic=stat, xscale='linear', yscale='log', selection_min=1e8,
         show_satellites=False, show_ratios=False)
     #for event in ('first_infall', 'last_infall', 'cent', 'sat'):
-    for event in ('sat',):
+    for event in ('first_infall',):
         h = f'history:{event}'
         #for xcol in (f'{h}:z', f'{h}:time'):
-        for xcol in (f'{h}:time', f'{h}:time-history:first_infall:time'):
+        for xcol in (f'{h}:time',):# f'{h}:time-history:first_infall:time'):
         #xcol = f'{h}:time'
             # histograms
             if stat == 'count':
+                ycols = [f'{h}:time',
+                         f'history:first_infall:Mbound/{h}:Mbound',
+                         f'history:first_infall:Mdm/{h}:Mdm',
+                         f'history:first_infall:Mstar/{h}:Mstar',
+                         f'{h}:Mbound/LastMaxMass',
+                         'ComovingMostBoundDistance/R200MeanComoving',
+                         'ComovingMostBoundDistance0/R200MeanComoving']
                 # for ycol in ('Mbound', 'Mbound/Mstar', f'{h}:Mbound',
                 #              f'Mbound/{h}:Mbound', f'Mstar/{h}:Mbound',
                 #              f'Mstar/{h}:Mstar', 'M200Mean', 'Mbound/M200Mean',
                 #              f'Mdm/{h}:Mdm', f'Mgas/{h}:Mgas',
                 #              f'Mstar/Mbound', f'Mdm/Mbound', f'Mgas/Mbound',
                 #              'ComovingMostBoundDistance/R200MeanComoving'):
-                for ycol in (f'{h}:time',
-                             f'history:first_infall:Mbound/{h}:Mbound',
-                             f'history:first_infall:Mdm/{h}:Mdm',
-                             f'history:first_infall:Mstar/{h}:Mstar',
-                             f'{h}:Mbound/LastMaxMass'):
+                for ycol in ycols[-1:]:
                     if xcol == ycol: continue
                     kwds_count['ylim'] = ylims.get(ycol)
+                    kwds_count['yscale'] \
+                        = 'linear' if 'Distance' in ycol else 'log'
+                    kwds_count['ybins'] \
+                        = np.linspace(0, 1.5, 15) if 'Distance' in ycol else 12
                     plot_args.append([[xcol, ycol, None], kwds_count.copy()])
             # lines
             else:
@@ -522,7 +532,7 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
                   bindata=None, bincol=None, bins=6, logbins=False,
                   binlabel='', mask=None, xlabel=None, ylabel=None,
                   with_alpha=False, cmap='viridis', lw=4,
-                  colornorm=mplcolors.LogNorm(),
+                  colornorm=mplcolors.LogNorm(), cmap_range=(0.1,0.9),
                   show_contours=True, contour_kwargs={},
                   show_satellites=True, show_centrals=False,
                   show_satellites_scatter=False, show_centrals_scatter=False,
@@ -538,8 +548,8 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
     If ``bincol`` is ``None`` then ``statistic`` is forced to ``count``
 
     """
-    ic(xcol, xbins)
-    ic(ycol, ybins)
+    ic(xcol, xscale, xbins)
+    ic(ycol, yscale, ybins)
     ic(bincol, logbins, bins)
     # doesn't make much sense otherwise
     if statistic != 'mean':
@@ -685,6 +695,11 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
         ic(relation.shape)
         for i, (r, c) in enumerate(zip(relation, colors)):
             ax.plot(xcenters, r, '-', color=c, lw=4, zorder=10+i)
+        # highlight the bin around logmstar=10 for comparison with
+        # observations
+        if literature and 'Distance' in xcol and bincol == 'Mstar':
+            ax.plot(xcenters, relation[2], '-', color=colors[2],
+                    lw=8, zorder=13)
         if show_ratios:
             for i, (r, c) in enumerate(zip(relation, colors)):
                 axes[1].plot(xcenters, r/relation_overall, '-',
@@ -695,7 +710,7 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
             xdata, ydata, xbins, ybins, statistic, gsat, bindata, bins,
             logbins=logbins, cmap=cmap)
         xgrid, ygrid = np.meshgrid(xbins, ybins)
-        ic(cmap)
+        ic(cmap.name)
         colormap = ax.pcolormesh(
             xgrid, ygrid, relation.T,# cmap=cmap_alpha if with_alpha else cmap)
             cmap=cmap, norm=colornorm, aa=False, rasterized=True)
@@ -708,11 +723,15 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
     ic(bins.shape, colors.shape)
     if lines_only:
         # add discrete colorbar
-        cmap_lines = plt.get_cmap(cmap, bins.size-1)
+        try:
+            cmap_lines = plt.get_cmap(cmap, bins.size-1)
+        except AttributeError:
+            cmap_lines = cmr.take_cmap_colors(cmap, bins.size-1, cmap_range=cmap_range)
         boundary_norm = mplcolors.BoundaryNorm(bins, cmap.N)
         sm = cm.ScalarMappable(cmap=cmap_lines, norm=boundary_norm)
         sm.set_array([])
         cbar = plt.colorbar(sm, ax=axes, ticks=bins)
+        cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.1f'))
     else:
         cbar = plt.colorbar(colormap, ax=axes)
     if statistic == 'count':
@@ -808,10 +827,25 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
         if len(xcol_split) <= 3 and xcol_split[-1] == 'Mstar':
             xlit = 10**np.array([9.51, 10.01, 10.36, 10.67, 11.01])
             #ylit = read_literature('sifon18_mstar', 'Msat_rbg')
-        elif 'Distance' in xcol:
+        elif 'Distance' in xcol and 'Mstar' in ycol:
+            ## Sifón+18
             # Rsat (Mpc) - missing normalization
             xlit = np.array([0.23, 0.52, 0.90, 1.55])
-            #ylit = read_literature('sifon18_Rbcg', 'Msat_rbg')
+            if '/R200Mean' in xcol:
+                xlit /= 2.36
+            logylit = [10.49, 11.60, 11.55, 11.46]
+            ylit, ylitlo = to_linear(
+                logylit, [0.47, 0.15, 0.21, 0.33], which='lower')
+            ylit, ylithi = to_linear(
+                logylit, [0.35, 0.16, 0.21, 0.25], which='upper')
+            if ycol == 'Mbound/Mstar':
+                mstarlit = 10**np.array([9.97, 10.03, 10.07, 10.24]) 
+                ylit /= mstarlit
+                ylitlo /= mstarlit
+                ylithi /= mstarlit
+            ax.errorbar(
+                xlit, ylit, (ylitlo,ylithi), fmt='ko', ms=10, elinewidth=3,
+                zorder=100, label='Sifón+18')
     if literature or show_centrals:
         ax.legend(fontsize=18)
     if xlabel is None:
