@@ -36,6 +36,7 @@ def main():
     args = hbt_tools.parse_args(
         args=[('--checkpoints', {'nargs': '*', 'default': checkpoints}),
               ('--halo', {'default': None, 'type': int}),
+              ('--maxmass', {'default': 1e16, 'type': float}),
               ('--minmass', {'default': 5e13, 'type': float}),
               ('--nhalos', {'default': 0, 'type': int}),
               ('--nsub', {'default': 50, 'type': int}),
@@ -70,12 +71,13 @@ def shmr_history(args, subs):
         j = (cens['TrackId'].iloc[jsort] == args.halo).values
         jarr = jsort[j]
     else:
-        j = (cens['M200Mean'].iloc[jsort] > args.minmass)
+        j = (cens['M200Mean'].iloc[jsort] > args.minmass) \
+            & (cens['M200Mean'].iloc[jsort] <= args.maxmass)
         jarr = jsort[j]
         if args.nhalos > 0:
             jarr = np.random.choice(jarr, args.nhalos, replace=False)
-    print(f'Total {jarr.size} halos with M200Mean > {args.minmass}')
-    return
+    print(f'Total {jarr.size} halos with {np.log10(args.minmass):.2f}' \
+          f' < log M200Mean <= {np.log10(args.maxmass):.2f}')
     for j in jarr:
         print()
         mhost = cens['M200Mean'].iloc[j]

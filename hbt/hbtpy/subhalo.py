@@ -469,8 +469,8 @@ class HostHalos(BaseDataSet, BaseSimulation):
                 raise ValueError(msg)
             j = np.argmin(abs(isnap-self.available_snapshots))
             isnap_used = self.available_snapshots[j]
-            warn = 'Snapshot {0} does not have halo information. Using' \
-            ' snapshot {1} instead.'.format(isnap, isnap_used)
+            warn = f'Snapshot {isnap} does not have halo information. Using' \
+                   f' snapshot {isnap_used} instead.'
             warnings.warn(warn)
             isnap = isnap_used
         return isnap
@@ -537,7 +537,6 @@ class Subhalos(BaseSubhalo):
         assert isinstance(load_velocities, bool)
         super(Subhalos, self).__init__(
               catalog, sim, as_dataframe=as_dataframe)
-        ic(self.catalog.shape)
         if not load_any:
             logMmin = None
             logM200Mean_min = None
@@ -546,6 +545,7 @@ class Subhalos(BaseSubhalo):
             load_distances = False
             load_velocities = False
             load_history = False
+            verbose_when_loading = False
         self.verbose_when_loading = verbose_when_loading
         self.exclude_non_FoF = exclude_non_FoF
         self.non_FoF = (self.catalog['HostHaloId'] == -1)
@@ -556,7 +556,8 @@ class Subhalos(BaseSubhalo):
             logM200Mean_min = np.log10(logM200Mean_min)
         self.logM200Mean_min = logM200Mean_min
         if self.exclude_non_FoF:
-            print('Excluding {0} non-FoF subhalos'.format(self.non_FoF.sum()))
+            if self.verbose_when_loading:
+                print(f'Excluding {self.non_FoF.sum()} non-FoF subhalos')
             self._catalog = self.catalog[~self.non_FoF]
         ic(self.catalog.shape)
         if 'Mbound' in self.colnames and self.logMmin is not None:
@@ -564,14 +565,12 @@ class Subhalos(BaseSubhalo):
         else:
             self.logMmin = None
             #warnings.warn('No Mbound column. Not applying Mbound cut')
-        ic(self.catalog.shape)
         if 'Nbound' in self.colnames:
             if self.as_dataframe:
                 self.catalog['IsDark'] = (self.nbound('stars') == 0)
             else:
                 self._catalog = append_fields(
                     self.catalog, 'IsDark', (self.nbound('stars') == 0))
-        ic(self.catalog.shape)
         self.isnap = isnap
         if self.isnap is not None:
             self.redshift = self.sim.redshift(self.isnap)
@@ -594,8 +593,6 @@ class Subhalos(BaseSubhalo):
         self.load_history = load_history
         if self.load_history:
             self.read_history()
-        ic(self.catalog.shape)
-        ic()
 
     # @classmethod
     # def from_sample(cls, mask, load_hosts=False, ):

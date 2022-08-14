@@ -1,12 +1,14 @@
 from glob import glob
 import h5py
 from icecream import ic
+import multiprocessing as mp
 import numpy as np
 import os
 import pandas as pd
 from time import time
 from tqdm import tqdm
 import sys
+import warnings
 
 from HBTReader import HBTReader
 
@@ -16,6 +18,8 @@ from hbtpy.simulation import Simulation
 from hbtpy.subhalo import Subhalos
 from hbtpy.track import TrackArray
 
+
+warnings.simplefilter('ignore', UserWarning)
 
 def main():
     args = hbt_tools.parse_args(
@@ -84,7 +88,7 @@ def main():
             + (len(groups)-1) \
                 * [('isnap', 'time', 'z', 'Mbound',
                     'Mstar', 'Mdm', 'Mgas', 'M200Mean')]
-    dtypes = [3*[np.int32]] + (len(groups)-1)*[[np.int16] + 7*[np.float16]]
+    dtypes = [3*[np.int32]] + (len(groups)-1)*[[np.int16] + 7*[np.float32]]
     cols = {group: [f'{group}:{name}' for name in grnames]
             for group, grnames in zip(groups, names)}
     # DataFrame
@@ -103,7 +107,8 @@ def main():
     path_history = os.path.join(sim.data_path, 'history')
     hdf = os.path.join(path_history, 'history.h5')
     if os.path.isfile(hdf):
-        os.system(f'cp -p {hdf} {hdf}.bak')
+        os.system(f'rm {hdf}')
+        #os.system(f'cp -p {hdf} {hdf}.bak')
     ## now calculate things!
     snaps = np.arange(nsnap, -1, -1, dtype=np.uint16)
 
@@ -161,7 +166,6 @@ def main():
         this = this.merge(
             this_cent, on='HostHaloId', how='left',
             suffixes=('_sat','_cent'))
-        ic(np.sort(this.columns))
         # first update the masses for all subhalos for which we have
         # not registered infall already
         jinfall_last = (this['last_infall:isnap'] == -1)
@@ -214,7 +218,7 @@ def main():
             store_h5(hdf, groups, names, history)
             #store_npy(path, groups, names, history)
             #break
-        if args.test and i >= 5:
+        if args.test and i >= 3:
             return
 
     #ic(history)
@@ -226,13 +230,10 @@ def main():
 
 
 def assign_masses(history, this, mask, group):
+    ic()
+    idx = np.arange(mask.size, dtype=int)[mask]
     for m in ('Mbound', 'Mgas', 'Mdm', 'Mstar'):
-        #history.loc[mask, f'{group}:{m}'] = this.loc[mask, m]
         history.loc[mask, f'{group}:{m}'] = this[m][mask]
-    # history.loc[mask, f'{group}:Mbound'] = this.loc[mask, 'Mbound']
-    # history.loc[mask, f'{group}:Mgas'] = this.loc[mask, 'MboundType0']
-    # history.loc[mask, f'{group}:Mdm'] = this.loc[mask, 'MboundType1']
-    # history.loc[mask, f'{group}:Mstar'] = this.loc[mask, 'MboundType4']
     return history
 
 
@@ -247,14 +248,13 @@ def assign_masses(history, this, mask, group):
     # subs_i['Mstar'] = subs_i.pop('MboundType4')
     # subs_i = pd.DataFrame(subs_i)
 def load_subs(subs_i, sim, snap):
-    subs_i = Subhalos(subs_i, sim, isnap=snap)
+    subs_i = Subhalos(subs_i, sim, isnap=snap, verbose_when_loading=False)
     return subs_i
 
 
 def max_mass(history, this, events, cols, snap, ti, zi):
     ic()
-    ic(cols)
-    #for key, histdata in history.items():
+    ic(this)
     for event in events:
         if event[:4] == 'max_':
             ic(event)
@@ -270,11 +270,13 @@ def max_mass(history, this, events, cols, snap, ti, zi):
             ic(gtr.sum())
             ic(history.loc[gtr, f'{event}:{m}'])
             ic(history.loc[~gtr, f'{event}:{m}'])
+            # this is working
             history.loc[gtr, cols[event][:3]] = [snap, ti, zi]
+            # but this is not
             history = assign_masses(history, this, gtr, event)
             #history.loc[gtr, key] = thisdata.loc[gtr]
-            ic(history.loc[gtr, f'{event}:{m}'])
-            ic(history.loc[~gtr, f'{event}:{m}'])
+            ic(history.loc[gtr, [cols[event][0],f'{event}:{m}']])
+            ic(history.loc[~gtr, [cols[event][0],f'{event}:{m}']])
     return history
 
 

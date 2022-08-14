@@ -62,7 +62,15 @@ def wrap_plot(args, sim, subs, isnap, hostmass='logM200Mean',
         subs, sim, isnap, exclude_non_FoF=True, logMmin=logMmin,
         logM200Mean_min=logMmin, verbose_when_loading=False)
     print(np.sort(subs.colnames))
+    ic(subs[['Rank','history:sat:isnap','history:sat:Mbound',
+             'history:cent:isnap','history:cent:Mbound']])
+    ic(subs[['history:max_Mbound:isnap','history:max_Mbound:Mbound']])
+    return
     ic(np.unique(subs['HostHaloId']).size)
+    c = (subs['Rank'] == 0) & (subs['M200Mean'] > 1e13)
+    s = (subs['Rank'] > 0) & (subs['M200Mean'] > 1e13) \
+        & (subs['Mstar'] > 1e8)
+    ic(c.sum(), s.sum())
     print('{0} objects'.format(subs[subs.colnames[0]].size))
     print()
 

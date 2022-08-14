@@ -12,6 +12,7 @@ from mpl_toolkits.axes_grid1 import ImageGrid
 import multiprocessing as mp
 import numpy as np
 import os
+from scipy.optimize import curve_fit
 import sys
 from time import sleep, time
 
@@ -59,6 +60,10 @@ def main():
         subs.satellites, sim, -1, load_distances=False, load_velocities=False,
         load_history=False)
     print(np.sort(satellites.colnames))
+    # fit HSMR
+    fit_hsmr(centrals)
+    fit_hsmr(satellites)
+    return
 
     # sort host halos by mass
     print('Sorting by mass...')
@@ -141,6 +146,11 @@ def demographics(subs):
             demographic_stats(col)
         print()
     return
+
+
+def fit_hsmr(subs, form='double power'):
+    if form == 'double power':
+        f = lambda x, N, m1, b, g: 2*N * x ((m1/x)**b+(x/m1)**g)
     
 
 def member_indices(args, subcat, host_ids, nsub=10):
