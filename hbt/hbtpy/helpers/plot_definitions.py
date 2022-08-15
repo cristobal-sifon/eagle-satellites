@@ -44,23 +44,26 @@ binlabel = {
     'time': 't_\mathrm{lookback}',
     'z': 'z',
     }
+for m in ('Mbound', 'Mstar', 'Mdm', 'Mgas'):
+    binlabel[f'max_{m}'] = fr'{binlabel[m]}^\mathrm{{max}}'
 _xx = 'ComovingMostBoundDistance'
 for i in '012':
     xbins[f'{_xx}{i}'] = xbins[_xx]
     binlabel[f'{_xx}{i}'] = f'{binlabel[_xx]}_{i}'
     xbins[f'{_xx}{i}/R200Mean'] = xbins[f'{_xx}/R200Mean']
 
+max_events = {f'max_{m}': 'max' for m in ('Mbound', 'Mstar', 'Mgas', 'Mdm')}
 events = {'last_infall': 'acc', 'first_infall': 'infall',
-          'cent': 'cent', 'sat': 'sat'}
+          'cent': 'cent', 'sat': 'sat', **max_events}
 for event, event_label in events.items():
     h = f'history:{event}'
-    infall_label = f'\mathrm{{{event_label}}}'
-    binlabel[f'{h}:Mbound'] = rf'm_\mathrm{{sub}}^{infall_label}'
-    binlabel[f'{h}:Mstar'] = f'm_{{\u2605}}^{infall_label}'
-    binlabel[f'{h}:Mdm'] = fr'm_\mathrm{{DM}}^{infall_label}'
-    binlabel[f'{h}:Mgas'] = rf'm_\mathrm{{gas}}^{infall_label}'
-    binlabel[f'{h}:time'] = rf't_\mathrm{{lookback}}^{infall_label}'
-    binlabel[f'{h}:z'] = rf'z^{infall_label}'
+    elabel = f'\mathrm{{{event_label}}}'
+    binlabel[f'{h}:Mbound'] = rf'm_\mathrm{{sub}}^{elabel}'
+    binlabel[f'{h}:Mstar'] = f'm_{{\u2605}}^{elabel}'
+    binlabel[f'{h}:Mdm'] = fr'm_\mathrm{{DM}}^{elabel}'
+    binlabel[f'{h}:Mgas'] = rf'm_\mathrm{{gas}}^{elabel}'
+    binlabel[f'{h}:time'] = rf't_\mathrm{{lookback}}^{elabel}'
+    binlabel[f'{h}:z'] = rf'z^{elabel}'
     xbins[f'{h}:Mbound/{h}:Mstar'] = np.logspace(1, 2.7, 6)
     xbins[f'Mstar/{h}:Mbound'] = np.logspace(-4, -1, 6)
     xbins[f'{h}:z'] = xbins['z']

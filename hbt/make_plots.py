@@ -3,7 +3,7 @@ from astropy.io import ascii
 from astropy.table import Table
 from icecream import ic
 import matplotlib as mpl
-from matplotlib import colors as mplcolors, pyplot as plt, ticker
+from matplotlib import colors as mplcolors, pyplot as plt
 import multiprocessing as mp
 import numpy as np
 import os
@@ -65,7 +65,6 @@ def wrap_plot(args, sim, subs, isnap, hostmass='logM200Mean',
     ic(subs[['Rank','history:sat:isnap','history:sat:Mbound',
              'history:cent:isnap','history:cent:Mbound']])
     ic(subs[['history:max_Mbound:isnap','history:max_Mbound:Mbound']])
-    return
     ic(np.unique(subs['HostHaloId']).size)
     c = (subs['Rank'] == 0) & (subs['M200Mean'] > 1e13)
     s = (subs['Rank'] > 0) & (subs['M200Mean'] > 1e13) \
