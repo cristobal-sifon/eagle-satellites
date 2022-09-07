@@ -48,7 +48,7 @@ def main():
     to = time()
     subs = Subhalos(
         reader.LoadSubhalos(-1), sim, -1, as_dataframe=True,
-        logMmin=8, logM200Mean_min=1)
+        logMmin=9, logM200Mean_min=9, exclude_non_FoF=False)
     #subs.sort(order='Mbound')
     print(f'Loaded subhalos in {(time()-to)/60:.2f} minutes')
 
@@ -57,11 +57,28 @@ def main():
 
     centrals = Subhalos(
         subs.centrals, sim, -1, load_distances=False, load_velocities=False,
-        load_history=False)
+        load_history=False, logM200Mean_min=9, exclude_non_FoF=False)
     satellites = Subhalos(
         subs.satellites, sim, -1, load_distances=False, load_velocities=False,
-        load_history=False, logM200Mean_min=13)
+        load_history=False, logM200Mean_min=13, exclude_non_FoF=True)
     #print(np.sort(satellites.colnames))
+
+    # m = centrals['M200Mean'].values
+    # ms = satellites['M200Mean'].values
+    # ic(m.size, ms.size)
+    # s = (satellites['Mstar'] > 1e9)
+    # ic(s.sum())
+    # ic(satellites['Mstar'][s].min()/1e9)
+    # ic(np.sort(m)[-10:])
+    # b = np.array([1e13, 2e13, 5e13, 8e13, 1e14, 2e14, 5e14])
+    # ic(b)
+    # h = np.histogram(m, b)[0]
+    # ic(h)
+    # ic(np.cumsum(h[::-1])[::-1])
+    # hs = np.histogram(ms[s], b)[0]
+    # ic(hs)
+    # ic(np.cumsum(hs[::-1])[::-1])
+    # return
 
     # numbers following Niemiec's binning
     xbins = np.arange(9, 12.1, 0.5)
@@ -71,15 +88,18 @@ def main():
         print(f'{xbins[i-1]:5.1f} - {xbins[i]:5.1f}: {j.sum():6d}')
     
     # fit HSMR
-    func = double_power_niemiec
+    func = double_power_niemiec_log
     mstarbins = np.logspace(9, 12, 50)
     msubbins = np.logspace(9, 14.3, 40)
 
+    mstar_fit_min = 1e9
+    mstar_fit_max = 2e11
+    # not applying mstar_fit_max to centrals
+    cen_for_fit = (centrals['Mstar'] >= mstar_fit_min)
     fit_cent, fitcov_cent = fit_hsmr(
         func, centrals, 'Mstar', 'Mbound', p0=(10.7,0.6,0.7,6.3),
-        log=True, label='centrals', mask=None)
-    mstar_fit_min = 1e9
-    mstar_fit_max = 5e10
+        log=True, label='centrals', mask=cen_for_fit)
+    ic(fit_cent, np.diag(fitcov_cent)**0.5)
     sat_for_fit = (satellites['M200Mean'] >= 1e13) \
         & (satellites['Mstar'] >= mstar_fit_min) \
         & (satellites['Mstar'] <= mstar_fit_max)
@@ -89,26 +109,41 @@ def main():
         p0=(10.7,0.6,0.7,6.3), log=True, label='satellites')
     ic(fit_sat, np.diag(fitcov_sat)**0.5)
 
+    logmstar_ref = 10
+    ratio_ref = 10**(
+        func(logmstar_ref, *fit_cent) - func(logmstar_ref, *fit_sat))
+    print(f'at logmstar={logmstar_ref}, mcen/msat={ratio_ref:.3f}' \
+          f' while msat/mcen={1/ratio_ref:.3f}')
+
     fig, ax = plt.subplots(figsize=(8,6), constrained_layout=True)
+    xgrid, ygrid = np.meshgrid(mstarbins, msubbins)
+    # centrals
+    # n = np.histogram2d(
+    #     centrals['Mstar'], centrals['Mbound'], (mstarbins,msubbins))[0]
+    # cmap = cmr.get_sub_cmap('cmr.freeze_r', 0.1, 0.8)
+    # im = ax.pcolormesh(
+    #     xgrid, ygrid, n.T, cmap=cmap, norm=LogNorm(), rasterized=True)
     # satellites
     n = np.histogram2d(
         satellites['Mstar'], satellites['Mbound'], (mstarbins,msubbins))[0]
-    xgrid, ygrid = np.meshgrid(mstarbins, msubbins)
     cmap = cmr.get_sub_cmap('cmr.ember_r', 0.1, 0.8)
     im = ax.pcolormesh(
         xgrid, ygrid, n.T, cmap=cmap, norm=LogNorm(), rasterized=True)
     ycent = 10**func(np.log10(mstarbins), *fit_cent)
     bins_in_fit = (mstarbins >= mstar_fit_min) & (mstarbins <= mstar_fit_max)
-    ax.plot(mstarbins, ycent, 'C4', lw=3, dashes=(5,4), label='Centrals (fix)',
-            path_effects=[pe.Stroke(linewidth=4.5, foreground='w'), pe.Normal()])
+    ax.plot(mstarbins, ycent, 'C4', lw=3, dashes=(5,4), label='Centrals',
+            path_effects=[pe.Stroke(linewidth=4.5, foreground='w'),
+                          pe.Normal()])
     ysat = 10**func(np.log10(mstarbins), *fit_sat)
     bins_in_fit = (mstarbins >= mstar_fit_min) & (mstarbins <= mstar_fit_max)
     ax.plot(mstarbins[bins_in_fit], ysat[bins_in_fit], 'C0-', lw=4,
             label='Satellites',
-            path_effects=[pe.Stroke(linewidth=5, foreground='w'), pe.Normal()])
+            path_effects=[pe.Stroke(linewidth=5, foreground='w'),
+                          pe.Normal()])
     ax.plot(mstarbins[~bins_in_fit], ysat[~bins_in_fit], 'C0', lw=4,
             dashes=(3,4),
-            path_effects=[pe.Stroke(linewidth=5, foreground='w'), pe.Normal()])
+            path_effects=[pe.Stroke(linewidth=5, foreground='w'),
+                          pe.Normal()])
     cbar = plt.colorbar(im, ax=ax, label='$N_\mathrm{sat}$')#, fraction=0.045)
     cbar.ax.yaxis.set_major_formatter(FormatStrFormatter('%d'))
     ## Literature
@@ -168,9 +203,11 @@ def fit_hsmr(func, subs, xcol, ycol, mask='default', p0=None,
 
 
 def plot_niemiec(ax, logx):
-    y = 10**double_power_niemiec(logx, 10.22, 0.65, 0.50, 2.38)
-    ax.plot(10**logx, y, lw=2.5, color='0.2', dashes=(8,6), label='Niemiec+22 (TNG)',
-            path_effects=[pe.Stroke(linewidth=3.5, foreground='w'), pe.Normal()])
+    y = 10**double_power_niemiec_log(logx, 10.22, 0.65, 0.50, 2.38)
+    ax.plot(10**logx, y, lw=2.5, color='0.2', dashes=(8,6),
+            label='Niemiec+22 (TNG)',
+            path_effects=[pe.Stroke(linewidth=4, foreground='w'),
+                          pe.Normal()])
     return y
 
 
@@ -184,6 +221,10 @@ def plot_scatter(ax, logx, logy, func, params):
     mean = np.mean(ydiff)
     scatter = np.std(ydiff)
     n, bins = inset.hist(ydiff, np.linspace(-1.5, 1.5, 20), color='C0', alpha=0.5)[:2]
+    lowm = (logx <= 10)
+    inset.hist(ydiff[lowm], bins, color='C1', histtype='step', lw=2)
+    highm = ~lowm & (logx <= 11.3)
+    inset.hist(ydiff[highm], bins, color='C2', histtype='step', lw=2)
     logx0 = (bins[1:]+bins[:-1])/2
     area = trapz(n, logx0)
     ic(mean)
@@ -232,10 +273,15 @@ def plot_sifon(ax, hnorm=True):
 ## --------------------------------------------------
 
 
-def double_power_niemiec(logx, logm1, beta, gamma, N):
+def double_power_niemiec(mstar, m1, beta, gamma, N):
+    x = mstar / m1
+    return 2 * N * (x**-beta + x**gamma) * mstar
+
+
+def double_power_niemiec_log(logmstar, logm1, beta, gamma, N):
     """Using eq. 3 in Niemiec+22"""
-    X = 10**(logx-logm1)
-    logy = np.log10(X**-beta + X**gamma) + logx
+    x = 10**(logmstar-logm1)
+    logy = np.log10(x**-beta + x**gamma) + logmstar
     return np.log10(2*N) + logy
 
 

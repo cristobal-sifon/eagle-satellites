@@ -14,8 +14,8 @@ xbins = {
     #'logComovingMostBoundDistance': np.logspace(-2, 0.5, 9),
     'M200Mean': np.logspace(13, 14.7, 6),
     'mu': np.logspace(-5, 0, 9),
-    'Mstar': np.logspace(9, 11.5, 10),
-    'Mgas': np.logspace(8, 12, 10),
+    'Mstar': np.logspace(8.9, 11.1, 9),
+    'Mgas': np.logspace(8, 11, 10),
     'Mbound': np.logspace(9, 13, 10),
     'time': np.arange(0, 13.5, 2),
     'z': np.array([0, 0.5, 1, 1.5, 2, 3, 5]),
@@ -48,8 +48,9 @@ for m in ('Mbound', 'Mstar', 'Mdm', 'Mgas'):
     binlabel[f'max_{m}'] = fr'{binlabel[m]}^\mathrm{{max}}'
 _xx = 'ComovingMostBoundDistance'
 for i in '012':
+    p = 'p' + i.replace('0', '')
     xbins[f'{_xx}{i}'] = xbins[_xx]
-    binlabel[f'{_xx}{i}'] = f'{binlabel[_xx]}_{i}'
+    binlabel[f'{_xx}{i}'] = f'{binlabel[_xx]}_\mathrm{{{p}}}'
     xbins[f'{_xx}{i}/R200Mean'] = xbins[f'{_xx}/R200Mean']
 
 max_events = {f'max_{m}': 'max' for m in ('Mbound', 'Mstar', 'Mgas', 'Mdm')}

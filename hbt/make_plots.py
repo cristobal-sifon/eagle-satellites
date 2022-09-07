@@ -56,22 +56,43 @@ def main():
 
 
 def wrap_plot(args, sim, subs, isnap, hostmass='logM200Mean',
-              logM200Mean_min=13, logMmin=9, debug=True,
+              logM200Mean_min=9, logMmin=9, debug=True,
               do_plot_relations=True, do_plot_massfunctions=False):
     subs = Subhalos(
         subs, sim, isnap, exclude_non_FoF=True, logMmin=logMmin,
         logM200Mean_min=logMmin, verbose_when_loading=False)
     print(np.sort(subs.colnames))
+    j = np.isfinite(subs['history:first_infall:M200Mean'])
+    # ic(j.sum())
+    # print(np.histogram(subs['history:first_infall:M200Mean'][j], 20))
+    # return
     ic(subs[['Rank','history:sat:isnap','history:sat:Mbound',
              'history:cent:isnap','history:cent:Mbound']])
     ic(subs[['history:max_Mbound:isnap','history:max_Mbound:Mbound']])
     ic(np.unique(subs['HostHaloId']).size)
-    c = (subs['Rank'] == 0) & (subs['M200Mean'] > 1e13)
-    s = (subs['Rank'] > 0) & (subs['M200Mean'] > 1e13) \
-        & (subs['Mstar'] > 1e8)
+    c = (subs['Rank'] == 0) & (subs['M200Mean'] < 2e13) \
+        & (subs['M200Mean'] > 1e13)
+    ic(c.sum())
+    s = (subs['Rank'] > 0) & (subs['M200Mean'] < 2e13) \
+        & (subs['Mstar'] > 1e9) & (subs['M200Mean'] > 1e13)
     ic(c.sum(), s.sum())
     print('{0} objects'.format(subs[subs.colnames[0]].size))
     print()
+
+    # some numbers
+    # ms = subs['M200Mean'].values
+    # ic(ms.size, ms.min(), ms.max())
+    # s = (subs['Mstar'] > 1e9) & (subs['Rank'] > 0)
+    # c = (subs['Mstar'] > 1e9) & (subs['Rank'] == 0)
+    # b = np.array([1e13, 2e13, 5e13, 8e13, 1e14, 2e14, 5e14])
+    # ic(b)
+    # h = np.histogram(ms[c], b)[0]
+    # ic(h)
+    # ic(np.cumsum(h[::-1])[::-1])
+    # hs = np.histogram(ms[s], b)[0]
+    # ic(hs)
+    # ic(np.cumsum(hs[::-1])[::-1])
+    # return
 
     plot_path = f'{hostmass}_{logM200Mean_min:.1f}-logM_{logMmin}'
     plot_path = plot_path.replace('.', 'p')

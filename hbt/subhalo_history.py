@@ -46,7 +46,9 @@ def main():
     reader = HBTReader(sim.path)
     print(f'Loaded reader in {time()-to:.1f} seconds')
     to = time()
-    subs = Subhalos(reader.LoadSubhalos(-1), sim, -1, as_dataframe=True)
+    subs = Subhalos(
+        reader.LoadSubhalos(-1), sim, -1, as_dataframe=True, logMmin=9,
+        logM200Mean_min=9)
     #subs.sort(order='Mbound')
     print(f'Loaded subhalos in {(time()-to)/60:.2f} minutes')
 
@@ -58,12 +60,11 @@ def main():
         load_history=False)
     satellites = Subhalos(
         subs.satellites, sim, -1, load_distances=False, load_velocities=False,
-        load_history=False)
+        load_history=False, logM200Mean_min=13)
     print(np.sort(satellites.colnames))
     # fit HSMR
     fit_hsmr(centrals)
     fit_hsmr(satellites)
-    return
 
     # sort host halos by mass
     print('Sorting by mass...')
@@ -114,9 +115,13 @@ def main():
 
 
 def demographics(subs):
-    def demographic_stats(colname, a=(99.5,95,90,68,50)):
-        print(f'  {colname}')
+    def demographic_stats(colname, mask=None, a=(99.5,95,90,68,50)):
         x = subs[f'{colname}']
+        ic(colname)
+        if mask is None:
+            mask = np.ones(x.size, dtype=True)
+        x = x[mask]
+        print(f'  {colname} (N={x.size})')
         med = np.median(x)
         print(f'    median = {med:.2f}')
         for ai in a:
@@ -129,10 +134,13 @@ def demographics(subs):
     for event in ('cent', 'sat', 'first_infall', 'last_infall'):
         print(event)
         h = f'history:{event}'
+        good = (subs.satellites[f'{h}:time'] > -1)
+        ic(good.size, good.sum())
         ax_times.hist(
-            subs.satellites[f'{h}:time'], tbins, histtype='step', label=event)
+            subs.satellites[f'{h}:time'][good], tbins,
+            histtype='step', label=event)
         for t in ('time', 'z'):
-            demographic_stats(f'{h}:{t}')
+            demographic_stats(f'{h}:{t}', good)
         print()
     ax_times.legend()
     hbt_tools.save_plot(fig_times, 'times_hist', subs.sim, tight=False)

@@ -167,7 +167,7 @@ def match_snapshot(args, reader, subs0, isnap, index=None, verbose=False):
 
 def store_mean_mass(args, sim, snaps, iso_mbound, iso_mstar,
                     iso_mratio, verbose=True):
-    outfile = 'masses_at_last_isolation'
+    outfile = 'segregation/masses_at_last_isolation'
     output = os.path.join(sim.data_path, f'{outfile}.txt')
     np.savetxt(
         output, np.transpose([snaps, iso_mbound, iso_mstar, iso_mratio]),
@@ -191,7 +191,7 @@ def store_mean_mass(args, sim, snaps, iso_mbound, iso_mstar,
 
 
 def store_segregation_fits(args, sim, snaps, segfit, segcov, verbose=True):
-    outfile = 'segregation_fits'
+    outfile = 'segregation/segregation_fits'
     output = os.path.join(sim.data_path, f'{outfile}.txt')
     nparams = segfit.shape[1]
     fit_fmt = ' '.join(['%.2e' for i in segfit[0]])

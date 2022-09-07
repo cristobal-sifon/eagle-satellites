@@ -159,7 +159,8 @@ def get_label_bincol(bincol):
         label = label.split('/')
         ic(label)
         if label[0][-1] in '0123':
-            label[0] = f'{label[0][:-1]}_{label[0][-1]}'
+            p = 'p' + label[0][-1].replace('0', '')
+            label[0] = f'{label[0][:-1]}_\mathrm{{{p}}}'
         ic(label)
         label = '/'.join(label)
     ic(bincol, label)
