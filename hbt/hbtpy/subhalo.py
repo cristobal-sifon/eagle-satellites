@@ -1089,8 +1089,9 @@ class Subhalos(BaseSubhalo):
             rho_m = rho_m.to('Msun/Mpc^3').value
             self.catalog['R200Mean'] \
                 = (3*self.catalog['M200Mean'] / (4*np.pi*200*rho_m))**(1/3)
-        mask = (self.catalog['M200Mean'] > 10**self.logM200Mean_min)
-        self._catalog = self.catalog[mask]
+        if self.logM200Mean_min is not None:
+            mask = (self.catalog['M200Mean'] > 10**self.logM200Mean_min)
+            self._catalog = self.catalog[mask]
         self._has_host_properties = True
         self.as_dataframe = adf
         if self.verbose_when_loading:
