@@ -116,12 +116,14 @@ def main():
 
 def demographics(subs):
     def demographic_stats(colname, mask=None, a=(99.5,95,90,68,50)):
-        x = subs[f'{colname}']
         ic(colname)
         if mask is None:
-            mask = np.ones(x.size, dtype=True)
-        x = x[mask]
-        print(f'  {colname} (N={x.size})')
+            mask = np.ones(x.size, dtype=bool)
+        if 'time' in colname:
+            ic(subs['TrackId'][mask].values)
+        x = subs[colname][mask]
+        print(f'  {colname} (N={mask.sum()}/{mask.size};' \
+              f' f={mask.sum()/mask.size:.3f})')
         med = np.median(x)
         print(f'    median = {med:.2f}')
         for ai in a:
@@ -130,20 +132,26 @@ def demographics(subs):
         return #nothing for now
 
     fig_times, ax_times = plt.subplots(constrained_layout=True)
+    fig_times.set_facecolor('0.4')
+    ax_times.set_facecolor('0.4')
     tbins = np.arange(0, 12, 0.2)
-    for event in ('cent', 'sat', 'first_infall', 'last_infall'):
+    tx = (tbins[1:]+tbins[:-1]) / 2
+    for event in ('cent', 'sat', 'first_infall', 'last_infall', 'max_Mbound',
+                  'max_Mstar'):
         print(event)
         h = f'history:{event}'
         good = (subs.satellites[f'{h}:time'] > -1)
         ic(good.size, good.sum())
-        ax_times.hist(
-            subs.satellites[f'{h}:time'][good], tbins,
-            histtype='step', label=event)
+        hist = np.array(np.histogram(
+            subs.satellites[f'{h}:time'][good], tbins)[0], dtype=float)
+        hist[hist == 0] = np.nan
+        ax_times.plot(tx, hist, '-', lw=3, label=event)
         for t in ('time', 'z'):
             demographic_stats(f'{h}:{t}', good)
         print()
-    ax_times.legend()
+    ax_times.legend(fontsize=14, facecolor='0.4')
     hbt_tools.save_plot(fig_times, 'times_hist', subs.sim, tight=False)
+    return
     print('\n'*2)
     for event in ('cent', 'sat', 'first_infall', 'last_infall'):
         h = f'history:{event}'
