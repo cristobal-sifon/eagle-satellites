@@ -69,6 +69,8 @@ def parse_args(parser=None, args=None):
         for argname, kwargs in args:
             parser.add_argument(argname, **kwargs)
     args = parser.parse_args()
+    if args.test:
+        args.debug = True
     if not args.debug:
         ic.disable()
     return args
@@ -89,6 +91,7 @@ def read_args():
     add = parser.add_argument
     add('--debug', dest='debug', action='store_true')
     add('--ncores', dest='ncores', default=1, type=int)
+    add('--test', action='store_true')
     add('simulation', default='LR')
     return parser
 
