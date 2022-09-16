@@ -1,6 +1,7 @@
 data/
 subcat/
 plots/
+test*.png
 tmp*
 
 # Backup files

@@ -403,7 +403,6 @@ class Track(BaseSubhalo):
             'return_value must be one of {0}. Got {1} instead'.format(
                 valid_outputs, return_value)
         hostid = self.host(isnap=-1, return_value='trackid')
-        ic(hostid)
         iinf = 0
         # first jump by halves until we've narrowed it down to
         # very few snapshots
@@ -419,14 +418,12 @@ class Track(BaseSubhalo):
             snapcat = Subhalos(
                 subs, self.sim, isnap, load_hosts=False, logMmin=0)
             sib = snapcat.siblings(hostid, 'trackid')
-            ic(isnap, sib.size, (sib == self.trackid).sum())
             if sib is None or self.trackid not in sib:
                 imin = isnap
             else:
                 imax = isnap
         # once we've reached the minimum range allowed above,
         # we just do backwards brute-force
-        ic(imin, imax)
         iinf_backward = 0
         for isnap in range(imax, imin-1, -1):
             subs = self.reader.LoadSubhalos(
@@ -438,7 +435,6 @@ class Track(BaseSubhalo):
             snapcat = Subhalos(
                 subs, self.sim, isnap, load_hosts=False, logMmin=0)
             sib = snapcat.siblings(hostid, 'trackid')
-            ic(isnap, sib.size, (sib == self.trackid).sum())
             # this means we reached the beginning of the track
             if sib is None:
                 iinf_backward = 0
@@ -451,8 +447,6 @@ class Track(BaseSubhalo):
         else:
             iinf_backward = 0
         iinf =  self._range[iinf_backward]
-        ic(isnap, iinf, iinf_backward, self.z[iinf])
-        ic(self.sim.snapshots)
         if return_value == 'tlookback':
             return self.lookback_time(isnap=iinf)
         if return_value == 'redshift':

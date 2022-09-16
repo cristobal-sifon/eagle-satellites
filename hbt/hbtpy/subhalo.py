@@ -56,7 +56,6 @@ class BaseDataSet(object):
             self._catalog = self.DataFrame(self._catalog)
         elif not self.as_dataframe \
                 and isinstance(self._catalog, pd.DataFrame):
-            ic(self._catalog.dtype.names)
             self._catalog = self._catalog.to_records()
         return self._catalog
 
@@ -289,7 +288,8 @@ class BaseSubhalo(BaseDataSet):
             if isinstance(self.catalog, pd.DataFrame) \
             else self.catalog.dtype.names
         for col in cols:
-           if np.any([i in col and 'SnapshotIndex' not in col for i in
+           if np.any([col.startswith(i) and 'SnapshotIndex' not in col
+                      for i in
                       ('Mbound','MboundType',
                        'Mgas','Mdm','Mstar','LastMaxMass')]):
                 if self.catalog[col].max() < 1e10:
@@ -559,7 +559,6 @@ class Subhalos(BaseSubhalo):
             if self.verbose_when_loading:
                 print(f'Excluding {self.non_FoF.sum()} non-FoF subhalos')
             self._catalog = self.catalog[~self.non_FoF]
-        ic(self.catalog.shape)
         if 'Mbound' in self.colnames and self.logMmin is not None:
             self._catalog = self.catalog[self.mass('total') > 10**self.logMmin]
         else:
@@ -761,17 +760,13 @@ class Subhalos(BaseSubhalo):
             mask = self.satellite_mask
         elif kwargs['sample ']== 'all':
             mask = np.ones(self.central_mask.size, dtype=bool)
-        ic(kwargs['sample'])
-        ic(mask.sum())
         if kwargs['min_hostmass'] is not None:
             hostmass = kwargs['hostmass'] # for clearer error message
             assert hostmass in ('M200Mean','MVir','Mbound')
             mask = mask & (self.catalog[hostmass] >= kwargs['min_hostmass'])
-            ic(mask.sum())
         x, y = self._shmr_xy(relation, mask=mask)
         bins, xo = self._shmr_binning(x, kwargs['bins'])
         mr = np.histogram(x, bins, weights=y)[0] / np.histogram(x, bins)[0]
-        ic(mr)
         if kwargs['ax'] is not None:
             kwargs['ax'].plot(xo, mr, **plot_kwargs)
         return xo, mr
@@ -1057,7 +1052,6 @@ class Subhalos(BaseSubhalo):
             to = time()
         adf = self.as_dataframe
         self.as_dataframe = True
-        ic(self.isnap)
         hosts = HostHalos(self.sim, self.isnap, force_isnap=force_isnap)
         ti = time()
         # number of star particles, to identify dark subhalos
@@ -1076,12 +1070,11 @@ class Subhalos(BaseSubhalo):
         for col in list(self.catalog):
             if 'M200' in col or col == 'MVir':
                 # otherwise I think this happens twice?
-                if self.catalog[col].max() < 1e10:
+                if self.catalog[col].max() < 1e6:
                     self.catalog[col] = 1e10 * self.catalog[col]
         if verbose:
             print('Joined hosts in {0:.2f} s'.format(time()-to))
         del hosts
-        ic(self.catalog.columns)
         # R200Mean
         if 'M200Mean' in self.catalog.columns:
             rho_m = self.cosmology.critical_density(self.redshift) \
