@@ -302,6 +302,18 @@ class BaseSubhalo(BaseDataSet):
             return np.array(self.Nbound)
         return self.NboundType[:,index]
 
+    def sort(self, col, ascending=True, ignore_index=True):
+        """Sort data by values in ``col``"""
+        if self.as_dataframe:
+            self._catalog.sort_values(
+                col, ascending=ascending, inplace=True,
+                ignore_index=ignore_index)
+        else:
+            if ascending:
+                self._catalog.sort(order=col)
+            else:
+                self._catalog[::-1].sort(order=col)
+
     ## easy access to positions, distances and velocities ##
 
     def column(self, value, ax):
