@@ -203,7 +203,8 @@ def wrap_relations_hsmr(args, stat, **relation_kwargs):
     x_bins = {'Mstar': np.logspace(7.5, 11.7, 10),
               'Mbound': np.logspace(8.5, 12.7, 10)}
     events = [f'history:{e}'
-              for e in ('first_infall', 'last_infall', 'cent', 'sat')]
+              for e in ('first_infall', 'last_infall', 'cent', 'sat',
+                        'max_Mstar', 'max_Mbound')]
     history_bincols = [
         (f'{h}:Mbound', f'{h}:Mstar', f'{h}:Mdm', f'{h}:Mstar/{h}:Mbound',
          f'{h}:Mbound/{h}:Mstar', f'{h}:Mdm/{h}:Mbound', f'{h}:Mstar/{h}:Mdm',
@@ -265,7 +266,8 @@ def wrap_relations_hsmr_history(args, stat, do_mass=True, do_ratios=True,
         [['Mstar/history:first_infall:Mbound',
           'Mbound/history:first_infall:Mbound', None],
          dict(statistic='count')])
-    for event in ('first_infall', 'last_infall', 'cent', 'sat'):
+    for event in ('first_infall', 'last_infall', 'cent', 'sat',
+                  'max_Mstar', 'max_Mbound'):
     #for event in ('cent',):
         h = f'history:{event}'
         # ratios in the x-axis
@@ -299,10 +301,11 @@ def wrap_relations_hsmr_history(args, stat, do_mass=True, do_ratios=True,
         # stellar mass in the x-axis
         if do_mass:
             bincols = (f'{h}:z', f'{h}:time',
-                       'Mbound', 'Mstar', 'Mstar/Mbound', 'Mbound/Mstar',
+                       'Mstar', 'Mbound', 'Mstar/Mbound', 'Mbound/Mstar',
                        'Mdm/Mstar', 'LastMaxMass', 'Mbound/LastMaxMass',
                        'ComovingMostBoundDistance','ComovingMostBoundDistance0',
                        'Mstar/LastMaxMass', 'M200Mean', 'Mbound/M200Mean')
+            bincols = bincols[:3]
             for bincol in bincols:
                 logbins = ('time' not in bincol \
                     and bincol.split(':')[-1] != 'z')
@@ -324,7 +327,7 @@ def wrap_relations_hsmr_history(args, stat, do_mass=True, do_ratios=True,
     return plot_args
 
 
-def wrap_relations_time(args, stat):
+def wrap_relations_time(args, stat, do_time_differences=False):
     #x_bins = np.arange(0, 14, 1)
     plot_args = []
     kwds_count = dict(
@@ -335,7 +338,7 @@ def wrap_relations_time(args, stat):
         x_bins=xbins['time'], logbins=True, selection='Mstar',
         statistic=stat, xscale='linear', yscale='log', selection_min=1e8,
         show_satellites=False, show_ratios=False)
-    events = ('sat', 'cent', 'first_infall', 'last_infall')
+    events = ('max_Mstar', 'max_Mbound', 'sat', 'cent', 'first_infall', 'last_infall')
     for ie, event in enumerate(events):
     #for event in ('max_Mbound', 'max_Mstar'):
         h = f'history:{event}'
@@ -358,19 +361,29 @@ def wrap_relations_time(args, stat):
                 #              f'Mdm/{h}:Mdm', f'Mgas/{h}:Mgas',
                 #              f'Mstar/Mbound', f'Mdm/Mbound', f'Mgas/Mbound',
                 #              'ComovingMostBoundDistance/R200MeanComoving'):
-                for i, e in enumerate(events):
-                    if i == ie: continue
-                    hi = f'history:{e}'
-                    ycols = (f'{hi}:time', f'{hi}:time-{xcol}')
-                    for ycol in ycols:
-                        if xcol == ycol: continue
-                        kwds_count['ylim'] = ylims.get(ycol)
-                        kwds_count['yscale'] \
-                            = 'linear' if ('Distance' in ycol or 'time' in ycol) \
-                                else 'log'
-                        kwds_count['ybins'] \
-                            = np.linspace(0, 1.5, 15) if 'Distance' in ycol else 20
-                        plot_args.append([[xcol, ycol, None], kwds_count.copy()])
+                ycols = [f'{h}:Mstar', f'Mstar/{h}:Mstar', 'Mstar']
+                for ycol in ycols:
+                    kwds_count['ylim'] = ylims.get(ycol)
+                    kwds_count['yscale'] \
+                        = 'linear' if ('Distance' in ycol or 'time' in ycol) \
+                            else 'log'
+                    kwds_count['ybins'] \
+                        = np.linspace(0, 1.5, 15) if 'Distance' in ycol else 20
+                    plot_args.append([[xcol, ycol, None], kwds_count.copy()])
+                if do_time_differences:
+                    for i, e in enumerate(events):
+                        if i == ie: continue
+                        hi = f'history:{e}'
+                        ycols = (f'{hi}:time', f'{hi}:time-{xcol}')
+                        for ycol in ycols:
+                            if xcol == ycol: continue
+                            kwds_count['ylim'] = ylims.get(ycol)
+                            kwds_count['yscale'] \
+                                = 'linear' if ('Distance' in ycol or 'time' in ycol) \
+                                    else 'log'
+                            kwds_count['ybins'] \
+                                = np.linspace(0, 1.5, 15) if 'Distance' in ycol else 20
+                            plot_args.append([[xcol, ycol, None], kwds_count.copy()])
             # lines
             else:
                 for ycol in (f'{h}:M200Mean',):

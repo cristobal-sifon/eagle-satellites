@@ -55,7 +55,7 @@ for i in '012':
 
 max_events = {f'max_{m}': 'max' for m in ('Mbound', 'Mstar', 'Mgas', 'Mdm')}
 events = {'last_infall': 'acc', 'first_infall': 'infall',
-          'cent': 'cent', 'sat': 'sat', **max_events}
+          'birth': 'birth', 'cent': 'cent', 'sat': 'sat', **max_events}
 for event, event_label in events.items():
     h = f'history:{event}'
     elabel = f'\mathrm{{{event_label}}}'

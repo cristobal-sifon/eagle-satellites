@@ -63,6 +63,7 @@ def main():
         load_history=False, logM200Mean_min=13, exclude_non_FoF=True)
     #print(np.sort(satellites.colnames))
 
+    # some numbers
     # m = centrals['M200Mean'].values
     # ms = satellites['M200Mean'].values
     # ic(m.size, ms.size)

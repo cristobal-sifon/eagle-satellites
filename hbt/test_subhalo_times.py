@@ -1,6 +1,7 @@
 from glob import glob
 import h5py
 from icecream import ic
+from matplotlib import pyplot as plt
 import numpy as np
 import os
 import pandas as pd
@@ -12,6 +13,7 @@ from HBTReader import HBTReader
 
 # local
 from hbtpy import hbt_tools
+from hbtpy.helpers.plot_definitions import binlabel
 from hbtpy.simulation import Simulation
 from hbtpy.subhalo import Subhalos
 from hbtpy.track import Track
@@ -50,10 +52,35 @@ def main():
     sample_ids = rng.choice(sats['TrackId'], size=4)
     ic(sample_ids)
 
-    for trackid in sample_ids:
-        if check_infall(trackid, subs, history_filename):
-            break
+    fig, ax = plt.subplots()
+    for i, trackid in enumerate(sample_ids):
+        #if check_infall(trackid, subs, history_filename):
+            #break
+        track = Track(trackid, sim)
+        ic(track)
+        sub = subs.catalog[subs.catalog['TrackId'] == trackid]
+        plot_mstar(ax, track, sub, color=f'C{i}')
+        #break
+    ax.legend(fontsize=12)
+    ax.set(xlabel='Lookback time (Gyr)', ylabel=f"${binlabel['Mstar']}$",
+           yscale='log')
+    hbt_tools.save_plot(fig, 'max_Mstar', track.sim)
 
+    return
+
+
+def plot_mstar(ax, track, sub, color='C0'):
+    mstar = track['Mstar']
+    ic(mstar)
+    ic(sub['history:max_Mstar:time'])
+    ax.plot(track.sim.t_lookback, mstar, f'{color}-')
+    j = np.argmax(mstar)
+    ax.plot(track.sim.t_lookback[j], mstar[j], 'o', mfc='w', mec=color, mew=2)
+    ax.plot(sub['history:max_Mstar:time'], sub['history:max_Mstar:Mstar'],
+            f'{color}*', ms=12, label=track.trackid)
+    #ax.annotate(
+    #    track.trackid, xy=(0.95,0.95), xycoords='axes fraction',
+    #    ha='right', va='top', fontsize=14)
     return
 
 

@@ -324,7 +324,7 @@ class Track(BaseSubhalo):
         snap = Subhalos(
             self.reader.LoadSubhalos(
                 isnap, ['TrackId','HostHaloId','Rank','Mbound']),
-            self.sim, isnap, load_hosts=False)
+            self.sim, isnap, load_hosts=False, verbose_when_loading=False)
         #hostid = snap.host(self.trackid, return_value='trackid')
         return snap.host(self.trackid, return_value=return_value)
         return self.reader.GetTrack(hostid)
@@ -416,7 +416,8 @@ class Track(BaseSubhalo):
                 imin = isnap
                 continue
             snapcat = Subhalos(
-                subs, self.sim, isnap, load_hosts=False, logMmin=0)
+                subs, self.sim, isnap, load_hosts=False, logMmin=0,
+                verbose_when_loading=False)
             sib = snapcat.siblings(hostid, 'trackid')
             if sib is None or self.trackid not in sib:
                 imin = isnap
@@ -433,7 +434,8 @@ class Track(BaseSubhalo):
                 #break
                 continue
             snapcat = Subhalos(
-                subs, self.sim, isnap, load_hosts=False, logMmin=0)
+                subs, self.sim, isnap, load_hosts=False, logMmin=0,
+                verbose_when_loading=False)
             sib = snapcat.siblings(hostid, 'trackid')
             # this means we reached the beginning of the track
             if sib is None:
