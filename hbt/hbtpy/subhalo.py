@@ -101,18 +101,6 @@ class BaseDataSet(object):
         """Wrapper for ``pandas.DataFrame.groupby``"""
         return self.catalog.groupby(*args, **kwargs)
 
-    def merge(self, right, *args, **kwargs):
-        """Wrapper for ``pandas.DataFrame.merge``.
-        Returns a ``Subhalos`` object
-        ``right`` can be a ``Subhalos`` object or a ``DataFrame``
-        """
-        if isinstance(right, Subhalos):
-            right = right.catalog
-        return Subhalos(
-            self.catalog.merge(right, *args, **kwargs), self.sim, self.isnap,
-            load_any=False)
-
-
 
 class BaseSubhalo(BaseDataSet):
     """BaseSubhalo class"""
@@ -125,24 +113,19 @@ class BaseSubhalo(BaseDataSet):
         sim : ``Simulation``
         """
         assert pvref in ('Average', 'MostBound')
-        # setting to False here to load the Mbounds and Nbounds below
-        # (easier to load from hdf5 than DataFrame)
-        #super(BaseSubhalo, self).__init__(catalog, as_dataframe=False)
         super(BaseSubhalo, self).__init__(catalog, as_dataframe=as_dataframe)
         BaseSimulation.__init__(self, sim)
         self.cosmology = self.sim.cosmology
-        #self.Mbound = 1e10 * self.catalog['Mbound']
-        #self.MboundType = 1e10 * self.catalog['MboundType']
-        #self.Nbound = self.catalog['Nbound']
-        #self.NboundType = self.catalog['NboundType']
         self.as_dataframe = as_dataframe
         self.pvref = pvref
         self._update_mass_columns()
 
     def __getitem__(self, col):
         cols = self.colnames
-        if np.iterable(col) and not isinstance(col, str):
-            return self.catalog[col]
+        # can only return a list of columns if they exist exactly
+        # in the DataFrame (i.e., no 'Mstar' and the like)
+        #if np.iterable(col) and not isinstance(col, str):
+            #return self.catalog[col]
         if (isinstance(col, str) and col in cols):
             return self.catalog[col]
         # conveninence names
@@ -292,7 +275,7 @@ class BaseSubhalo(BaseDataSet):
                       for i in
                       ('Mbound','MboundType',
                        'Mgas','Mdm','Mstar','LastMaxMass')]):
-                if self.catalog[col].max() < 1e10:
+                if self.catalog[col].max() < 1e6:
                     self.catalog[col] = 1e10 * self.catalog[col]
 
     ### methods ###
@@ -493,7 +476,7 @@ class Subhalos(BaseSubhalo):
     """
 
     def __init__(self, catalog, sim, isnap=None, load_any=True,
-                 logMmin=9, logM200Mean_min=12, exclude_non_FoF=True,
+                 logMmin=9, logMstar_min=9, logM200Mean_min=12, exclude_non_FoF=True,
                  as_dataframe=True, load_hosts=True, load_distances=True,
                  load_velocities=True, load_history=True,
                  verbose_when_loading=True):
@@ -513,6 +496,8 @@ class Subhalos(BaseSubhalo):
         -------------------
         logMmin : float
             minimum subhalo mass
+        logMstar_min : float
+            minimum stellar mass
         logM200Mean_min : float
             minimum host halo mass. Note that this requires
             ``load_hosts=True``
@@ -555,18 +540,24 @@ class Subhalos(BaseSubhalo):
         if logM200Mean_min is not None and logM200Mean_min > 100:
             logM200Mean_min = np.log10(logM200Mean_min)
         self.logM200Mean_min = logM200Mean_min
+        if logMstar_min is not None and logMstar_min > 100:
+            logMstar_min = np.log10(logMstar_min)
+        self.logMstar_min = logMstar_min
         if self.exclude_non_FoF:
             if self.verbose_when_loading:
                 print(f'Excluding {self.non_FoF.sum()} non-FoF subhalos')
             self._catalog = self.catalog[~self.non_FoF]
         if 'Mbound' in self.colnames and self.logMmin is not None:
-            self._catalog = self.catalog[self.mass('total') > 10**self.logMmin]
+            self._catalog = self.catalog[self.mass('total') >= 10**self.logMmin]
         else:
             self.logMmin = None
             #warnings.warn('No Mbound column. Not applying Mbound cut')
+        if 'MboundType4' in self.colnames and self.logMstar_min is not None:
+            self._catalog = \
+                self.catalog[self.mass('stars') >= 10**self.logMstar_min]
         if 'Nbound' in self.colnames:
             if self.as_dataframe:
-                self.catalog['IsDark'] = (self.nbound('stars') == 0)
+                self.catalog.loc[:, 'IsDark'] = (self.nbound('stars') == 0)
             else:
                 self._catalog = append_fields(
                     self.catalog, 'IsDark', (self.nbound('stars') == 0))
@@ -730,6 +721,18 @@ class Subhalos(BaseSubhalo):
         if return_value == 'index':
             return self._range[host_mask][0]
         return np.array(self.catalog[host_mask])
+
+    def merge(self, right, how='inner', **kwargs):
+        """Wrapper for ``pandas.DataFrame.merge``.
+        Returns a ``Subhalos`` object
+        ``right`` can be a ``Subhalos`` object or a ``DataFrame``
+        """
+        if isinstance(right, Subhalos):
+            right = right.catalog
+        return Subhalos(
+            self.catalog.merge(right, how=how, **kwargs),
+            self.sim, self.isnap, load_any=False,
+            logM200Mean_min=None, logMmin=None, logMstar_min=None)
 
     def _shmr_binning(self, x, bins, log=False):
         if not np.iterable(bins):
