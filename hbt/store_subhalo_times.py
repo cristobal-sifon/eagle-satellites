@@ -46,7 +46,7 @@ def main():
 
     subs = Subhalos(
         subs, sim, isnap, exclude_non_FoF=True,
-        logMmin=9, logM200Mean_min=12,
+        logMmin=9, logM200Mean_min=12, logMstar_min=None,
         load_distances=False, load_velocities=False,
         load_hosts=False, load_history=False)
     subhalos = subs.catalog
@@ -56,8 +56,9 @@ def main():
     ic0(cents['TrackId'].shape)
     track_ids = subs.satellites['TrackId']
     host_halo_id = sats['HostHaloId'].to_numpy(dtype=np.int32)
-    ic0(host_halo_id.shape)
+    ic0(host_halo_id, host_halo_id.shape)
     cent_track_id = cents['TrackId'].to_numpy(dtype=np.int32)
+    ic(cent_track_id, cent_track_id.shape)
     ti = time()
     host_track_id_today = np.array(
         [cent_track_id[cents['HostHaloId'] == hhi][0]
@@ -102,6 +103,11 @@ def main():
     history = pd.DataFrame(history).reset_index()
     ic0(np.sort(history.columns))
     ic0(history.shape)
+    # testing
+    jtr = (history['trackids:TrackId'] == 31158)
+    jtr_cols = ['trackids:TrackId', 'max_Mstar:isnap',
+                'max_Mstar:time', 'max_Mstar:Mstar']
+    ic0(jtr.sum())
 
     # save everything to an hdf5 file
     path_history = os.path.join(sim.data_path, 'history')
@@ -125,7 +131,7 @@ def main():
             continue
         subs_i = Subhalos(
             subs_i, sim, snap, logMmin=None, logM200Mean_min=None,
-            load_any=False, verbose_when_loading=False)
+            logMstar_min=None, load_any=False, verbose_when_loading=False)
         ic0(type(subs_i), subs_i.shape)
         z[i] = sim.redshift(snap)
         t[i] = sim.cosmology.lookback_time(z[i]).to('Gyr').value
@@ -137,7 +143,7 @@ def main():
         ics['history'](this.shape)
         this = Subhalos(
             this, subs_i.sim, subs_i.isnap, load_any=False, logMmin=None,
-            logM200Mean_min=None, exclude_non_FoF=False)
+            logM200Mean_min=None, logMstar_min=None, exclude_non_FoF=False)
         if i == 0:
             ic(np.sort(this.columns))
         ics['history'](this.shape, subs_i.shape, history.shape)
@@ -167,10 +173,14 @@ def main():
         #continue
 
         history = max_mass(history, this, groups, cols, snap, t[i], z[i])
+        ics['masses'](this.catalog.loc[jtr, ['TrackId','MboundType4']])
+        ics['masses'](history.loc[jtr, jtr_cols])
 
         ## birth
         # this is updated all the time while the subhalo exists
         # doing this every time so we can record the mass at birth
+        # and so that satellites that already existed in the first snapshot
+        # do get assigned a birth time
         exist = np.in1d(history['trackids:TrackId'], subs_i['TrackId'])
         ics['birth'](exist.sum(), (1-exist).sum())
         history.loc[exist, cols['birth'][:3]] = [snap, t[i], z[i]]
@@ -182,15 +192,16 @@ def main():
         # multiple matches but what if a present-day satellite
         # was last a central with HostHaloId = -1?
         this_cent_mask = (subs_i['Rank'] == 0) & (subs_i['HostHaloId'] > -1)
-        this_cent = subs_i[['TrackId','HostHaloId']].loc[this_cent_mask]
+        this_cent = subs_i.catalog.loc[this_cent_mask, ['TrackId','HostHaloId']]
         ics['infall'](this_cent_mask.shape, this_cent_mask.sum())
+        ics['infall'](this.shape)
         this = this.merge(
             this_cent, on='HostHaloId', how='left',
             suffixes=('_sat','_cent'))
         ics['infall'](this.shape)
         # first update the masses for all subhalos for which we have
         # not registered infall already
-        jinfall_last = (this['last_infall:isnap'] == -1)
+        jinfall_last = (this['last_infall:isnap'] == -1).values
         ics['infall'](jinfall_last.shape, jinfall_last.sum())
         history = assign_masses(history, this, jinfall_last, 'last_infall')
         # if they are no longer in the same host, then register
@@ -265,12 +276,12 @@ def assign_masses(history, this, mask, group):
 
 
 def max_mass(history, this, events, cols, snap, ti, zi):
-    ics['masses']()
+    #ics['masses']()
     #ic(this)
     for event in events:
         if event[:4] == 'max_':
             m = event[4:]
-            ics['masses'](event, m)
+            #ics['masses'](event, m)
             # define before splitting m
             histdata = history[f'{event}:{m}']
             m = m.split('/')
@@ -278,14 +289,17 @@ def max_mass(history, this, events, cols, snap, ti, zi):
             if len(m) == 2:
                 thisdata = thisdata / this[m[1]]
             m = '/'.join(m)
-            gtr = (thisdata > histdata)
+            # greater or eaqual than because I'm going backwards
+            # in time (i.e., I want to record the earliest snapshot
+            # where the maximum mass is obtained)
+            gtr = (thisdata >= histdata)
             # this is working
             history.loc[gtr, cols[event][:3]] = [snap, ti, zi]
             # but this is not
             history = assign_masses(history, this, gtr, event)
             #history.loc[gtr, key] = thisdata.loc[gtr]
-            if m == 'Mbound':
-                ics['masses'](history.loc[gtr, cols[event]])
+            #if m == 'Mbound':
+                #ics['masses'](history.loc[gtr, cols[event]])
     return history
 
 
