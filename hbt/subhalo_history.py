@@ -16,7 +16,7 @@ import multiprocessing as mp
 import numpy as np
 import os
 from scipy.optimize import curve_fit
-from scipy.stats import pearsonr
+from scipy.stats import binned_statistic_2d, pearsonr
 import sys
 from time import sleep, time
 
@@ -124,7 +124,6 @@ def main():
 
 
 def compare_times(satellites, use_lookback=True):
-    axnames = 'abcdefghijklmnopqrstuvwxyz'
     cmap = cmr.get_sub_cmap('cmr.ember_r', 0, 0.8)
     events = ('cent', 'sat', 'first_infall', 'last_infall',
               'max_Mbound', 'max_Mstar')
@@ -134,7 +133,7 @@ def compare_times(satellites, use_lookback=True):
     axlabels = [f'{i} (Gyr)' for i in axlabels]
     nc = len(events)
     fig, axes = plt.subplots(
-        nc, nc, figsize=(1.1*nc*2,nc*2), constrained_layout=True)
+        nc, nc, figsize=(2.2*nc,2.2*nc), constrained_layout=True)
     tx = np.arange(0, 13.6, 0.5)
     extent = (tx[0], tx[-1], tx[0], tx[-1])
     xlim = extent[:2]
@@ -144,95 +143,91 @@ def compare_times(satellites, use_lookback=True):
     for i, ev_i in enumerate(events):
         xcol = f'history:{ev_i}:time'
         x = satellites[xcol] if use_lookback else tmax - satellites[xcol]
-        for j, ev_j in enumerate(events[:i]):
+        for j, ev_j in enumerate(events):
             ax = axes[i,j]
-            ax.xaxis.set_minor_locator(ticker.NullLocator())
-            ax.yaxis.set_minor_locator(ticker.NullLocator())
-            ax.xaxis.set_major_locator(ticker.MultipleLocator(5))
-            ax.yaxis.set_major_locator(ticker.MultipleLocator(5))
-            ycol = f'history:{ev_j}:time'
-            y = satellites[ycol] if use_lookback else tmax - satellites[ycol]
-            r, pr = pearsonr(x, y)
-            color = cmr.take_cmap_colors(
-                cmap, N=1, cmap_range=((1+r)/2,(1+r)/2))[0]
-            cmap_ij = mplcolors.LinearSegmentedColormap.from_list(
-                'cmap_ij', [[1, 1, 1], color])
-            h2d = np.histogram2d(x, y, bins=tx)[0]
-            ax.imshow(h2d, extent=extent, cmap=cmap_ij,
-                      origin='lower', aspect='auto')
-            ax.plot(tx, tx, 'k--', lw=1)
-            # annotate correlation coefficient
-            if np.triu(h2d.T, 2).sum()/h2d.sum() < 0.3:
-                label = f'{r:.2f}\n({axnames[iname]})'
-                xy = (0.05, 0.95)
-                ha, va = 'left', 'top'
-            else:
-                label = f'({axnames[iname]})\n{r:.2f}'
-                xy = (0.95, 0.05)
-                ha, va = 'right', 'bottom'
-            ax.annotate(
-                label, xy=xy, xycoords='axes fraction',
-                ha=ha, va=va, fontsize=14)
-            ax.set(xlim=xlim, ylim=xlim)
-            ax.tick_params(which='both', length=3)
             if j == 0:
                 ax.set_ylabel(axlabels[i], fontsize=18)
-                ax.get_xticklabels()[0].set_visible(False)
             else:
                 ax.set(yticklabels=[])
             if i == nc - 1:
                 ax.set_xlabel(axlabels[j], fontsize=18)
-                ax.get_yticklabels()[0].set_visible(False)
             else:
                 ax.set(xticklabels=[])
+            compare_times_ticks(ax, diagonal=(i == j))
+            ycol = f'history:{ev_j}:time'
+            y = satellites[ycol] if use_lookback else tmax - satellites[ycol]
+            if j < i:
+                r, pr = pearsonr(x, y)
+                color = cmr.take_cmap_colors(
+                    cmap, N=1, cmap_range=(r,r))[0]
+                cmap_ij = mplcolors.LinearSegmentedColormap.from_list(
+                    'cmap_ij', [[1, 1, 1], color])
+                h2d = np.histogram2d(x, y, bins=tx)[0]
+                ax.imshow(
+                    h2d, extent=extent, cmap=cmap_ij,
+                    origin='lower', aspect='auto', vmin=0, vmax=0.03*h2d.sum())
+                # annotate correlation coefficient
+                if np.triu(h2d.T, 2).sum()/h2d.sum() < 0.25:
+                    label = f'{r:.2f}\n({iname})'
+                    xy = (0.05, 0.95)
+                    ha, va = 'left', 'top'
+                else:
+                    label = f'({iname})\n{r:.2f}'
+                    xy = (0.95, 0.05)
+                    ha, va = 'right', 'bottom'
+                ax.annotate(
+                    label, xy=xy, xycoords='axes fraction',
+                    ha=ha, va=va, fontsize=14)
+            # diagonal
+            elif j == i:
+                ax.annotate(
+                    f'({iname})', xy=(0.05,0.95), xycoords='axes fraction',
+                    ha='left', va='top', fontsize=14)
+                ax.hist(x, tx, histtype='stepfilled', color='C9')
+                ax.axvline(np.median(x), color='0.2')
+                ax.tick_params(which='both', length=5)
+                ax.set(yticks=[], xlim=xlim)
+                if i < nc - 1:
+                    ax.set(xticks=[])
+                else:
+                    xcol = f'history:{events[i]}:time'
+                    ax.set_xlabel(axlabels[i], fontsize=18)
+            # upper triangle
+            elif j > i:
+                m2d = binned_statistic_2d(
+                    x, y, satellites['Mstar'], np.nanmedian, bins=(tx,tx))[0]
+                im_ut = ax.imshow(
+                    np.log10(m2d.T), origin='lower', aspect='auto', vmin=9, vmax=11,
+                    cmap='cmr.toxic_r', extent=extent)
+            ax.set(xlim=xlim)
+            if j != i:
+                ax.plot(tx, tx, 'k--', lw=1)
+                ax.set(ylim=xlim)
+                ax.tick_params(which='both', length=3)
             iname += 1
-        # diagonal
-        diag = axes[i,i]
-        diag.annotate(
-            f'({axnames[iname]})', xy=(0.05,0.95), xycoords='axes fraction',
-            ha='left', va='top', fontsize=14)
-        iname += 1
-        diag.hist(x, tx, histtype='stepfilled', color='C9')
-        diag.axvline(np.median(x), color='0.2')
-        diag.tick_params(which='both', length=5)
-        diag.set(yticks=[], xlim=xlim)
-        if i < nc - 1:
-            diag.set(xticks=[])
-        else:
-            xcol = f'history:{events[i]}:time'
-            diag.set_xlabel(axlabels[i], fontsize=18)
-        # upper triangle
-        for j in range(i+1, nc):
-            #axes[i,j].set(xticks=[], yticks=[])
-            axes[i,j].axis('off')
-    cbar = cm.ScalarMappable(
+    # lower-left off-diagonal colorbar
+    cbar_ll = cm.ScalarMappable(
         norm=mplcolors.Normalize(vmin=0.2, vmax=1), cmap=cmap)
-    cbar = plt.colorbar(
-        cbar, ax=axes, label='Correlation', fraction=0.1, aspect=30)
+    cbar_ll = plt.colorbar(
+        cbar_ll, ax=axes, label='Correlation', fraction=0.1, aspect=30)
+    # upper right off-diagonal colorbar
+    plt.colorbar(
+        im_ut, ax=axes, orientation='horizontal', location='top',
+        label='log median($m_{\u2605}$)')
+    # save!
     hbt_tools.save_plot(
-        fig, 'compare_times', satellites.sim, tight=False, h_pad=0)
+        fig, 'compare_times', satellites.sim, tight=False, h_pad=0.2)
     return
 
 
-def compare_times_offdiag(ax, i, j, axname, axlabels, tx):
-    ax.plot(tx, tx, 'k--', lw=1)
-    ax.annotate(
-        f'({axname})', xy=(0.05,0.95), xycoords='axes fraction',
-        ha='left', va='top', fontsize=14)
-    ax.tick_params(which='both', length=3)
-    if j == 0:
-        ax.set(ylabel=axlabels[i])
-    else:
-        ax.set(yticklabels=[])
-    if i == nc - 1:
-        ax.set_xlabel(axlabels[j])
-    else:
-        ax.set(xticklabels=[])
-    ax.set(xlim=(tx[0]-0.1, tx[-1]+0.1), ylim=(tx[0]-0.1, tx[-1]+0.1))
+def compare_times_ticks(ax, diagonal=False):
     ax.xaxis.set_minor_locator(ticker.NullLocator())
     ax.yaxis.set_minor_locator(ticker.NullLocator())
-    ax.xaxis.set_major_locator(ticker.MultipleLocator(5))
-    ax.yaxis.set_major_locator(ticker.MultipleLocator(5))
+    ax.xaxis.set_major_locator(ticker.FixedLocator([5,10]))
+    if diagonal:
+        ax.yaxis.set_major_locator(ticker.NullLocator())
+    else:
+        ax.yaxis.set_major_locator(ticker.FixedLocator([5,10]))
     return
 
 
