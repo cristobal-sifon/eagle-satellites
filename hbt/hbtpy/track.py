@@ -144,7 +144,7 @@ class Track(BaseSubhalo):
             if hasattr(self.trackid, '__iter__'):
                 self.trackid = self.trackid[0]
         else:
-            msg = f'argument track {trackid} of wrong type ({type(trackid)})'
+            msg = f'argument trackid {trackid} of wrong type ({type(trackid)})'
             raise ValueError(msg)
         super(Track, self).__init__(self.track, self.sim)
         # other attributes
@@ -179,27 +179,6 @@ class Track(BaseSubhalo):
         return self._birth_snapshot
 
     @property
-    def Mbound(self):
-        return 1e10 * self.track['Mbound']
-
-    @property
-    def MboundType(self):
-        #if self.as_dataframe:
-            #cols = ['MboundType{0}'.format(i) for i in range(6)]
-            #return 1e10 * np.array(self.track[cols])
-        return 1e10 * self.track['MboundType']
-
-    @property
-    def icent(self):
-        """alias for ``self.last_central_snapshot_index``"""
-        return self.last_central_snapshot_index
-
-    @property
-    def isat(self):
-        """alias for ``self.first_satellite_snapshot_index``"""
-        return self.first_satellite_snapshot_index
-
-    @property
     def first_satellite_snapshot(self):
         """
         If the track has never been a satellite, this will remain None
@@ -221,6 +200,16 @@ class Track(BaseSubhalo):
             if sat.sum() > 0:
                 self._first_satellite_snapshot_index = self._range[sat][0]
         return self._first_satellite_snapshot_index
+
+    @property
+    def icent(self):
+        """alias for ``self.last_central_snapshot_index``"""
+        return self.last_central_snapshot_index
+
+    @property
+    def isat(self):
+        """alias for ``self.first_satellite_snapshot_index``"""
+        return self.first_satellite_snapshot_index
 
     @property
     def infall_snapshot(self):
@@ -246,7 +235,6 @@ class Track(BaseSubhalo):
                 self.track['Snapshot'][self.track['Rank'] == 0][-1]
         return self._last_central_snapshot
 
-
     @property
     def last_central_snapshot_index(self):
         if self._last_central_snapshot_index is None:
@@ -257,19 +245,16 @@ class Track(BaseSubhalo):
                 self._range[self.track['Rank'] == 0][-1]
         return self._last_central_snapshot_index
 
-    """
     @property
     def Mbound(self):
-        if self._Mbound is None:
-            self._Mbound = 1e10 * self.track['Mbound']
-        return self._Mbound
+        return 1e10 * self.track['Mbound']
 
     @property
     def MboundType(self):
-        if self._MboundType is None:
-            self._MboundType = 1e10 * self.track['MboundType']
-        return self._MboundType
-    """
+        #if self.as_dataframe:
+            #cols = ['MboundType{0}'.format(i) for i in range(6)]
+            #return 1e10 * np.array(self.track[cols])
+        return 1e10 * self.track['MboundType']
 
     @property
     def zcentral(self):
@@ -295,7 +280,7 @@ class Track(BaseSubhalo):
 
     ### methods ###
 
-    def host(self, isnap=-1, return_value='trackid'):
+    def central(self, isnap=-1, return_value='trackid'):
         """Host halo (i.e., central subhalo) information at a given
         snapshot
 
@@ -341,6 +326,39 @@ class Track(BaseSubhalo):
         if return_value == 'index':
             return self._range[host_mask][0]
         return self.catalog[host_mask]
+
+    def host(self, isnap=-1):
+        if self['Rank'][isnap] == 0:
+            ...
+        return
+
+
+    def host_history(self, isnap=-1, host_track=None,
+                     host_history_file=None):
+        """Get history for the host at a given snapshot
+        
+        Parameters
+        ----------
+        isnap : int, optional
+            snapshot defining the host halo of ``self``. Ignored if
+            ``host_track`` is defined.
+        host_track : int or ``Track`` object, optional
+            host TrackId or ``Track``.
+        host_history_file : str, optional
+            name of file containing host halo histories. Must be full
+            (absolute or relative) path
+        """
+        if host_track is None or isinstance(host_track, (int,np.integer)):
+            with h5py.File(host_history_file, 'r') as hdf:
+                trackids = hdf.get('TrackId')
+                # check whether ``self`` is central or find its central
+                if host_track is None:
+                    if self.track['Rank'][isnap] == 0:
+                        j_history = (trackids == self.trackid)
+                    else:
+                        ...
+                ic(trackids)
+        return
 
     def history(self, cols=None, when='first_infall', raise_error=True):
         """Return data from events in the history of the track
