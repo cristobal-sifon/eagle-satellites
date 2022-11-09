@@ -122,15 +122,31 @@ class BaseSubhalo(BaseDataSet):
 
     def __getitem__(self, col):
         cols = self.colnames
-        # can only return a list of columns if they exist exactly
-        # in the DataFrame (i.e., no 'Mstar' and the like)
-        #if np.iterable(col) and not isinstance(col, str):
-            #return self.catalog[col]
-        if (isinstance(col, str) and col in cols):
+        if isinstance(col, (int,slice,np.lib.index_tricks.IndexExpression)):
+            return self.catalog.iloc[col]
+        if isinstance(col, str) and col in cols:
             return self.catalog[col]
         # conveninence names
         colmap = {'Mgas': 'MboundType0', 'Mdm': 'MboundType1',
                   'Mstar': 'MboundType4'}
+        colmap = {**colmap, 
+                  # positions
+                  **{i: f'ComovingMostBoundPosition{n}'
+                     for n, i in enumerate('xyz')},
+                  **{f'{i}avg': f'ComovingAveragePosition{n}'
+                     for n, i in enumerate('xyz')},
+                  # velocities
+                  **{f'v{i}': f'PhysicalMostBoundVelocity{n}'
+                     for n, i in enumerate('xyz')},
+                  **{f'v{i}avg': f'PhysicalAverageVelocity{n}'
+                     for n, i in enumerate('xyz')},
+                  # host position
+                  **{f'{i}_host': f'CenterComoving{n}'
+                     for n, i in enumerate('xyz')},
+                  # peculiar velocities
+                  **{f'v{i}pec': f'v{i}-PhysicalMostBoundHostMeanVelocity{n}'
+                     for n, i in enumerate('xyz')},
+                  }
         if not isinstance(col, str):
             X = pd.DataFrame()
             for c in col:
@@ -528,10 +544,10 @@ class Subhalos(BaseSubhalo):
             in ``{self.sim.data_path}/history/history.h5``. These
             will be loaded as additional columns in ``self.catalog``
         """
-        assert isinstance(as_dataframe, bool)
-        assert isinstance(load_hosts, bool)
-        assert isinstance(load_distances, bool)
-        assert isinstance(load_velocities, bool)
+        assert isinstance(as_dataframe, (bool, np.bool_))
+        assert isinstance(load_hosts, (bool, np.bool_))
+        assert isinstance(load_distances, (bool, np.bool_))
+        assert isinstance(load_velocities, (bool, np.bool_))
         super(Subhalos, self).__init__(
               catalog, sim, as_dataframe=as_dataframe)
         if not load_any:
