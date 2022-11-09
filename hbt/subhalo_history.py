@@ -56,8 +56,8 @@ def main():
     #subs.sort(order='Mbound')
     print(f'Loaded subhalos in {(time()-to)/60:.2f} minutes')
 
-    print(f'In total there are {subs.centrals.size} central' \
-          f' and {subs.satellites.size} satellite subhalos')
+    print('In total there are {0} central and {1} satellite subhalos'.format(
+        subs.centrals.size, subs.satellites.size))
 
     centrals = Subhalos(
         subs.centrals, sim, -1, load_distances=False, load_velocities=False,
@@ -76,7 +76,7 @@ def main():
 
     # some quick demographics
     if args.demographics:
-        demographics(satellites)
+        #demographics(satellites)
         compare_times(satellites)
         return
 
@@ -92,12 +92,14 @@ def main():
         n = 20
         print('Plotting centrals...')
         to = time()
-        title = f'{n}: {sim.formatted_name} most massive central subhalos'
+        title = '{1}: {0} most massive central subhalos'.format(
+            n, sim.formatted_name)
         plot_centrals(
             args, sim, reader, subs, subs.centrals, rank['Mbound'][:n],
             suffix=n, title=None)
             #title=title)
-        print(f'Finished plot_centrals in {(time()-to)/60:.2f} minutes')
+        print('Finished plot_centrals in {0:.2f} minutes'.format(
+            (time()-to)/60))
 
     do_plot_halos = True
     if do_plot_halos:
@@ -107,20 +109,23 @@ def main():
         # total, gas, halo, stars
         # ['gas', 'DM', 'disk', 'bulge', 'stars', 'BH']
         ti = time()
-        j = rank['M200Mean'][:1]
+        j = rank['M200Mean'][:3]
         ic(centrals.catalog[['TrackId','Rank','Mbound','M200Mean']].iloc[j])
         #sys.exit()
         suff = np.log10(np.median(centrals.catalog['Mbound'].iloc[j]))
-        suff = f'{suff:.2f}'.replace('.', 'p')
+        suff = '{0:.2f}'.format(suff).replace('.', 'p')
         plot_halos(args, sim, reader, subs,
-                   centrals.catalog['TrackId'].iloc[j], nsub=5)
-        print(f'Finished plot_halos in {(time()-to)/60:.2f} minutes')
+                   centrals.catalog['TrackId'].iloc[j], nsub=2)
+        #print('Plotted mass #{0} in {1:.2f} minutes'.format(
+            #massindex, (time()-to)/60))
+        print('Finished plot_halos in {0:.2f} minutes'.format((time()-to)/60))
 
     return
 
 
-def compare_times(satellites):
-    cmap = cmr.get_sub_cmap('cmr.cosmic_r', 0.25, 0.75)
+def compare_times(satellites, use_lookback=True):
+    axnames = 'abcdefghijklmnopqrstuvwxyz'
+    cmap = cmr.get_sub_cmap('cmr.ember_r', 0, 0.8)
     events = ('cent', 'sat', 'first_infall', 'last_infall',
               'max_Mbound', 'max_Mstar')
     axlabels = ['cent', 'sat', 'infall', 'acc',
@@ -129,77 +134,105 @@ def compare_times(satellites):
     axlabels = [f'{i} (Gyr)' for i in axlabels]
     nc = len(events)
     fig, axes = plt.subplots(
-        nc, nc, figsize=(1.1*nc*2.2,nc*2.2), constrained_layout=True)
+        nc, nc, figsize=(1.1*nc*2,nc*2), constrained_layout=True)
     tx = np.arange(0, 13.6, 0.5)
-    t0 = (tx[1:]+tx[:-1] / 2)
     extent = (tx[0], tx[-1], tx[0], tx[-1])
-    # for colorbar vmin, vmax
-    corr = []
+    xlim = extent[:2]
     # to convert lookback times into Universe ages
     tmax = 13.7
+    iname = 0
     for i, ev_i in enumerate(events):
-        ycol = f'history:{ev_i}:time'
-        y = tmax - satellites[ycol]
-        # diagonal
-        diag = axes[i,i]
-        diag.hist(y, tx, histtype='step', color='k')
-        diag.axvline(np.median(y), color='0.5')
-        diag.tick_params(which='both', length=5)
-        diag.set(yticks=[])
-        #if i == 0:
-            #diag.set(ylabel=f'${binlabel[xcol]}$')
-        if i < nc - 1:
-            diag.set(xticks=[])
-        else:
-            diag.xaxis.set_minor_locator(ticker.NullLocator())
-            diag.xaxis.set_major_locator(ticker.MultipleLocator(5))
-            diag.set(xlabel=axlabels[i])
-        # lower triangle
+        xcol = f'history:{ev_i}:time'
+        x = satellites[xcol] if use_lookback else tmax - satellites[xcol]
         for j, ev_j in enumerate(events[:i]):
             ax = axes[i,j]
             ax.xaxis.set_minor_locator(ticker.NullLocator())
             ax.yaxis.set_minor_locator(ticker.NullLocator())
             ax.xaxis.set_major_locator(ticker.MultipleLocator(5))
             ax.yaxis.set_major_locator(ticker.MultipleLocator(5))
-            xcol = f'history:{ev_j}:time'
-            x = tmax - satellites[xcol]
+            ycol = f'history:{ev_j}:time'
+            y = satellites[ycol] if use_lookback else tmax - satellites[ycol]
             r, pr = pearsonr(x, y)
-            corr.append(r)
             color = cmr.take_cmap_colors(
                 cmap, N=1, cmap_range=((1+r)/2,(1+r)/2))[0]
             cmap_ij = mplcolors.LinearSegmentedColormap.from_list(
                 'cmap_ij', [[1, 1, 1], color])
             h2d = np.histogram2d(x, y, bins=tx)[0]
-            # h2d = np.log10(h2d)
-            # h2d[np.isnan(h2d)] = 0
-            ax.imshow(h2d.T, extent=extent, cmap=cmap_ij, vmin=0, vmax=0.9*h2d.max(),
+            ax.imshow(h2d, extent=extent, cmap=cmap_ij,
                       origin='lower', aspect='auto')
-            #ax.plot(x, y, 'k,')
             ax.plot(tx, tx, 'k--', lw=1)
-            ax.annotate(f'{r:.2f}', xy=(0.5,0.5), xycoords='axes fraction',
-                        va='center', ha='center', fontsize=14)
+            # annotate correlation coefficient
+            if np.triu(h2d.T, 2).sum()/h2d.sum() < 0.3:
+                label = f'{r:.2f}\n({axnames[iname]})'
+                xy = (0.05, 0.95)
+                ha, va = 'left', 'top'
+            else:
+                label = f'({axnames[iname]})\n{r:.2f}'
+                xy = (0.95, 0.05)
+                ha, va = 'right', 'bottom'
+            ax.annotate(
+                label, xy=xy, xycoords='axes fraction',
+                ha=ha, va=va, fontsize=14)
+            ax.set(xlim=xlim, ylim=xlim)
             ax.tick_params(which='both', length=3)
             if j == 0:
-                ax.set(ylabel=axlabels[i])
+                ax.set_ylabel(axlabels[i], fontsize=18)
+                ax.get_xticklabels()[0].set_visible(False)
             else:
-                ax.set(yticks=[])
+                ax.set(yticklabels=[])
             if i == nc - 1:
-                ax.set_xlabel(axlabels[j])
+                ax.set_xlabel(axlabels[j], fontsize=18)
+                ax.get_yticklabels()[0].set_visible(False)
             else:
-                ax.set(xticks=[])
-            ax.set(xlim=(tx[0]-0.1, tx[-1]+0.1), ylim=(tx[0]-0.1, tx[-1]+0.1))
+                ax.set(xticklabels=[])
+            iname += 1
+        # diagonal
+        diag = axes[i,i]
+        diag.annotate(
+            f'({axnames[iname]})', xy=(0.05,0.95), xycoords='axes fraction',
+            ha='left', va='top', fontsize=14)
+        iname += 1
+        diag.hist(x, tx, histtype='stepfilled', color='C9')
+        diag.axvline(np.median(x), color='0.2')
+        diag.tick_params(which='both', length=5)
+        diag.set(yticks=[], xlim=xlim)
+        if i < nc - 1:
+            diag.set(xticks=[])
+        else:
+            xcol = f'history:{events[i]}:time'
+            diag.set_xlabel(axlabels[i], fontsize=18)
         # upper triangle
         for j in range(i+1, nc):
             #axes[i,j].set(xticks=[], yticks=[])
             axes[i,j].axis('off')
-    print(f'correlations: {corr}')
     cbar = cm.ScalarMappable(
-        norm=mplcolors.Normalize(
-            vmin=round(min(corr), 1)-0.1, vmax=round(max(corr), 1)+0.1),
-        cmap=cmap)
+        norm=mplcolors.Normalize(vmin=0.2, vmax=1), cmap=cmap)
     cbar = plt.colorbar(
         cbar, ax=axes, label='Correlation', fraction=0.1, aspect=30)
-    hbt_tools.save_plot(fig, 'compare_times', satellites.sim, tight=False)
+    hbt_tools.save_plot(
+        fig, 'compare_times', satellites.sim, tight=False, h_pad=0)
+    return
+
+
+def compare_times_offdiag(ax, i, j, axname, axlabels, tx):
+    ax.plot(tx, tx, 'k--', lw=1)
+    ax.annotate(
+        f'({axname})', xy=(0.05,0.95), xycoords='axes fraction',
+        ha='left', va='top', fontsize=14)
+    ax.tick_params(which='both', length=3)
+    if j == 0:
+        ax.set(ylabel=axlabels[i])
+    else:
+        ax.set(yticklabels=[])
+    if i == nc - 1:
+        ax.set_xlabel(axlabels[j])
+    else:
+        ax.set(xticklabels=[])
+    ax.set(xlim=(tx[0]-0.1, tx[-1]+0.1), ylim=(tx[0]-0.1, tx[-1]+0.1))
+    ax.xaxis.set_minor_locator(ticker.NullLocator())
+    ax.yaxis.set_minor_locator(ticker.NullLocator())
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(5))
+    ax.yaxis.set_major_locator(ticker.MultipleLocator(5))
     return
 
 
@@ -309,7 +342,7 @@ def member_indices(args, subcat, host_ids, nsub=10):
             except IndexError as e:
                 ic(i)
                 raise IndexError(e)
-    print(f'member indices in {time()-to:.2f} s')
+    print('member indices in {0:.2f} s'.format(time()-to))
     return idx
 
 
@@ -318,7 +351,7 @@ def plot_centrals(args, sim, reader, subcat, centrals, indices, massindex=-1,
     # another option is to create more than one gridspec, see
     # https://matplotlib.org/users/tight_layout_guide.html
     # but I've wasted enough time here for now
-    gridspec_kw = {'width_ratios': (1,1,0.05)}
+    gridspec_kw = {'width_ratios':(1,1,0.05)}
     fig, (ax1, ax2, cax) = plt.subplots(
         figsize=(15,6), ncols=3, gridspec_kw=gridspec_kw)
     axes = (ax1, ax2)
@@ -333,12 +366,12 @@ def plot_centrals(args, sim, reader, subcat, centrals, indices, massindex=-1,
     cbar = fig.colorbar(cmap, cax=cax)
     cbar.ax.tick_params(labelsize=20, direction='in', which='both', pad=14)
     clabel = sim.masslabel(mtype='total')
-    cbar.set_label(rf'log ${clabel}$ ($z=0$)')#, fontsize=20)
+    cbar.set_label(r'log ${0}$ ($z=0$)'.format(clabel))#, fontsize=20)
     setup_track_axes(axes, sim, sim.cosmology)
     output = os.path.join(sim.plot_path, 'track_centrals')
     if suffix:
-        output += f'_{suffix}'
-    savefig(f'{output}.pdf', fig=fig, rect=[0,0,1,0.95])
+        output += '_{0}'.format(suffix)
+    savefig('{0}.pdf'.format(output), fig=fig, rect=[0,0,1,0.95])
     return
 
 
@@ -367,13 +400,14 @@ def make_halo_plot(args, sim, tracks, massindex=-1, includes_central=True,
             if includes_central:
                 colors.append('k')
                 continue
-        colors.append(f'C{j%10}')
+        colors.append('C{0}'.format(j%10))
         j += 1
     mname = sim.masslabel(index=massindex, latex=False)
-    output = f'track_{mname}'
+    output = 'track_{0}'.format(mname)
     if suffix:
-        output += f'_{suffix}'
-    output = os.path.join(sim.plot_path, f'{output}.pdf')
+        output += '_{0}'.format(suffix)
+    output = os.path.join(sim.plot_path, '{0}.pdf'.format(output))
+    #title = '{0}: {1} most massive halos'.format(sim.formatted_name, ncl)
     fig, axes = plt.subplots(figsize=(14,5*(ncl+0.5)), ncols=2, nrows=ncl)
     if ncl == 1:
         axes = [axes]
@@ -399,7 +433,7 @@ def make_halo_plot(args, sim, tracks, massindex=-1, includes_central=True,
         fig.suptitle(title)
         rect[3] -=  0.12/ncl
     savefig(output, fig=fig, rect=rect, w_pad=1.2)
-    print(f'    in {time()-to:.1f} s')
+    print('    in {0:.1f} s'.format(time()-to))
     return
 
 
@@ -429,6 +463,7 @@ def plot_track(axes, sim, track_data, massindex=-1,
     """
     trackid, t, Mt, rank, depth, icent, isat, iinf, hostid, th, Mh = track_data
     ic(trackid)
+    ic(rank[-1])
     if hasattr(massindex, '__iter__'):
         pass
     else:
@@ -436,45 +471,48 @@ def plot_track(axes, sim, track_data, massindex=-1,
         Mh = Mh[massindex]
     Mo = Mt[-1]
     if show_label:
-        label = f'{trackid}: {np.log10(Mt[-1]):.2f} ({depth[-1]}/{hostid})'
+        label = '{0}: {1:.2f} ({2}/{3})'.format(
+            trackid, np.log10(Mt[-1]), depth[-1], hostid)
     else:
         label = '_none_'
     axes[0].plot(t, Mt, label=label, color=color, **kwargs)
     axes[1].plot(t, Mt/Mo, color=color, **kwargs)
+    #ic()
+    #ic(label_host)
 
-    # only for satellites
     if show_history:
-        if rank[-1] != 0:
-            for ax, m in zip(axes, [Mt,Mt/Mo]):
-                if icent is not None and not np.isnan(icent):
-                    ax.plot(t[icent], m[icent], 'ws', mec=color, ms=12, mew=1.5,
-                            label=r'$t_\mathrm{cen}$')
-                if isat is not None and not np.isnan(icent):
-                    ax.plot(t[isat], m[isat], 'wo', mec=color, ms=12, mew=1.5,
-                            label=r'$t_\mathrm{sat}$')
-                else:
-                    ax.plot([], [], 'wo', mec=color, ms=12, mew=1.5,
-                            label=r'$t_\mathrm{sat}$')
-                ax.plot(t[iinf], m[iinf], 'o', ms=7, color=color, mew=1.5,
-                        label=r'$t_\mathrm{infall}$')
-            if label_history:
-                lax = axes[['left', 'right'].index(label_history)]
-                lax.legend(loc='lower right', bbox_to_anchor=(0.97,0.08))
-        # the main host halo - just plot when looking at the central
-        # subhalo
-        if rank[-1] == 0:
-            #host_kwargs = dict(dashes=(6,6), color='k', lw=1.5)
-            #axes[0].plot(th, Mh, **host_kwargs)
-            #axes[1].plot(th, Mh/Mh[-1], **host_kwargs)
-            # some information on the host halo
-            if label_host:
-                text = sim.masslabel(index=massindex, latex=True)
-                text = rf'log ${text}^\mathrm{{host}} = {np.log10(Mh[-1]):.2f}$' \
-                       f'\nHost ID = {hostid}'
-                txt = axes[0].text(
-                    0.04, 0.97, text, ha='left', va='top', fontsize=16,
-                    transform=axes[0].transAxes)
-                txt.set_bbox(dict(facecolor='w', edgecolor='w', alpha=0.5))
+        for ax, m in zip(axes, [Mt,Mt/Mo]):
+            if icent is not None:
+                ax.plot(t[icent], m[icent], 'ws', mec=color, ms=12, mew=1.5,
+                        label=r'$t_\mathrm{cen}$')
+            if isat is not None:
+                ax.plot(t[isat], m[isat], 'wo', mec=color, ms=12, mew=1.5,
+                        label=r'$t_\mathrm{sat}$')
+            else:
+                ax.plot([], [], 'wo', mec=color, ms=12, mew=1.5,
+                        label=r'$t_\mathrm{sat}$')
+            ax.plot(t[iinf], m[iinf], 'o', ms=7, color=color, mew=1.5,
+                    label=r'$t_\mathrm{infall}$')
+        if label_history:
+            lax = axes[['left', 'right'].index(label_history)]
+            lax.legend(loc='lower right', bbox_to_anchor=(0.97,0.08))
+    # the main host halo - just plot when looking at the central
+    # subhalo
+    if rank[-1] == 0 and show_history:
+        #host_kwargs = dict(dashes=(6,6), color='k', lw=1.5)
+        #axes[0].plot(th, Mh, **host_kwargs)
+        #axes[1].plot(th, Mh/Mh[-1], **host_kwargs)
+        # some information on the host halo
+        if label_host:
+            ic()
+            text = r'log ${1}^\mathrm{{host}} = {0:.2f}$'.format(
+                np.log10(Mh[-1]),
+                sim.masslabel(index=massindex, latex=True))
+            text += '\nHost ID = {0}'.format(hostid)
+            txt = axes[0].text(
+                0.04, 0.97, text, ha='left', va='top', fontsize=16,
+                transform=axes[0].transAxes)
+            txt.set_bbox(dict(facecolor='w', edgecolor='w', alpha=0.5))
     return
 
 
@@ -539,7 +577,7 @@ def read_tracks(args, sim, reader, cat, indices, nsub=10, sort_mass=True,
         for out in results:
             out = out.get()
             tracks[out[-1]] = out[:-1]
-    print(f'Read all tracks in {(time()-to)/60:.2f} minutes')
+    print('Read all tracks in {0:.2f} minutes'.format((time()-to)/60))
     #read_track output (last value not recorded):
     #return trackid, t, Mt, rank, depth, icent, isat, iinf, \
         #hostid, th, Mh, track_idx
@@ -555,32 +593,35 @@ def read_tracks(args, sim, reader, cat, indices, nsub=10, sort_mass=True,
             jsort = np.argsort(-Mtot_now[mask])
             for j, k in enumerate(nh[mask]):
                 tracks[k] = aux[jsort[j]]
-    print(f'Sorted tracks in {time()-to:.2f} s')
+    print('Sorted tracks in {0:.2f} s'.format(time()-to))
     return tracks
 
 
 def read_track(sim, reader, cat, track_idx, load_history=True,
                massindex=None, verbose=True):
     #ic()
-    is_cent = (cat['Rank'][track_idx] == 0)
     trackid = cat['TrackId'][track_idx]
     ti = time()
     track = Track(trackid, sim)
+    #ic(track)
+    #sys.exit()
     if verbose:
-        print(f'Loaded track #{track_idx} (TrackID {trackid})' \
-              f' in {time()-ti:.1f} s')
-    if load_history and not is_cent:
-        icent = int(cat['history:cent:isnap'][track_idx])
-        isat = int(cat['history:sat:isnap'][track_idx])
-        iinf = int(cat['history:first_infall:isnap'][track_idx])
-        ic(icent)
-        ic(isat)
-        ic(iinf)
+        print('Loaded track #{2} (TrackID {0}) in {1:.2f} minutes'.format(
+            trackid, (time()-ti)/60, track_idx))
+    # this is what takes up all the time, especially the infall
+    if load_history:
+        # las moment it was a central
+        icent = track.last_central_snapshot_index
+        # first time it was a satellite
+        isat = track.first_satellite_snapshot_index
+        # infall
+        iinf = track.infall('index')
     else:
         icent = isat = iinf = track._none_value
     host = track.host(-1, return_value='track')
     host = Track(host, sim)
     ic(track)
+    ic(track.lookback_time)
     t = track.lookback_time()
     th = host.lookback_time()
     #ic(massindex)
@@ -609,14 +650,17 @@ def read_track(sim, reader, cat, track_idx, load_history=True,
 
 def print_halo(halo, mmin=10):
     print()
-    print(f"HostHaloId {halo['TrackId']}\n{halo['Mbound']}" \
-          f" {(halo['Rank'] == 0).sum()}\nhas a total mass" \
-          f" {1e10*halo['Mbound'][halo['Rank'] == 0][0]:.2e} Msun/h" \
-          f"\nand {halo['Rank'].size} subhalos (including the central), with" \
-          f"\n    {(halo['Nbound'] == 1).sum()} disrupted subhalos")
+    print('HostHaloId {0}'.format(halo['TrackId']))
+    print(halo['Mbound'], (halo['Rank'] == 0).sum())
+    print('has a total mass {0:.2e} Msun/h'.format(
+        1e10*halo['Mbound'][halo['Rank'] == 0][0]))
+    print('and {0} subhalos (including the central),'.format(
+        halo['Rank'].size))
+    print('with')
+    print('    {0} disrupted subhalos'.format((halo['Nbound'] == 1).sum()))
     for mmin in np.logspace(-2, 4, 7):
-        print(f"    {(halo['Mbound'] > mmin).sum()}" \
-              f" having Mbound > {1e10*mmin:.2e} Msun/h")
+        print('    {0} having Mbound > {1:.2e} Msun/h'.format(
+            (halo['Mbound'] > mmin).sum(), 1e10*mmin))
     return
 
 
@@ -631,10 +675,11 @@ def save_tracks(track_data, output, sim=None, massindex=None, suffix=None):
     if output[-5:] == '.fits':
         output = output[:-5]
     if suffix is not None:
-        output += f'_{suffix}'
+        output += '_{0}'.format(suffix)
     if sim is not None:
         if massindex is not None:
-            output += f'_{sim.masslabel(index=massindex, latex=False)}'
+            output += '_{0}'.format(
+                sim.masslabel(index=massindex, latex=False))
         output = os.path.join(sim.data_path, output)
     output += '.fits'
     if not hasattr(track_data[0], '__iter__'):
@@ -646,7 +691,7 @@ def save_tracks(track_data, output, sim=None, massindex=None, suffix=None):
     track_data = [[t[i] for t in track_data] for i in range(nval)]
     # should record all mass types - all of them are part of
     # track_data so just need to separate them here. Right?
-    farr = f'{nsnap}E'
+    farr = '{0}E'.format(nsnap)
     names = ['TrackId', 't_lookback', 'Mt', 'Rank', 'Depth', 'i_cen',
              'i_sat', 'i_infall', 'TrackId_host', 't_lookback_host',
              'Mt_host']
@@ -675,9 +720,9 @@ def save_tracks(track_data, output, sim=None, massindex=None, suffix=None):
     return
 
 
-def summarize_array(arr, name, **kwargs):
-    print(f'{name}: (min,max)=({arr.min()},{arr.max()}); size={arr.size}',
-          **kwargs)
+def summarize_array(array, name, **kwargs):
+    print('{0}: (min,max)=({1},{2}); size={3}'.format(
+        name, array.min(), array.max(), array.size), **kwargs)
     return
 
 
@@ -705,8 +750,8 @@ def setup_track_axes(axes, sim, lookback_cosmo=False, zmarks=[0.1,0.5,1,2,5],
         xlabel = 'Redshift'
         xlim = (16, -0.5)
         tickspace = 5
-    ylabel = [rf'${masslabel}({x})$',
-              rf'${masslabel}({x})/{masslabel}$$_{{,0}}$']
+    ylabel = [r'${1}({0})$'.format(x, masslabel),
+              r'${1}({0})/{1}$$_{{,0}}$'.format(x, masslabel)]
     axes[0].set_ylabel(ylabel[0])
     axes[1].set_ylabel(ylabel[1])
     for ax in axes:
@@ -724,7 +769,7 @@ def setup_track_axes(axes, sim, lookback_cosmo=False, zmarks=[0.1,0.5,1,2,5],
                 ax.axvline(t, dashes=(4,4), lw=1, color=textcolor)
                 # in order to do this, need to know plot limits...
                 ax.annotate(
-                    f'z={z:.1f}', xy=(t-0.1,ytext), ha='left',
+                    'z={0:.1f}'.format(z), xy=(t-0.1,ytext), ha='left',
                     va='center', fontsize=12, color=textcolor)
     return
 
