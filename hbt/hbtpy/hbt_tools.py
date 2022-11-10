@@ -92,7 +92,7 @@ def read_args():
     add('--debug', dest='debug', action='store_true')
     add('--ncores', dest='ncores', default=1, type=int)
     add('--test', action='store_true')
-    add('simulation', default='LR')
+    add('simulation', default='L100')
     return parser
 
 
