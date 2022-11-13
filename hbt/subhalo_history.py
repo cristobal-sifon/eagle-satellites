@@ -145,7 +145,7 @@ def demographics(satellites):
     tx = (tbins[1:]+tbins[:-1]) / 2
     hist = {'times': tx}
     for event in ('birth', 'cent', 'sat', 'first_infall', 'last_infall',
-                  'max_Mbound', 'max_Mstar'):
+                  'max_Mbound', 'max_Mstar', 'max_Mgas'):
         print(event)
         h = f'history:{event}'
         good = (satellites[f'{h}:time'] > -1) 

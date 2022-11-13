@@ -1,23 +1,13 @@
-from astropy.io import ascii, fits
-from astropy.units import Quantity
 import cmasher as cmr
-from glob import glob
 from icecream import ic
-from itertools import count
 from matplotlib import (
     cm, colors as mplcolors, pyplot as plt, ticker, rcParams)
-from matplotlib.colors import LogNorm
-from matplotlib.ticker import LogFormatterMathtext
-from mpl_toolkits.axes_grid1 import ImageGrid
 import multiprocessing as mp
 import numpy as np
-import os
-from scipy.optimize import curve_fit
 from scipy.stats import binned_statistic_2d, pearsonr
-import sys
-from time import sleep, time
+from time import time
 
-from plottery.plotutils import colorscale, savefig, update_rcParams
+from plottery.plotutils import update_rcParams
 update_rcParams()
 rcParams['text.latex.preamble'] += r',\usepackage{color}'
 
@@ -25,10 +15,9 @@ from HBTReader import HBTReader
 
 # local
 from hbtpy import hbt_tools
-from hbtpy.helpers.plot_definitions import axlabel, binlabel
+from hbtpy.helpers.plot_definitions import binlabel
 from hbtpy.simulation import Simulation
-from hbtpy.subhalo import Subhalos#, Track
-from hbtpy.track import Track
+from hbtpy.subhalo import Subhalos
 
 adjust_kwargs = dict(
     left=0.10, right=0.95, bottom=0.05, top=0.98, wspace=0.3, hspace=0.1)
@@ -99,10 +88,10 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
                vmin_upper=None, vmax_upper=None, stat_upper=np.nanmean):
     #cmap_lower = define_cmap(c_lower, cmap_lower, cmap_lower_rng)
     events = ('cent', 'sat', 'first_infall', 'last_infall',
-              'max_Mbound', 'max_Mstar')
+              'max_Mbound', 'max_Mstar', 'max_Mgas')
     nc = len(events)
     fig, axes = plt.subplots(
-        nc, nc, figsize=(2.5*nc,2*nc), constrained_layout=True)
+        nc, nc, figsize=(2*nc,2.4*nc), constrained_layout=True)
     tx = np.arange(0, 13.6, 0.5)
     extent = (tx[0], tx[-1], tx[0], tx[-1])
     xlim = extent[:2]
@@ -112,12 +101,25 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
     for i, ev_i in enumerate(events):
         xcol = f'history:{ev_i}:time'
         x = satellites[xcol] if use_lookback else tmax - satellites[xcol]
+        m = ['Mbound', 'Mstar', 'Mgas']
+        m += [f'history:{ev}:{mi}' for mi in m for ev in ('birth',)+events]
+        ic('---')
+        ic(xcol)
+        for mi in m:
+            r = pearsonr(x, satellites[mi])[0]
+            #if abs(r) > 0.5:
+            ic(mi, r)
+        ic('---')
         for j, ev_j in enumerate(events):
             ax = axes[i,j]
             format_ax(ax, i, j, xlim, nc)
             ycol = f'history:{ev_j}:time'
             y = satellites[ycol] if use_lookback else tmax - satellites[ycol]
-            if j < i:
+            # diagonal
+            if j == i:
+                plot_times_hist(x, tx, ax, iname, xlim)
+            # lower triangle
+            elif j < i:
                 if c_lower is None:
                     ax.axis('off')
                 else:
@@ -125,9 +127,6 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
                         satellites, x, y, tx, ax, i, j, iname, extent, c_lower,
                         cmap=cmap_lower, cmap_rng=cmap_lower_rng,
                         vmin=vmin_lower, vmax=vmax_lower, stat=stat_lower)
-            # diagonal
-            elif j == i:
-                plot_times_hist(x, tx, ax, iname, xlim)
             # upper triangle
             elif j > i:
                 if c_upper is None:
@@ -143,15 +142,13 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
                 ax.set(ylim=xlim)
                 ax.tick_params(which='both', length=3)
             iname += 1
-    # for the colorbars we're assuming that correlations would
-    # only happen in the lower-left, for now
-    # lower-left off-diagonal colorbar
+    # colorbars
     show_colorbar(
         axes, im_lower, c_lower, cmap_lower, cmap_lower_rng, stat_lower,
-        location='left')
+        location='bottom')
     show_colorbar(
         axes, im_upper, c_upper, cmap_upper, cmap_upper_rng, stat_upper,
-        location='right')
+        location='top')
     # save!
     c_lower = hbt_tools.format_colname(c_lower)
     c_upper = hbt_tools.format_colname(c_upper)
@@ -164,7 +161,8 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
 def format_ax(ax, i, j, xlim, ncols, fs=18, labelpad=5):
     axlabels = ['cent', 'sat', 'infall', 'acc',
                 '$m_\mathrm{sub}^\mathrm{max}$',
-                '$m_\mathrm{\u2605}^\mathrm{max}$']
+                '$m_\mathrm{\u2605}^\mathrm{max}$',
+                '$m_\mathrm{gas}^\mathrm{max}$']
     axlabels = [f'{i} (Gyr)' for i in axlabels]
     kwargs = {'fontsize': fs, 'labelpad': labelpad}
     # diagonal
@@ -282,7 +280,7 @@ def show_colorbar(axes, im, c, cmap, cmap_rng, stat, location='left',
     if c == 'corr':
         cmap = cmr.get_sub_cmap(cmap, *cmap_rng)
         cbar = cm.ScalarMappable(
-            norm=mplcolors.Normalize(vmin=0.2, vmax=1), cmap=cmap)
+            norm=mplcolors.Normalize(vmin=0.2, vmax=0.9), cmap=cmap)
         cbar = plt.colorbar(
             cbar, ax=axes, location=location, fraction=0.1, aspect=30,
             label='Correlation')
