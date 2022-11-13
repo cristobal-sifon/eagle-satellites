@@ -64,47 +64,57 @@ def main():
         load_history=False, logM200Mean_min=13, logMstar_min=9)
     print(np.sort(satellites.colnames))
 
-    plot_times(
+    if args.ncores > 1:
+        pool = mp.Pool()
+        run = pool.apply_async
+    else:
+        run = lambda f: f
+    run(plot_times(
         satellites, c_lower='corr', c_upper='Mstar',
-        vmin_upper=9.3, vmax_upper=10.7)
+        cmap_lower='cmr.ember_r', cmap_lower_rng=(0.35, 1),
+        cmap_upper='cmr.toxic_r',
+        vmin_upper=9.3, vmax_upper=11))
+    run(plot_times(
+        satellites, c_lower='Mbound', c_upper='history:first_infall:Mbound',
+        cmap_lower='cmr.ember_r', cmap_upper='cmr.cosmic_r'))
+    run(plot_times(
+        satellites, c_lower='history:first_infall:Mbound',
+        c_upper='history:first_infall:Mbound/history:first_infall:Mstar',
+        cmap_lower='cmr.ember_r', cmap_upper='cmr.cosmic_r',
+        vmin_lower=10.5, vmax_lower=13, cmap_lower_rng=(0,0.8),
+        cmap_upper_rng=(0,0.8)))
+    run(plot_times(
+        satellites, c_lower='history:first_infall:Mstar',
+        c_upper='M200Mean'))
+    if args.ncores > 1:
+        pool.close()
+        pool.join()
     return
 
 
 def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
-               cmap_lower='cmr.amber_r', cmap_lower_rng=(0,0.8),
-               cmap_upper='cmr.toxic_r', cmap_upper_rng=(0,1),
+               cmap_lower='cmr.ember_r', cmap_lower_rng=(0,1),
+               cmap_upper='cmr.cosmic_r', cmap_upper_rng=(0,1),
                vmin_lower=None, vmax_lower=None, stat_lower=np.nanmean,
                vmin_upper=None, vmax_upper=None, stat_upper=np.nanmean):
     #cmap_lower = define_cmap(c_lower, cmap_lower, cmap_lower_rng)
     events = ('cent', 'sat', 'first_infall', 'last_infall',
               'max_Mbound', 'max_Mstar')
-    axlabels = ['cent', 'sat', 'infall', 'acc',
-                '$m_\mathrm{sub}^\mathrm{max}$',
-                '$m_\mathrm{\u2605}^\mathrm{max}$']
-    axlabels = [f'{i} (Gyr)' for i in axlabels]
     nc = len(events)
     fig, axes = plt.subplots(
-        nc, nc, figsize=(2*nc,2.3*nc), constrained_layout=True)
+        nc, nc, figsize=(2.5*nc,2*nc), constrained_layout=True)
     tx = np.arange(0, 13.6, 0.5)
     extent = (tx[0], tx[-1], tx[0], tx[-1])
     xlim = extent[:2]
     # to convert lookback times into Universe ages
     tmax = 13.7
-    iname = 0
+    iname = 1
     for i, ev_i in enumerate(events):
         xcol = f'history:{ev_i}:time'
         x = satellites[xcol] if use_lookback else tmax - satellites[xcol]
         for j, ev_j in enumerate(events):
             ax = axes[i,j]
-            if j == 0:
-                ax.set_ylabel(axlabels[i], fontsize=18)
-            else:
-                ax.set(yticklabels=[])
-            if i == nc - 1:
-                ax.set_xlabel(axlabels[j], fontsize=18)
-            else:
-                ax.set(xticklabels=[])
-            compare_times_ticks(ax, diagonal=(i == j))
+            format_ax(ax, i, j, xlim, nc)
             ycol = f'history:{ev_j}:time'
             y = satellites[ycol] if use_lookback else tmax - satellites[ycol]
             if j < i:
@@ -117,12 +127,7 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
                         vmin=vmin_lower, vmax=vmax_lower, stat=stat_lower)
             # diagonal
             elif j == i:
-                plot_times_hist(x, tx, ax, i, iname, xlim)
-                if i < nc - 1:
-                    ax.set(xticks=[])
-                else:
-                    xcol = f'history:{events[i]}:time'
-                    ax.set_xlabel(axlabels[i], fontsize=18)
+                plot_times_hist(x, tx, ax, iname, xlim)
             # upper triangle
             elif j > i:
                 if c_upper is None:
@@ -142,19 +147,62 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
     # only happen in the lower-left, for now
     # lower-left off-diagonal colorbar
     show_colorbar(
-        axes, im_lower, c_lower, cmap_lower, stat_lower,
-        orientation='horizontal', location='bottom')
+        axes, im_lower, c_lower, cmap_lower, cmap_lower_rng, stat_lower,
+        location='left')
     show_colorbar(
-        axes, im_upper, c_upper, cmap_upper, stat_upper,
-        orientation='horizontal', location='top')
+        axes, im_upper, c_upper, cmap_upper, cmap_upper_rng, stat_upper,
+        location='right')
     # save!
-    output = f'correlations/compare_times_{c_lower}_{c_upper}'
+    c_lower = hbt_tools.format_colname(c_lower)
+    c_upper = hbt_tools.format_colname(c_upper)
+    output = f'correlations/comparetimes__{c_lower}__{c_upper}'
     hbt_tools.save_plot(
         fig, output, satellites.sim, tight=False, h_pad=0.2)
     return
 
 
-def compare_times_ticks(ax, diagonal=False):
+def format_ax(ax, i, j, xlim, ncols, fs=18, labelpad=5):
+    axlabels = ['cent', 'sat', 'infall', 'acc',
+                '$m_\mathrm{sub}^\mathrm{max}$',
+                '$m_\mathrm{\u2605}^\mathrm{max}$']
+    axlabels = [f'{i} (Gyr)' for i in axlabels]
+    kwargs = {'fontsize': fs, 'labelpad': labelpad}
+    # diagonal
+    if i == j and i < ncols - 1:
+        ax.set(xticks=[])
+    # else:
+    #     xcol = f'history:{events[i]}:time'
+    #     ax.set_xlabel(axlabels[i], **kwargs)
+    # left
+    if j == 0 and i > 0:
+        ax.set_ylabel(axlabels[i], **kwargs)
+    else:
+        ax.set(yticklabels=[])
+    # right
+    if j == ncols - 1 and i < ncols - 1:
+        rax = ax.twinx()
+        rax.plot([], [])
+        rax.set(ylim=xlim)
+        rax.set_ylabel(axlabels[i], **kwargs)
+        format_ticks(rax)
+    # bottom
+    if i == ncols - 1 and j < ncols - 1:
+        ax.set_xlabel(axlabels[j], **kwargs)
+    else:
+        ax.set(xticklabels=[])
+    # top
+    if i == 0 and j > 0:
+        tax = ax.twiny()
+        tax.plot([], [])
+        tax.set(xlim=xlim)
+        kwargs['labelpad'] += 2
+        tax.set_xlabel(axlabels[j], **kwargs)
+        format_ticks(tax)
+    format_ticks(ax, (i == j))
+    return
+
+
+def format_ticks(ax, diagonal=False):
     ax.xaxis.set_minor_locator(ticker.NullLocator())
     ax.yaxis.set_minor_locator(ticker.NullLocator())
     ax.xaxis.set_major_locator(ticker.FixedLocator([5,10]))
@@ -165,63 +213,74 @@ def compare_times_ticks(ax, diagonal=False):
     return
 
 
-def define_cmap(c, cmap, cmap_rng):
-    if c == 'corr':
-        return cmr.get_sub_cmap(cmap_lower, 0, 0.8)
-
-
 def plot_times_2d(satellites, x, y, bins, ax, i, j, axname, extent,
                   c, cmap, cmap_rng=(0,1),
                   stat=np.nanmean, vmin=None, vmax=None, annotate_r=True):
+    is_lower = j < i
     # these are for correlations and for annotations
     r, pr = pearsonr(x, y)
     h2d = np.histogram2d(x, y, bins=bins)[0]
+    ntot = x.size
     if c == 'corr':
         cmap = cmr.get_sub_cmap(cmap, *cmap_rng)
         color = cmr.take_cmap_colors(
             cmap, N=1, cmap_range=(r,r))[0]
         cmap_ij = mplcolors.LinearSegmentedColormap.from_list(
             'cmap_ij', [[1, 1, 1], color])
+        # making vmin slightly <0 so that the colormaps don't include white
+        # but those equal to zero should be nan so empty space is still white
+        #h2d[h2d == 0] = np.nan
         im = ax.imshow(
             h2d, extent=extent, cmap=cmap_ij,
-            origin='lower', aspect='auto', vmin=0, vmax=0.03*h2d.sum())
+            origin='lower', aspect='auto', vmin=0, vmax=0.025*ntot)
+        h2d[np.isnan(h2d)] = 0
     else:
         cmap = cmr.get_sub_cmap(cmap, *cmap_rng)
         m2d = binned_statistic_2d(
             x, y, satellites[c], stat, bins=bins)[0]
+        #if not is_lower:
+            #m2d = m2d.T
         im = ax.imshow(
-            np.log10(m2d.T), origin='lower', aspect='auto', vmin=vmin,
+            np.log10(m2d), origin='lower', aspect='auto', vmin=vmin,
             vmax=vmax, cmap=cmap, extent=extent)
     # annotate correlation coefficient
     if annotate_r:
-        if np.triu(h2d.T, 2).sum()/h2d.sum() < 0.25:
-            label = f'{r:.2f}\n({axname})'
-            xy = (0.05, 0.95)
-            ha, va = 'left', 'top'
+        # annot_top = (f'{r:.2f}\n({axname})', (0.05, 0.95), 'left', 'top')
+        # annot_bottom = (f'({axname})\n{r:.2f}', (0.95, 0.05), 'right', 'bottom')
+        annot_top = (f'{r:.2f}', (0.03, 0.97), 'left', 'top')
+        annot_bottom = (f'{r:.2f}', (0.97, 0.03), 'right', 'bottom')
+        ic(axname, is_lower, r, np.triu(h2d, 2).sum()/h2d.sum())
+        if np.triu(h2d.T, 2).sum()/h2d.sum() < 0.2:
+            annot = annot_top# if is_lower else annot_bottom
+            #annot = annot_top
         else:
-            label = f'({axname})\n{r:.2f}'
-            xy = (0.95, 0.05)
-            ha, va = 'right', 'bottom'
+            annot = annot_bottom# if is_lower else annot_top
+            #annot = annot_top
+        label, xy, ha, va = annot
         ax.annotate(
             label, xy=xy, xycoords='axes fraction',
             ha=ha, va=va, fontsize=14)
     return im
 
 
-def plot_times_hist(x, tx, ax, i, iname, xlim):
-    ax.annotate(
-        f'({iname})', xy=(0.05,0.95), xycoords='axes fraction',
-        ha='left', va='top', fontsize=14)
-    ax.hist(x, tx, histtype='stepfilled', color='C9')
+def plot_times_hist(x, tx, ax, axname, xlim):
+    # ax.annotate(
+    #     f'({iname})', xy=(0.05,0.95), xycoords='axes fraction',
+    #     ha='left', va='top', fontsize=14)
+    h = ax.hist(x, tx, histtype='stepfilled', color='C9')[0]
+    ic(axname, tx, h, h/h.sum())
     ax.axvline(np.median(x), color='0.2')
     ax.tick_params(which='both', length=5)
     ax.set(yticks=[], xlim=xlim)
     return
 
 
-def show_colorbar(axes, im, c, cmap, stat, orientation='vertical',
-                  location='left', logstat=True):
+def show_colorbar(axes, im, c, cmap, cmap_rng, stat, location='left',
+                  logstat=True):
+    assert location in ('left', 'right', 'bottom', 'top')
+    orientation = 'vertical' if location in ('left', 'right') else 'horizontal'
     if c == 'corr':
+        cmap = cmr.get_sub_cmap(cmap, *cmap_rng)
         cbar = cm.ScalarMappable(
             norm=mplcolors.Normalize(vmin=0.2, vmax=1), cmap=cmap)
         cbar = plt.colorbar(
@@ -236,9 +295,15 @@ def show_colorbar(axes, im, c, cmap, stat, orientation='vertical',
             statlabel = 'median'
         if logstat:
             statlabel = f'log {statlabel}'
-        plt.colorbar(
+        if '/' in c:
+            c = c.split('/')
+            label = f'{binlabel[c[0]]}/{binlabel[c[1]]}'
+        else:
+            label = binlabel[c]
+        cbar = plt.colorbar(
             im, ax=axes, location=location, fraction=0.1, aspect=30,
-            label=f'{statlabel}(${binlabel[c]}$)')
+            label=f'{statlabel}(${label}$)')
+        #cbar.
     return
 
 
