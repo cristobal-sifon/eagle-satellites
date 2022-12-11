@@ -4,10 +4,12 @@ from matplotlib import (
     cm, colors as mplcolors, pyplot as plt, ticker, rcParams)
 import multiprocessing as mp
 import numpy as np
+import os
+from scipy.optimize import curve_fit
 from scipy.stats import binned_statistic_2d, pearsonr
 from time import time
 
-from plottery.plotutils import update_rcParams
+from plottery.plotutils import savefig, update_rcParams
 update_rcParams()
 rcParams['text.latex.preamble'] += r',\usepackage{color}'
 
@@ -53,6 +55,9 @@ def main():
         load_history=False, logM200Mean_min=13, logMstar_min=9)
     print(np.sort(satellites.colnames))
 
+    review_subsamples(args, satellites)
+    return
+
     if args.ncores > 1:
         pool = mp.Pool()
         run = pool.apply_async
@@ -75,20 +80,103 @@ def main():
     run(plot_times(
         satellites, c_lower='history:first_infall:Mstar',
         c_upper='M200Mean'))
+    run(plot_times(
+        satellites, c_lower='history:sat:Mstar', c_upper='Mstar',
+        cmap_lower='cmr.toxic_r', cmap_upper='cmr.toxic_r',
+        vmin_lower=9.5, vmax_lower=11.5, vmin_upper=9.3, vmax_upper=11))
     if args.ncores > 1:
         pool.close()
         pool.join()
     return
 
 
+def review_subsamples(args, s):
+    plot_path = os.path.join(s.sim.plot_path, 'compare_times')
+    tlb = s.sim.t_lookback.value
+    print('\n*** Special subsamples ***\n')
+    nsat = s.size
+    ic(nsat)
+    print('** max mstar **')
+    tmstar = s['history:max_Mstar:time']
+    tlate = tlb[-2]
+    ic(s.sim.t_lookback[-20:])
+    hmstar, hmstar_bins = np.histogram(tmstar, tlb[-30:][::-1])
+    ic(hmstar_bins)
+    ic(hmstar)
+    ic(hmstar[0]/nsat)
+    late_mstar = (tmstar < tlate)
+    ic(late_mstar.sum())
+    ic(np.median(tmstar[~late_mstar] \
+        - s['history:max_Mbound:time'][~late_mstar]))
+    for event in ('cent', 'sat', 'first_infall', 'last_infall',
+                  'max_Mbound', 'max_Mgas'):
+        h = f'history:{event}'
+        ic(h, np.median(s[f'{h}:time'][late_mstar]),
+           np.median(s[f'{h}:time'][~late_mstar]))
+    for m in ('Mbound', 'Mstar', 'M200Mean'):
+        ic(m, np.log10(np.median(s[m][late_mstar])),
+           np.log10(np.median(s[m][~late_mstar])))
+    fit, cov = curve_fit(
+        lambda x, a, b: a+b*x, s['history:max_Mbound:time'][~late_mstar],
+        s['history:max_Mstar:time'][~late_mstar], p0=(5.1,0.3))
+    ic(fit, np.diag(cov)**0.5)
+
+    print('** t_sat **')
+    tsat = s['history:sat:time']
+    ic(tlb[:20])
+    htsat, htsat_bins = np.histogram(tsat, tlb[::-1])
+    # fig, ax = plt.subplots(constrained_layout=True)
+    # ax.plot(htsat_bins[1:], np.cumsum(htsat)/nsat)
+    # ax.set(xlabel='$t_\mathrm{sat}^\mathrm{lookback}$ (Gyr)',
+    #        ylabel='$N(<t_\mathrm{sat}^\mathrm{lookback})$')
+    # output = os.path.join(plot_path, 'tsat_cdf.png')
+    # savefig(output, fig=fig, tight=False)
+    # ic(htsat_bins)
+    # ic(htsat)
+    #ic(np.cumsum(htsat[::-1])/nsat)
+    early_tsat = (tsat > 12)
+    nearly = early_tsat.sum()
+    ic(nearly, nearly/nsat)
+    # fig, ax = plt.subplots(figsize=(5,4))
+    # ax.hist(s['history'])
+    for event in ('cent', 'sat', 'first_infall', 'last_infall',
+                  'max_Mbound', 'max_Mgas', 'max_Mstar'):
+        h = f'history:{event}'
+        ic(h, np.median(s[f'{h}:time'][early_tsat]),
+           np.median(s[f'{h}:time'][~early_tsat]))
+    for m in ('Mbound', 'Mstar', 'M200Mean'):
+        ic(m, np.log10(np.median(s[m][early_tsat])),
+           np.log10(np.median(s[m][~early_tsat])))
+
+    print('** t_acc **')
+    tacc = s['history:last_infall:time']
+    htacc, htacc_bins = np.histogram(tacc, tlb[-30:][::-1])
+    ic(htacc_bins)
+    ic(htacc)
+    j = np.argmax(htacc)
+    j1 = np.s_[j+1:j+2]
+    j2 = np.s_[j+2:j+3]
+    spike1 = (tacc >= htacc_bins[j1][0]) & (tacc <= htacc_bins[j1][-1])
+    ic(htacc_bins[j1], htacc[j1])
+    ic(spike1.sum(), spike1.sum()/nsat)
+    ic(np.unique(s['HostHaloId'][spike1], return_counts=True))
+    ic((s['HostHaloId'] == 1).sum())
+    spike2 = (tacc >= htacc_bins[j2][0]) & (tacc <= htacc_bins[j2][-1])
+    ic(htacc_bins[j2], htacc[j2])
+    ic(spike2.sum(), spike2.sum()/nsat)
+    ic(np.unique(s['HostHaloId'][spike2], return_counts=True))
+    ic((s['HostHaloId'] == 5).sum())
+    return
+
+
 def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
                cmap_lower='cmr.ember_r', cmap_lower_rng=(0,1),
-               cmap_upper='cmr.cosmic_r', cmap_upper_rng=(0,1),
-               vmin_lower=None, vmax_lower=None, stat_lower=np.nanmean,
-               vmin_upper=None, vmax_upper=None, stat_upper=np.nanmean):
+               cmap_upper='cmr.cosmic_r', cmap_upper_rng=(0,1), vmin_lower=None,
+               vmax_lower=None, stat_lower=np.nanmean, vmin_upper=None,
+               vmax_upper=None, stat_upper=np.nanmean):
     #cmap_lower = define_cmap(c_lower, cmap_lower, cmap_lower_rng)
-    events = ('cent', 'sat', 'first_infall', 'last_infall',
-              'max_Mbound', 'max_Mstar', 'max_Mgas')
+    events = ('cent', 'sat', 'first_infall', 'last_infall', 'max_Mbound',
+              'max_Mstar', 'max_Mgas')
     nc = len(events)
     fig, axes = plt.subplots(
         nc, nc, figsize=(2*nc,2.4*nc), constrained_layout=True)
@@ -101,7 +189,7 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
     for i, ev_i in enumerate(events):
         xcol = f'history:{ev_i}:time'
         x = satellites[xcol] if use_lookback else tmax - satellites[xcol]
-        m = ['Mbound', 'Mstar', 'Mgas']
+        m = ['Mbound', 'Mstar', 'Mgas', 'M200Mean']
         m += [f'history:{ev}:{mi}' for mi in m for ev in ('birth',)+events]
         ic('---')
         ic(xcol)
