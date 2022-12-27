@@ -6,7 +6,7 @@ import multiprocessing as mp
 import numpy as np
 import os
 from scipy.optimize import curve_fit
-from scipy.stats import binned_statistic_2d, pearsonr
+from scipy.stats import binned_statistic, binned_statistic_2d, pearsonr
 from time import time
 
 from plottery.plotutils import savefig, update_rcParams
@@ -96,6 +96,13 @@ def review_subsamples(args, s):
     print('\n*** Special subsamples ***\n')
     nsat = s.size
     ic(nsat)
+    review_tmstar(args, s, tlb, nsat, plot_path)
+    review_tsat(args, s, tlb, nsat, plot_path)
+    review_tacc(args, s, tlb, nsat, plot_path)
+    return
+
+
+def review_tmstar(args, s, tlb, nsat, plot_path):
     print('** max mstar **')
     tmstar = s['history:max_Mstar:time']
     tlate = tlb[-2]
@@ -106,13 +113,25 @@ def review_subsamples(args, s):
     ic(hmstar[0]/nsat)
     late_mstar = (tmstar < tlate)
     ic(late_mstar.sum())
-    ic(np.median(tmstar[~late_mstar] \
-        - s['history:max_Mbound:time'][~late_mstar]))
+    diffbins = np.arange(-13.5, 13.6, 0.5)
+    ic(diffbins)
     for event in ('cent', 'sat', 'first_infall', 'last_infall',
                   'max_Mbound', 'max_Mgas'):
         h = f'history:{event}'
-        ic(h, np.median(s[f'{h}:time'][late_mstar]),
-           np.median(s[f'{h}:time'][~late_mstar]))
+        ti = s[f'{h}:time']
+        ic(h, np.median(ti[late_mstar]),
+           np.median(ti[~late_mstar]))
+        ic((ti > tmstar).sum(), (ti > tmstar).sum()/nsat)
+        ic(np.median(tmstar[late_mstar] - ti[late_mstar]))
+        ic(np.median(tmstar[~late_mstar] - ti[~late_mstar]))
+        ic(binned_statistic(
+            tmstar, ti-tmstar, np.nanmedian, diffbins)[0])
+        ic(binned_statistic(
+            tmstar[late_mstar], (ti-tmstar)[late_mstar],
+            np.nanmedian, diffbins)[0])
+        ic(binned_statistic(
+            tmstar[~late_mstar], (ti-tmstar)[~late_mstar],
+            np.nanmedian, diffbins)[0])
     for m in ('Mbound', 'Mstar', 'M200Mean'):
         ic(m, np.log10(np.median(s[m][late_mstar])),
            np.log10(np.median(s[m][~late_mstar])))
@@ -120,7 +139,10 @@ def review_subsamples(args, s):
         lambda x, a, b: a+b*x, s['history:max_Mbound:time'][~late_mstar],
         s['history:max_Mstar:time'][~late_mstar], p0=(5.1,0.3))
     ic(fit, np.diag(cov)**0.5)
+    return
 
+
+def review_tsat(args, s, tlb, nsat, plot_path):
     print('** t_sat **')
     tsat = s['history:sat:time']
     ic(tlb[:20])
@@ -148,6 +170,8 @@ def review_subsamples(args, s):
         ic(m, np.log10(np.median(s[m][early_tsat])),
            np.log10(np.median(s[m][~early_tsat])))
 
+
+def review_tacc(args, s, tlb, nsat, plot_path):
     print('** t_acc **')
     tacc = s['history:last_infall:time']
     htacc, htacc_bins = np.histogram(tacc, tlb[-30:][::-1])
