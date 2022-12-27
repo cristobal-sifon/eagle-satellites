@@ -17,6 +17,9 @@ from tqdm import tqdm
 if sys.version_info[0] == 2:
     range = xrange
 
+import warnings
+warnings.simplefilter('ignore', FutureWarning)
+
 #import lnr
 import plottery
 from plottery.plotutils import colorscale, savefig, update_rcParams
@@ -56,11 +59,12 @@ def main():
 
 
 def wrap_plot(args, sim, subs, isnap, hostmass='logM200Mean',
-              logM200Mean_min=9, logMmin=9, debug=True,
+              logM200Mean_min=9, logMmin=9, debug=True, logMstar_min=9,
               do_plot_relations=True, do_plot_massfunctions=False):
     subs = Subhalos(
         subs, sim, isnap, exclude_non_FoF=True, logMmin=logMmin,
-        logM200Mean_min=logMmin, verbose_when_loading=False)
+        logM200Mean_min=logMmin, logMstar_min=logMstar_min,
+        verbose_when_loading=False)
     print(np.sort(subs.colnames))
     j = np.isfinite(subs['history:first_infall:M200Mean'])
     # ic(j.sum())
