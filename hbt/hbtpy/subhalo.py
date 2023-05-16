@@ -56,6 +56,7 @@ class BaseDataSet(object):
             self._catalog = self.DataFrame(self._catalog)
         elif not self.as_dataframe \
                 and isinstance(self._catalog, pd.DataFrame):
+            ic(self._catalog.dtype.names)
             self._catalog = self._catalog.to_records()
         return self._catalog
 
@@ -101,6 +102,18 @@ class BaseDataSet(object):
         """Wrapper for ``pandas.DataFrame.groupby``"""
         return self.catalog.groupby(*args, **kwargs)
 
+    def merge(self, right, *args, **kwargs):
+        """Wrapper for ``pandas.DataFrame.merge``.
+        Returns a ``Subhalos`` object
+        ``right`` can be a ``Subhalos`` object or a ``DataFrame``
+        """
+        if isinstance(right, Subhalos):
+            right = right.catalog
+        return Subhalos(
+            self.catalog.merge(right, *args, **kwargs), self.sim, self.isnap,
+            load_any=False)
+
+
 
 class BaseSubhalo(BaseDataSet):
     """BaseSubhalo class"""
@@ -113,22 +126,29 @@ class BaseSubhalo(BaseDataSet):
         sim : ``Simulation``
         """
         assert pvref in ('Average', 'MostBound')
+        # setting to False here to load the Mbounds and Nbounds below
+        # (easier to load from hdf5 than DataFrame)
+        #super(BaseSubhalo, self).__init__(catalog, as_dataframe=False)
         super(BaseSubhalo, self).__init__(catalog, as_dataframe=as_dataframe)
         BaseSimulation.__init__(self, sim)
         self.cosmology = self.sim.cosmology
+        #self.Mbound = 1e10 * self.catalog['Mbound']
+        #self.MboundType = 1e10 * self.catalog['MboundType']
+        #self.Nbound = self.catalog['Nbound']
+        #self.NboundType = self.catalog['NboundType']
         self.as_dataframe = as_dataframe
         self.pvref = pvref
         self._update_mass_columns()
 
     def __getitem__(self, col):
         cols = self.colnames
-        if isinstance(col, (int,slice,np.lib.index_tricks.IndexExpression)):
-            return self.catalog.iloc[col]
-        if isinstance(col, str) and col in cols:
+        if np.iterable(col) and not isinstance(col, str):
+            return self.catalog[col]
+        if (isinstance(col, str) and col in cols):
             return self.catalog[col]
         # conveninence names
         colmap = {'Mgas': 'MboundType0', 'Mdm': 'MboundType1',
-                  'Mstar': 'MboundType4'}
+                  'Mstar': 'MboundType4'}}
         colmap = {**colmap, 
                   # positions
                   **{i: f'ComovingMostBoundPosition{n}'
@@ -287,11 +307,12 @@ class BaseSubhalo(BaseDataSet):
             if isinstance(self.catalog, pd.DataFrame) \
             else self.catalog.dtype.names
         for col in cols:
-           if np.any([col.startswith(i) and 'SnapshotIndex' not in col
-                      for i in
+            # if np.any([col.startswith(i) and 'SnapshotIndex' not in col
+            #            for i in
+            if np.any([i in col and 'SnapshotIndex' not in col for i in
                       ('Mbound','MboundType',
                        'Mgas','Mdm','Mstar','LastMaxMass')]):
-                if self.catalog[col].max() < 1e6:
+                if self.catalog[col].max() < 1e10:
                     self.catalog[col] = 1e10 * self.catalog[col]
 
     ### methods ###
@@ -504,7 +525,8 @@ class Subhalos(BaseSubhalo):
     """
 
     def __init__(self, catalog, sim, isnap=None, load_any=True,
-                 logMmin=9, logMstar_min=9, logM200Mean_min=12, exclude_non_FoF=True,
+                 logMmin=9, logMstar_min=9, logM200Mean_min=12,
+                 exclude_non_FoF=True,
                  as_dataframe=True, load_hosts=True, load_distances=True,
                  load_velocities=True, load_history=True,
                  verbose_when_loading=True):
@@ -544,10 +566,11 @@ class Subhalos(BaseSubhalo):
             in ``{self.sim.data_path}/history/history.h5``. These
             will be loaded as additional columns in ``self.catalog``
         """
-        assert isinstance(as_dataframe, (bool, np.bool_))
-        assert isinstance(load_hosts, (bool, np.bool_))
-        assert isinstance(load_distances, (bool, np.bool_))
-        assert isinstance(load_velocities, (bool, np.bool_))
+        bool_ = (bool, np.bool_)
+        assert isinstance(as_dataframe, bool_)
+        assert isinstance(load_hosts, bool_)
+        assert isinstance(load_distances, bool_)
+        assert isinstance(load_velocities, bool_)
         super(Subhalos, self).__init__(
               catalog, sim, as_dataframe=as_dataframe)
         if not load_any:
@@ -585,7 +608,7 @@ class Subhalos(BaseSubhalo):
                 self.catalog[self.mass('stars') >= 10**self.logMstar_min]
         if 'Nbound' in self.colnames:
             if self.as_dataframe:
-                self.catalog.loc[:, 'IsDark'] = (self.nbound('stars') == 0)
+                self.catalog['IsDark'] = (self.nbound('stars') == 0)
             else:
                 self._catalog = append_fields(
                     self.catalog, 'IsDark', (self.nbound('stars') == 0))
@@ -664,14 +687,14 @@ class Subhalos(BaseSubhalo):
         # 1d
         if self.verbose_when_loading:
             ti = time()
-            print('1d:')
-            print(self.pcols())
+            # print('1d:')
+            # print(self.pcols())
         for dcol, pcol in zip(self.dcols(1, frame), self.pcols(frame)):
             self.catalog[dcol] = ((hosts[pcol] - hosts[pcol+'_h'])**2)**0.5
             if self.verbose_when_loading:
-                print(dcol, pcol)
-                print('percentiles:', np.percentile(self.satellites[dcol],
-                      [0,1,25,50,99,100]))
+                print(pcol, dcol)
+            #     print('percentiles:', np.percentile(self.satellites[dcol],
+            #           [0,1,25,50,99,100]))
         if self.verbose_when_loading:
             #print(hosts[['HostHaloId','HostHaloId_h','Rank','Rank_h']][j])
             #print(hosts[['ComovingMostBoundPosition0'[j])
@@ -685,8 +708,8 @@ class Subhalos(BaseSubhalo):
                 self.catalog[dcols]**2, axis=1)**0.5
             if self.verbose_when_loading:
                 print(dcol)
-                print('percentiles:', np.percentile(self.satellites[dcol],
-                      [0,1,25,50,99,100]))
+            #     print('percentiles:', np.percentile(self.satellites[dcol],
+            #           [0,1,25,50,99,100]))
         if self.verbose_when_loading:
             print('2d distances in {0:.2f} s'.format(time()-ti))
         # 3d
@@ -791,13 +814,17 @@ class Subhalos(BaseSubhalo):
             mask = self.satellite_mask
         elif kwargs['sample ']== 'all':
             mask = np.ones(self.central_mask.size, dtype=bool)
+        ic(kwargs['sample'])
+        ic(mask.sum())
         if kwargs['min_hostmass'] is not None:
             hostmass = kwargs['hostmass'] # for clearer error message
             assert hostmass in ('M200Mean','MVir','Mbound')
             mask = mask & (self.catalog[hostmass] >= kwargs['min_hostmass'])
+            ic(mask.sum())
         x, y = self._shmr_xy(relation, mask=mask)
         bins, xo = self._shmr_binning(x, kwargs['bins'])
         mr = np.histogram(x, bins, weights=y)[0] / np.histogram(x, bins)[0]
+        ic(mr)
         if kwargs['ax'] is not None:
             kwargs['ax'].plot(xo, mr, **plot_kwargs)
         return xo, mr
@@ -1083,6 +1110,7 @@ class Subhalos(BaseSubhalo):
             to = time()
         adf = self.as_dataframe
         self.as_dataframe = True
+        ic(self.isnap)
         hosts = HostHalos(self.sim, self.isnap, force_isnap=force_isnap)
         ti = time()
         # number of star particles, to identify dark subhalos
@@ -1101,7 +1129,7 @@ class Subhalos(BaseSubhalo):
         for col in list(self.catalog):
             if 'M200' in col or col == 'MVir':
                 # otherwise I think this happens twice?
-                if self.catalog[col].max() < 1e6:
+                if self.catalog[col].max() < 1e10:
                     self.catalog[col] = 1e10 * self.catalog[col]
         if verbose:
             print('Joined hosts in {0:.2f} s'.format(time()-to))
