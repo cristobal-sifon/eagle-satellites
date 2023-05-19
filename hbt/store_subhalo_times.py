@@ -66,19 +66,6 @@ def main():
     print(f'host tracks in {time()-ti:.2f} s')
     ic0(host_track_id_today[:5])
 
-    # this is unnecessary really
-    """
-    tracks = TrackArray(subs.satellites['TrackId'], sim)
-    track_ids = tracks.track_ids
-    ntracks = track_ids.size
-    # for later use
-    jtracks = np.arange(ntracks, dtype=int)
-    ic0(ntracks)
-
-    tracks_cent = TrackArray(subs.centrals['TrackId'], sim)
-    ntracks_cent = tracks_cent.track_ids.size
-    ic0(ntracks_cent)
-    """
 
     groups = ('trackids', 
               'max_Mbound', 'max_Mstar', 'max_Mdm', 'max_Mgas',

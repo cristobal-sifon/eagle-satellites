@@ -6,8 +6,11 @@ import multiprocessing as mp
 import numpy as np
 import os
 from scipy.optimize import curve_fit
-from scipy.stats import binned_statistic, binned_statistic_2d, pearsonr
+from scipy.stats import (
+    binned_statistic, binned_statistic_2d, pearsonr,
+    PearsonRConstantInputWarning)
 from time import time
+import warnings
 
 from plottery.plotutils import savefig, update_rcParams
 update_rcParams()
@@ -23,6 +26,9 @@ from hbtpy.subhalo import Subhalos
 
 adjust_kwargs = dict(
     left=0.10, right=0.95, bottom=0.05, top=0.98, wspace=0.3, hspace=0.1)
+
+warnings.simplefilter('once', RuntimeWarning)
+warnings.simplefilter('ignore', PearsonRConstantInputWarning)
 
 
 def main():
@@ -64,26 +70,30 @@ def main():
     else:
         run = lambda f: f
     run(plot_times(
-        satellites, c_lower='corr', c_upper='Mstar',
+        satellites, c_lower='corr', c_upper='Mbound/Mstar',
         cmap_lower='cmr.ember_r', cmap_lower_rng=(0.35, 1),
-        cmap_upper='cmr.toxic_r',
-        vmin_upper=9.3, vmax_upper=11))
-    run(plot_times(
-        satellites, c_lower='Mbound', c_upper='history:first_infall:Mbound',
-        cmap_lower='cmr.ember_r', cmap_upper='cmr.cosmic_r'))
-    run(plot_times(
-        satellites, c_lower='history:first_infall:Mbound',
-        c_upper='history:first_infall:Mbound/history:first_infall:Mstar',
-        cmap_lower='cmr.ember_r', cmap_upper='cmr.cosmic_r',
-        vmin_lower=10.5, vmax_lower=13, cmap_lower_rng=(0,0.8),
-        cmap_upper_rng=(0,0.8)))
-    run(plot_times(
-        satellites, c_lower='history:first_infall:Mstar',
-        c_upper='M200Mean'))
-    run(plot_times(
-        satellites, c_lower='history:sat:Mstar', c_upper='Mstar',
-        cmap_lower='cmr.toxic_r', cmap_upper='cmr.toxic_r',
-        vmin_lower=9.5, vmax_lower=11.5, vmin_upper=9.3, vmax_upper=11))
+        cmap_upper='cmr.neon_r', cmap_upper_rng=(0.1, 1)))
+    # run(plot_times(
+    #     satellites, c_lower='corr', c_upper='Mstar',
+    #     cmap_lower='cmr.ember_r', cmap_lower_rng=(0.35, 1),
+    #     cmap_upper='cmr.toxic_r',
+    #     vmin_upper=9.3, vmax_upper=11))
+    # run(plot_times(
+    #     satellites, c_lower='Mbound', c_upper='history:first_infall:Mbound',
+    #     cmap_lower='cmr.ember_r', cmap_upper='cmr.cosmic_r'))
+    # run(plot_times(
+    #     satellites, c_lower='history:first_infall:Mbound',
+    #     c_upper='history:first_infall:Mbound/history:first_infall:Mstar',
+    #     cmap_lower='cmr.ember_r', cmap_upper='cmr.cosmic_r',
+    #     vmin_lower=10.5, vmax_lower=13, cmap_lower_rng=(0,0.8),
+    #     cmap_upper_rng=(0,0.8)))
+    # run(plot_times(
+    #     satellites, c_lower='history:first_infall:Mstar',
+    #     c_upper='M200Mean'))
+    # run(plot_times(
+    #     satellites, c_lower='history:sat:Mstar', c_upper='Mstar',
+    #     cmap_lower='cmr.toxic_r', cmap_upper='cmr.toxic_r',
+    #     vmin_lower=9.5, vmax_lower=11.5, vmin_upper=9.3, vmax_upper=11))
     if args.ncores > 1:
         pool.close()
         pool.join()
@@ -93,7 +103,11 @@ def main():
 def review_subsamples(args, s):
     plot_path = os.path.join(s.sim.plot_path, 'compare_times')
     tlb = s.sim.t_lookback.value
-    print('\n*** Special subsamples ***\n')
+    print('\n*** Special subsamples ***')
+    if not args.debug:
+        print('remember to set --debug\n')
+        return
+    print()
     nsat = s.size
     ic(nsat)
     review_tmstar(args, s, tlb, nsat, plot_path)
@@ -264,7 +278,7 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
     # save!
     c_lower = hbt_tools.format_colname(c_lower)
     c_upper = hbt_tools.format_colname(c_upper)
-    output = f'correlations/comparetimes__{c_lower}__{c_upper}'
+    output = f'compare_times/comparetimes__{c_lower}__{c_upper}'
     hbt_tools.save_plot(
         fig, output, satellites.sim, tight=False, h_pad=0.2)
     return

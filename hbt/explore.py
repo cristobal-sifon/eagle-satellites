@@ -6,45 +6,34 @@ import numpy as np
 import os
 from time import time
 
-from plottools.plotutils import savefig, update_rcParams
+from plottery.plotutils import savefig, update_rcParams
 update_rcParams()
 
 from HBTReader import HBTReader
 
-from core import hbt_tools
-from core.simulation import Simulation
+from hbtpy import hbt_tools
+from hbtpy.simulation import Simulation
+from hbtpy.subhalo import Subhalos
 
 
 args = hbt_tools.parse_args()
-
-#path_hbt = '/cosma/home/jvbq85/data/HBT/data/eagle/L0100N1504/subcat'
-#path_hbt = '/cosma/home/jvbq85/data/HBT/data/apostle/V1_LR/subcat'
-#path_hbt = '/cosma/home/jvbq85/data/HBT/data/apostle/V1_MR/subcat'
 sim = Simulation(args.simulation)
+reader = HBTReader(sim.path)
 path_hbt = sim.path
-
-plot_path = os.path.join('plots', '_'.join(path_hbt.split('/')[-3:-1]))
-if not os.path.isdir(plot_path):
-    os.makedirs(plot_path)
-
-to = time()
-reader = HBTReader(path_hbt)
-print('Loaded reader in {0:.1f} seconds'.format(time()-to))
-
-to = time()
-subs = reader.LoadSubhalos(-1)
-print('Loaded subhalos in {0:.2f} minutes'.format((time()-to)/60))
-
-print(type(subs))
-print(subs.dtype)
+plot_path = sim.plot_path
+isnap = -1
+subs = Subhalos(
+    reader.LoadSubhalos(isnap), sim, isnap, exclude_non_FoF=True, logMmin=9,
+    logM200Mean_min=9, logMstar_min=9, verbose_when_loading=True)
+print(np.sort(subs.colnames))
 
 cent = (subs['Rank'] == 0)
-sub = (subs['Rank'] > 0)
+sat = (subs['Rank'] > 0)
 
 for key in ('Mbound', 'LastMaxMass', 'Nbound'):
     print('{0}: {1} {2} {3}'.format(
-        key, subs[key][sub].min(), subs[key][sub].max(),
-        np.percentile(subs[key][sub], [1,5,25,50,75,95,99])))
+        key, subs[key][sat].min(), subs[key][sat].max(),
+        np.percentile(subs[key][sat], [1,5,25,50,75,95,99])))
 
 #print(reader.GetScaleFactorDict())
 # snap = 0 --> z = 0.1
@@ -65,16 +54,16 @@ def make_hist_sub(column, ax, bins=50, log=False, log_hist=True):
         ylabel = '1+N'
     else:
         ylabel = 'N'
-    good = (subs['Nbound'] > 1)
+    good = (subs['M200Mean'] > 1e13)
     n, bins, _ = ax.hist(col[mask], bins, histtype='step', lw=2, label='all',
-                         log=log_hist, bottom=1*log_hist, color='C0')
-    ax.hist(col[mask & (subs['Rank'] == 0)], bins, histtype='step', lw=2,
+                         log=log_hist, bottom=1*log_hist, color='C0', zorder=100)
+    ax.hist(col[mask & cent], bins, histtype='step', lw=2,
             log=log_hist, bottom=1*log_hist, color='C1', label='centrals')
-    ax.hist(col[mask & (subs['Rank'] > 0)], bins, histtype='step', lw=2,
-            log=log_hist, bottom=1*log_hist, color='C2', label='subhalos')
-    ax.hist(col[mask & (subs['Rank'] == 0) & good], bins, histtype='stepfilled',
+    ax.hist(col[mask & sat], bins, histtype='step', lw=2,
+            log=log_hist, bottom=1*log_hist, color='C2', label='satellites')
+    ax.hist(col[mask & cent & good], bins, histtype='stepfilled',
             lw=0, log=log_hist, bottom=1*log_hist, color='C1', alpha=0.8)
-    ax.hist(col[mask & (subs['Rank'] > 0) & good], bins, histtype='stepfilled',
+    ax.hist(col[mask & sat & good], bins, histtype='stepfilled',
             lw=0, log=log_hist, bottom=1*log_hist, color='C2', alpha=0.8)
     ax.legend(fontsize=13)#, loc='lower center')
     ax.set_xlabel(xlabel)
@@ -93,7 +82,7 @@ savefig(os.path.join(plot_path, 'hist_subhalos.pdf'), fig=fig)
 def make_hist_sub_mtypes(column, i, ax, bins=50, log=True, log_hist=True,
                          ratio=False):
     print(i, end=' ')
-    x = subs[column][:,i]
+    x = subs[f'{column}{i}']
     if ratio:
         totname = column.replace('Type', '')
         total = subs[totname]
@@ -134,7 +123,7 @@ ratio_bins = np.append(np.linspace(-5, -0.3, 20), np.linspace(-0.3, 0, 20)[1:])
 for row, name in zip(axes, ('MboundType','NboundType')):
     print('plotting {0} ...'.format(name), end=' ')
     for ax, ratio, bins in zip(row, (False,True), (50, ratio_bins)):
-        for i in range(subs['MboundType'][0].size):
+        for i in range(6):
             make_hist_sub_mtypes(name, i, ax, ratio=ratio, bins=bins)
         #aux = [make_hist_sub_mtypes(name, i, ax, ratio=ratio)
                #for i in range(subs['MboundType'][0].size)]
@@ -152,7 +141,7 @@ fig, axes = plt.subplots(figsize=(14,6), ncols=2)
 # Mbound
 ax = axes[0]
 hist2d, xe, ye = np.histogram2d(
-    subs['SnapshotIndexOfLastIsolation'][sub], subs['Mbound'][sub],
+    subs['SnapshotIndexOfLastIsolation'][sat], subs['Mbound'][sat],
     (bins['SnapshotIndexOfLastIsolation'],bins['Mbound']))
 extent = (bins['SnapshotIndexOfLastIsolation'][0],
           bins['SnapshotIndexOfLastIsolation'][-1],
@@ -168,7 +157,7 @@ ax.set_ylabel('Mbound')
 # Nbound
 ax = axes[1]
 hist2d, xe, ye = np.histogram2d(
-    subs['SnapshotIndexOfLastIsolation'][sub], subs['Nbound'][sub],
+    subs['SnapshotIndexOfLastIsolation'][sat], subs['Nbound'][sat],
     (bins['SnapshotIndexOfLastIsolation'],bins['Nbound']))
 extent = (bins['SnapshotIndexOfLastIsolation'][0],
           bins['SnapshotIndexOfLastIsolation'][-1],

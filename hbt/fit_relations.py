@@ -1,11 +1,9 @@
 import cmasher as cmr
 from glob import glob
 from icecream import ic
-from itertools import count
 from matplotlib import patheffects as pe, pyplot as plt, ticker, rcParams
 from matplotlib.colors import LogNorm
 from matplotlib.ticker import FormatStrFormatter, LogFormatterMathtext
-from mpl_toolkits.axes_grid1 import ImageGrid
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import multiprocessing as mp
 import numpy as np
@@ -41,6 +39,8 @@ def main():
         )
     args = parse_args(args=args)
     sim = Simulation(args.simulation)
+    h = sim.cosmology.h
+    #h = 1
 
     to = time()
     reader = HBTReader(sim.path)
@@ -87,6 +87,7 @@ def main():
     for i in range(1, xbins.size):
         j = (logm > xbins[i-1]) & (logm <= xbins[i])
         print(f'{xbins[i-1]:5.1f} - {xbins[i]:5.1f}: {j.sum():6d}')
+    print(f'Total: {logm.size}')
     
     # fit HSMR
     func = double_power_niemiec_log
@@ -145,19 +146,32 @@ def main():
             dashes=(3,4),
             path_effects=[pe.Stroke(linewidth=5, foreground='w'),
                           pe.Normal()])
+    ax.plot(mstarbins, mstarbins, color='0.5', dashes=(6,4))
+    ax.text(8e9, 5e9, '$m_\mathrm{sub}=m_\u2605$', va='bottom', ha='left',
+            rotation=30, fontsize=12, color='0.5')
     cbar = plt.colorbar(im, ax=ax, label='$N_\mathrm{sat}$')#, fraction=0.045)
     cbar.ax.yaxis.set_major_formatter(FormatStrFormatter('%d'))
     ## Literature
-    plot_sifon(ax)
-    plot_niemiec(ax, np.log10(mstarbins))
+    plot_sifon(ax, hnorm=True, h=h)
+    plot_niemiec(ax, np.log10(mstarbins), h=h)
+    # centrals
+    jc = (centrals['M200Mean'] > 1e13)
+    ax.scatter(centrals['Mstar'][jc], centrals['Mbound'][jc], c='k', s=4,
+               marker='*', label='Cluster centrals')
+    for mclmin in (1e13, 5e13, 1e14):
+        n = (centrals['M200Mean'] > mclmin).sum()
+        print(f'{n} clusters above M200Mean={mclmin/1e14:.1f}e14 Msun')
+        ns = (satellites['M200Mean'] > mclmin).sum()
+        print(f'hosting {ns} satellites')
+    print(f'max cluster mass: {centrals["M200Mean"].max()/1e14:.2f}e14 Msun')
     # scatter
     plot_scatter(
         ax, np.log10(satellites['Mstar'][sat_for_fit]),
         np.log10(satellites['Mbound'][sat_for_fit]), func, fit_sat)
     # finish
-    ax.legend(fontsize=15)
+    ax.legend(fontsize=14)
     ax.set(xlabel=axlabel['Mstar'], ylabel=axlabel['Mbound'],
-           xscale='log', yscale='log', ylim=(1e9, 2e14))
+           xscale='log', yscale='log', xlim=(1e9,1.3e12), ylim=(1e9,2e14))
     output = 'hsmr'
     save_plot(fig, output, sim, tight=False)
 
@@ -203,8 +217,8 @@ def fit_hsmr(func, subs, xcol, ycol, mask='default', p0=None,
     return fit, cov
 
 
-def plot_niemiec(ax, logx):
-    y = 10**double_power_niemiec_log(logx, 10.22, 0.65, 0.50, 2.38)
+def plot_niemiec(ax, logx, h=1):
+    y = 10**double_power_niemiec_log(logx, 10.22, 0.65, 0.50, 2.38, h=h)
     ax.plot(10**logx, y, lw=2.5, color='0.2', dashes=(8,6),
             label='Niemiec+22 (TNG)',
             path_effects=[pe.Stroke(linewidth=4, foreground='w'),
@@ -221,11 +235,12 @@ def plot_scatter(ax, logx, logy, func, params):
     ydiff = (logy - logypredicted)
     mean = np.mean(ydiff)
     scatter = np.std(ydiff)
-    n, bins = inset.hist(ydiff, np.linspace(-1.5, 1.5, 20), color='C0', alpha=0.5)[:2]
-    lowm = (logx <= 10)
-    inset.hist(ydiff[lowm], bins, color='C1', histtype='step', lw=2)
-    highm = ~lowm & (logx <= 11.3)
-    inset.hist(ydiff[highm], bins, color='C2', histtype='step', lw=2)
+    n, bins = inset.hist(
+        ydiff, 'auto', color='C0', alpha=0.5)[:2]
+    # lowm = (logx <= 10)
+    # inset.hist(ydiff[lowm], bins, color='C1', histtype='step', lw=2)
+    # highm = ~lowm & (logx <= 11.3)
+    # inset.hist(ydiff[highm], bins, color='C2', histtype='step', lw=2)
     logx0 = (bins[1:]+bins[:-1])/2
     area = trapz(n, logx0)
     ic(mean)
@@ -249,7 +264,7 @@ def plot_scatter(ax, logx, logy, func, params):
     inset.set_title(fr'$\sigma={scatter:.2f}$', fontsize=14)
     return inset
 
-def plot_sifon(ax, hnorm=True):
+def plot_sifon(ax, hnorm=True, h=1):
     x = 10**np.array([9.51, 10.01, 10.36, 10.67, 11.01])
     logy = [10.64, 11.41, 11.71, 11.84, 12.15]
     y, ylo = to_linear(logy, [0.53, 0.21, 0.17, 0.15, 0.20], which='lower')
@@ -261,7 +276,7 @@ def plot_sifon(ax, hnorm=True):
     # use h=0.7 to convert to units of Msun/h?
     if hnorm:
         y, ylo, yhi, ylo_w, yhi_w \
-            = [i*0.7 for i in (y, ylo, yhi, ylo_w, yhi_w)]
+            = [i*0.7/h for i in (y, ylo, yhi, ylo_w, yhi_w)]
     ax.errorbar(x, y, (ylo_w,yhi_w), fmt='wo', ms=12,
                 elinewidth=4, zorder=10)
     ax.errorbar(x, y, (ylo,yhi), fmt='ko', ms=10, elinewidth=2.5,
@@ -274,15 +289,15 @@ def plot_sifon(ax, hnorm=True):
 ## --------------------------------------------------
 
 
-def double_power_niemiec(mstar, m1, beta, gamma, N):
+def double_power_niemiec(mstar, m1, beta, gamma, N, h=1):
     x = mstar / m1
-    return 2 * N * (x**-beta + x**gamma) * mstar
+    return 2 * N * (x**-beta + x**gamma) * (mstar/h)
 
 
-def double_power_niemiec_log(logmstar, logm1, beta, gamma, N):
+def double_power_niemiec_log(logmstar, logm1, beta, gamma, N, h=1):
     """Using eq. 3 in Niemiec+22"""
     x = 10**(logmstar-logm1)
-    logy = np.log10(x**-beta + x**gamma) + logmstar
+    logy = np.log10(x**-beta + x**gamma) + (logmstar - np.log10(h))
     return np.log10(2*N) + logy
 
 

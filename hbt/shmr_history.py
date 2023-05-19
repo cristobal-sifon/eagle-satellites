@@ -25,7 +25,7 @@ warnings.simplefilter('ignore', RuntimeWarning)
 
 def main():
 
-    checkpoints = ['birth', 'sat', 'first_infall', 'last_infall', 'today']
+    checkpoints = ['birth', 'sat', 'cent','first_infall', 'last_infall', 'today']
     # starts = _checkpoints[:-1]
     # ends = _checkpoints[1:]
     # if len(args.checkpoints) == 0:
@@ -41,7 +41,6 @@ def main():
               ('--nhalos', {'default': 0, 'type': int}),
               ('--nsub', {'default': 50, 'type': int}),
               ('--seed', {'default': 31, 'type': int}),
-              ('--test', {'action': 'store_true'}),
               ])
     np.random.seed(args.seed)
     sim = Simulation(args.simulation)
@@ -50,7 +49,8 @@ def main():
     isnap = -1
     # min masses are the same as in mass_relations.py
     subs = Subhalos(
-        reader.LoadSubhalos(isnap), sim, isnap, logMmin=8, logM200Mean_min=9)
+        reader.LoadSubhalos(isnap), sim, isnap, logMmin=8,
+        logM200Mean_min=9, logMstar_min=8)
     print('Loaded subhalos!')
 
     shmr_history(args, subs)
@@ -103,6 +103,7 @@ def halo_shmr_evolution(args, subs, sim, host_halo_id, seed=None, n=30,
     np.random.seed(seed)
     hhid = subs['HostHaloId']
     hhid_mask = (subs['HostHaloId'] == host_halo_id)
+    ic(hhid_mask)
     ic(hhid_mask.sum())
     halo = subs[hhid_mask]
     ic(halo.shape)

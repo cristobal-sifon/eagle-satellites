@@ -19,6 +19,7 @@ if sys.version_info[0] == 2:
 
 import warnings
 warnings.simplefilter('ignore', FutureWarning)
+warnings.simplefilter('ignore', RuntimeWarning)
 
 #import lnr
 import plottery
@@ -66,6 +67,20 @@ def wrap_plot(args, sim, subs, isnap, hostmass='logM200Mean',
         logM200Mean_min=logMmin, logMstar_min=logMstar_min,
         verbose_when_loading=False)
     print(np.sort(subs.colnames))
+    return
+    # ic(np.sort(subs['Mbound']))
+    # ic(np.sort(subs['Mdm']))
+    # ic(np.sort(subs['Mstar']))
+    # ic(np.sort(subs['Mgas']))
+    # ic(np.sort(subs['Mbound/Mstar']))
+    # ic((subs['Ndm'] < 100).sum())
+    # ic(np.sort(subs['Nstar']))
+    # ic(np.sort(subs['Ndm']))
+    # ic(np.sort(subs['Ngas']))
+    # ic(np.unique(subs['SnapshotIndexOfSink']))
+    # ic(np.unique(subs['Depth'], return_counts=True))
+    # #ic(np.sort(subs['N']))
+    # return
     j = np.isfinite(subs['history:first_infall:M200Mean'])
     # ic(j.sum())
     # print(np.histogram(subs['history:first_infall:M200Mean'][j], 20))
