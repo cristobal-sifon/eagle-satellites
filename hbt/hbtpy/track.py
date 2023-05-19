@@ -298,7 +298,7 @@ class Track(BaseSubhalo):
         -----
         The host halo may be loaded as a Track with:
         >>> track = Track(trackid, sim)
-        >>> host_track = track.host(isnap)
+        >>> host_track = track.central(isnap)
         >>> host = Track(host_track, sim)
         """
         _valid_return = ('index','mask','table','track','trackid')
@@ -312,20 +312,6 @@ class Track(BaseSubhalo):
             self.sim, isnap, load_hosts=False, verbose_when_loading=False)
         #hostid = snap.host(self.trackid, return_value='trackid')
         return snap.host(self.trackid, return_value=return_value)
-        return self.reader.GetTrack(hostid)
-
-        sib = self.siblings(trackid, return_value='mask')
-        host_mask = sib & (self.catalog['Rank'] == 0)
-        if return_value == 'mask':
-            return host_mask
-        if return_value == 'track':
-            return self.reader.GetTrack(
-                self.catalog['TrackId'][host_mask][0])
-        if return_value == 'trackid':
-            return self.catalog['TrackId'][host_mask][0]
-        if return_value == 'index':
-            return self._range[host_mask][0]
-        return self.catalog[host_mask]
 
     def host(self, isnap=-1):
         if self['Rank'][isnap] == 0:

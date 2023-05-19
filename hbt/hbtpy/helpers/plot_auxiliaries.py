@@ -117,11 +117,6 @@ def get_axlabel(col, statistic):
 
 
 def get_bins(bincol, logbins=True, n=5):
-    # if bincol is not None:
-    #     if 'time' in bincol:
-    #         print('***')
-    #         ic()
-    #         ic(bincol, logbins, n)
     if bincol in xbins:
         bins = xbins[bincol]
         if n is None:
@@ -135,10 +130,6 @@ def get_bins(bincol, logbins=True, n=5):
             bins = np.linspace(bins[0], bins[-1], n+1)
     else:
         bins = n+1
-    # if bincol is not None:
-    #     if 'time' in bincol:
-    #         ic(bins)
-    #         print('***')
     return bins
 
 
@@ -213,6 +204,6 @@ def plot_line(ax, *args, ls='-', **kwargs):
     kwargs_bg['ms'] = kwargs['ms'] + 2
     kwargs_bg['mew']= kwargs['mew'] + 2
     ls_bg = ls.replace('--', '-').replace('-.', '-')
-    ax.plot(*args, ls, **kwargs_bg, color='w', label='_none_')
+    ax.plot(*args, ls_bg, **kwargs_bg, color='w', label='_none_')
     ax.plot(*args, ls, **kwargs)
     return

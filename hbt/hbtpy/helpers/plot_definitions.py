@@ -3,8 +3,12 @@ Global plotting definitions (bad idea, I know!)
 """
 import numpy as np
 
-ccolor = 'C1'
+ccolor = '0.2'
 scolor = 'k'
+
+max_events = {f'max_{m}': 'max' for m in ('Mbound', 'Mstar', 'Mgas', 'Mdm')}
+events = {'last_infall': 'acc', 'first_infall': 'infall',
+          'birth': 'birth', 'cent': 'cent', 'sat': 'sat', **max_events}
 
 massnames = ['Mbound', 'Mstar', 'Mdm', 'Mgas', 'Mass', 'M200', 'MVir']
 units = {'mass': r'\mathrm{M}_\odot', 'time': '\mathrm{Gyr}',
@@ -12,7 +16,7 @@ units = {'mass': r'\mathrm{M}_\odot', 'time': '\mathrm{Gyr}',
 xbins = {
     'ComovingMostBoundDistance': np.logspace(-1.7, 0.5, 9),
     #'logComovingMostBoundDistance': np.logspace(-2, 0.5, 9),
-    'M200Mean': np.logspace(13, 14.7, 6),
+    'M200Mean': np.logspace(13, 14.85, 6),
     'mu': np.logspace(-5, 0, 9),
     'Mstar': np.logspace(8.9, 11.1, 9),
     'Mgas': np.logspace(8, 11, 10),
@@ -25,6 +29,8 @@ xbins = {
         np.append([0.02], np.logspace(-1.5, 0.5, 7)),
         #np.logspace(-1.7, 0.5, 9)
     }
+for event in events.keys():
+    xbins[f'history:{event}:time'] = np.linspace(0, 11, 6)
 ylims = {'Mbound/history:first_infall:Mbound': (5e-3, 2),
          'Mdm/history:first_infall:Mdm': (5e-4, 2),
          'Mstar/history:first_infall:Mstar': (0.1, 20),
@@ -52,10 +58,6 @@ for i in '012':
     xbins[f'{_xx}{i}'] = xbins[_xx]
     binlabel[f'{_xx}{i}'] = f'{binlabel[_xx]}_\mathrm{{{p}}}'
     xbins[f'{_xx}{i}/R200Mean'] = xbins[f'{_xx}/R200Mean']
-
-max_events = {f'max_{m}': 'max' for m in ('Mbound', 'Mstar', 'Mgas', 'Mdm')}
-events = {'last_infall': 'acc', 'first_infall': 'infall',
-          'birth': 'birth', 'cent': 'cent', 'sat': 'sat', **max_events}
 for event, event_label in events.items():
     h = f'history:{event}'
     elabel = f'\mathrm{{{event_label}}}'

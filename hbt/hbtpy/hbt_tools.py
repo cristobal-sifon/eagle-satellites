@@ -28,6 +28,10 @@ def timer(func):
     return wrapper
 
 
+def format_colname(col):
+    return col.replace('-', '-minus-').replace('/', '-over-').replace(':', '-')
+
+
 def load_subhalos(args, isnap=None, selection=None):
     """Convenience function to load subhalos with HBTReader"""
     sim = Simulation(args.simulation)
