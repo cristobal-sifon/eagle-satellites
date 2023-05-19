@@ -72,6 +72,8 @@ def main():
 
     if args.investigate:
         investigate_max_mstar(args, reader, satellites)
+        print('\n*****\n')
+        investigate_tsat(args, satellites)
         return
 
     # some quick demographics
@@ -144,8 +146,9 @@ def demographics(satellites):
     tbins = np.arange(0, 14, 0.2)
     tx = (tbins[1:]+tbins[:-1]) / 2
     hist = {'times': tx}
-    for event in ('birth', 'cent', 'sat', 'first_infall', 'last_infall',
-                  'max_Mbound', 'max_Mstar', 'max_Mgas'):
+    events = ('birth', 'cent', 'sat', 'first_infall', 'last_infall',
+              'max_Mbound', 'max_Mstar', 'max_Mgas')
+    for event in events:
         print(event)
         h = f'history:{event}'
         good = (satellites[f'{h}:time'] > -1) 
@@ -193,6 +196,43 @@ def investigate_max_mstar(args, reader, satellites, isnap=-2):
     ax.hist(np.log10(sats['Mstar']/sats['MboundType4_past'])[good],
             100, log=True)
     hbt_tools.save_plot(fig, 'mstar_diff', sats.sim)
+    return
+
+
+def investigate_tsat(args, satellites):
+    sim = satellites.sim
+    tbins = np.arange(0, 13.5, 0.2)
+    tsat = satellites['history:sat:time']
+    fig, ax = plt.subplots(figsize=(6,5))
+    ax.hist(tsat, tbins, histtype='stepfilled', color='C9')
+    ax.set(xlabel='$t_\mathrm{sat}^\mathrm{lookback}$ (Gyr)')
+    output = os.path.join(sim.plot_path, 'early_tsat', 'tsat_hist.png')
+    early = (tsat > 12)
+    events = ('birth', 'cent', 'first_infall', 'last_infall', 'max_Mbound',
+              'max_Mstar', 'max_Mgas')
+    def summary(x, label='', log=False):
+        def _summary(x_, log=False):
+            x0_ = np.median(x_)
+            xlo, xhi = np.percentile(x_, [25, 75])
+            if log:
+                x0_, xlo, xhi = np.log10(np.array([x0_, xlo, xhi]))
+            return x0_, xlo, xhi
+        x0 = _summary(x[~early], log=log)
+        xe = _summary(x[early], log=log)
+        if label:
+            print(f'{label}:')
+        print(x0, xe)
+        print(f'Early: {xe[0]:.3f} (50% range: {xe[1]:.3f}-{xe[2]:.3f}')
+        print(f'Late:  {x0[0]:.3f} (50% range: {x0[1]:.3f}-{x0[2]:.3f}')
+    for event in events:
+        t = satellites[f'history:{event}:time']
+        print(f'--{event}--')
+        summary(t, 'times')
+        summary(satellites[f'history:{event}:Mbound'], 'msub', log=True)
+        summary(satellites[f'history:{event}:Mstar'], 'mstar', log=True)
+    print('--Today--')
+    summary(satellites['Mbound'], 'msub', log=True)
+    summary(satellites['Mstar'], 'mstar', log=True)
     return
 
 
