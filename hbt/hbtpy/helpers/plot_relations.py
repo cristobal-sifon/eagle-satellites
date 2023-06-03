@@ -56,7 +56,9 @@ def run(args, sim, subs, logM200Mean_min, which_relations, ncores=1):
         relation_kwargs = dict(
             satellites_label='Satellites today',
             centrals_label='Centrals today', show_centrals=True,
-            min_hostmass=logM200Mean_min)#, xlim=(3e7,1e12))
+            min_hostmass=logM200Mean_min, show_ratios=False
+            #, xlim=(3e7,1e12))
+            )
 
         # historical HSMR binned by present-day quantities
         if 'hsmr-history' in which_relations:
@@ -213,7 +215,7 @@ def wrap_relations_hsmr(args, stat, **relation_kwargs):
               'Mbound': np.logspace(8.5, 12.7, 10)}
     events = [f'history:{e}'
               for e in ('first_infall', 'last_infall', 'cent', 'sat',
-                        'max_Mstar', 'max_Mbound')]
+                        'max_Mstar', 'max_Mbound', 'max_Mdm')]
     history_bincols = [
         (f'{h}:Mbound', f'{h}:Mstar', f'{h}:Mdm', f'{h}:Mstar/{h}:Mbound',
          f'{h}:Mbound/{h}:Mstar', f'{h}:Mdm/{h}:Mbound', f'{h}:Mstar/{h}:Mdm',
@@ -267,7 +269,7 @@ def wrap_relations_hsmr(args, stat, **relation_kwargs):
     return plot_args
 
 
-def wrap_relations_hsmr_history(args, stat, do_mass=False, do_ratios=True,
+def wrap_relations_hsmr_history(args, stat, do_mass=True, do_ratios=False,
                                 xlim=None, **relation_kwargs):
     """Plot historical quantities on the x-axis"""
     plot_args = []
@@ -278,6 +280,7 @@ def wrap_relations_hsmr_history(args, stat, do_mass=False, do_ratios=True,
          dict(statistic='count')])
     events = ('first_infall', 'last_infall', 'cent', 'sat', 'max_Mstar',
               'max_Mbound')
+    events = ('max_Mbound',)
     for ie, event in enumerate(events):
         h = f'history:{event}'
         # ratios in the x-axis
@@ -328,6 +331,7 @@ def wrap_relations_hsmr_history(args, stat, do_mass=False, do_ratios=True,
                        'ComovingMostBoundDistance/R200Mean',
                        'ComovingMostBoundDistance0/R200Mean')
             for bincol in bincols:
+                if 'time' not in bincol: continue
                 logbins = ('time' not in bincol \
                     and bincol.split(':')[-1] != 'z')
                 ic(bincol, logbins)
@@ -337,10 +341,12 @@ def wrap_relations_hsmr_history(args, stat, do_mass=False, do_ratios=True,
                         **relation_kwargs}
                 ycols = [f'{h}:Mbound', f'{h}:Mbound/{h}:Mstar',
                          f'Mbound/{h}:Mbound', f'Mstar/{h}:Mstar']
-                ylims = ((1e9, 1e13), (3, 300), (0.01, 2), (0.01, 2))
-                ylims = [(3, 300)]
+                ylims = [(1e9, 1e13), (3, 300), (0.01, 2), (0.01, 2)]
                 ycols = ycols \
                     + [f'{h}:{m}' for m in ('Mbound','Mdm','Mgas','Mstar')]
+                ylims = ylims + [(1e8, 1e13), (1e8, 1e13), (1e7, 1e11), (1e7, 1e12)]
+                ycols = [ycols[1]]
+                ylims = [ylims[1]]
                 if stat == 'count':
                     for ycol in ycols:
                         #for xcol in ('Mstar', f'{h}:Mstar'):
@@ -354,13 +360,15 @@ def wrap_relations_hsmr_history(args, stat, do_mass=False, do_ratios=True,
                             kwds.pop('ybins')
                 else:
                     for ycol, ylim in zip(ycols, ylims):
+                    #for ycol in ycols
                         #else:
-                        for xcol in (f'{h}:Mstar', f'{h}:Mbound'):
+                        for xcol in (f'{h}:Mstar',):# f'{h}:Mbound'):
                             if 'history' in xcol: xb = np.logspace(9, 11.5, 11)
                             xb = xbins[xcol.split(':')[-1]]
                             kwds['ylim'] = ylim if stat == 'mean' else (0, 0.6)
                             plot_args.append(
                                 [[xcol, ycol, bincol, xb], kwds.copy()])
+                continue
                 #
                 x_bins = np.logspace(9, 13, 10)
                 kwds['xlim'] = (x_bins[0], x_bins[-1])
@@ -885,8 +893,7 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
             plt.contour(xcenters, ycenters, counts, **contour_kwargs)
     if lines_only:
         ic(np.percentile(bindata, [1,50,99]))
-        ic(bins)
-        ic(np.histogram(bindata, bins)[0])
+        ic(bins, np.histogram(bindata, bins)[0])
         relation = relation_lines(
             xdata, ydata, xbins, statistic, gsat, bindata, bins,
             return_err=show_uncertainties)

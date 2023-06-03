@@ -6,7 +6,7 @@ import numpy as np
 ccolor = '0.2'
 scolor = 'k'
 
-max_events = {f'max_{m}': 'max' for m in ('Mbound', 'Mstar', 'Mgas', 'Mdm')}
+max_events = {f'max_{m}': f'max,{m[1:]}' for m in ('Mbound', 'Mstar', 'Mgas', 'Mdm')}
 events = {'last_infall': 'acc', 'first_infall': 'infall',
           'birth': 'birth', 'cent': 'cent', 'sat': 'sat', **max_events}
 
@@ -51,7 +51,7 @@ binlabel = {
     'z': 'z',
     }
 for m in ('Mbound', 'Mstar', 'Mdm', 'Mgas'):
-    binlabel[f'max_{m}'] = fr'{binlabel[m]}^\mathrm{{max}}'
+    binlabel[f'max_{m}'] = fr'{binlabel[m]}^\mathrm{{max-m[1:]}}'
 _xx = 'ComovingMostBoundDistance'
 for i in '012':
     p = 'p' + i.replace('0', '')

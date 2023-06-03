@@ -142,13 +142,12 @@ class BaseSubhalo(BaseDataSet):
 
     def __getitem__(self, col):
         cols = self.colnames
-        if np.iterable(col) and not isinstance(col, str):
-            return self.catalog[col]
         if (isinstance(col, str) and col in cols):
             return self.catalog[col]
         # conveninence names
         colmap = {'Mgas': 'MboundType0', 'Mdm': 'MboundType1',
-                  'Mstar': 'MboundType4'}}
+                  'Mstar': 'MboundType4', 'Ngas': 'NboundType0',
+                  'Ndm': 'NboundType1', 'Nstar': 'NboundType4'}
         colmap = {**colmap, 
                   # positions
                   **{i: f'ComovingMostBoundPosition{n}'
@@ -306,12 +305,13 @@ class BaseSubhalo(BaseDataSet):
         cols = self.catalog.columns \
             if isinstance(self.catalog, pd.DataFrame) \
             else self.catalog.dtype.names
+        cols = [col for col in cols
+                if ((col[:6] == 'Mbound' or np.any(
+                    [col.endswith(i) for i in
+                     ('Mbound','MboundType',
+                      'Mgas','Mdm','Mstar','LastMaxMass')]))
+                    and 'SnapshotIndex' not in col)]
         for col in cols:
-            # if np.any([col.startswith(i) and 'SnapshotIndex' not in col
-            #            for i in
-            if np.any([i in col and 'SnapshotIndex' not in col for i in
-                      ('Mbound','MboundType',
-                       'Mgas','Mdm','Mstar','LastMaxMass')]):
                 if self.catalog[col].max() < 1e10:
                     self.catalog[col] = 1e10 * self.catalog[col]
 
@@ -640,6 +640,14 @@ class Subhalos(BaseSubhalo):
     #     return cls(self.catalog[mask], self.sim,)
 
     ### attributes ###
+
+    # this is a good idea but breaks things so leaving for later
+    # @property
+    # def satellites(self):
+    #     return self.__init__(
+    #         self.catalog.loc[self.satellite_mask], self.sim, self.isnap,
+    #         logMmin=None, logMstar_min=None, logM200Mean_min=None,
+    #         load_any=False, verbose_when_loading=False)
 
     ### hidden methods ###
 
@@ -1152,6 +1160,8 @@ class Subhalos(BaseSubhalo):
 
     def read_history(self):
         file = os.path.join(self.sim.data_path, 'history', 'history.h5')
+        if file.endswith('.bak'):
+            warnings.warn(f'using a backup history file: {file}')
         if not os.path.isfile(file):
             wrn = f'cannot load history: history file {file} does not exist'
             warnings.warn(wrn)

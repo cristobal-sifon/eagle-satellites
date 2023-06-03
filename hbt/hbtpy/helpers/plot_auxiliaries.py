@@ -85,7 +85,7 @@ def format_filename(name):
     return name
 
 
-def get_axlabel(col, statistic):
+def get_axlabel(col, statistic='mean'):
     for op in ('/','-'):
         if op in col:
             cols = col.split(op)
