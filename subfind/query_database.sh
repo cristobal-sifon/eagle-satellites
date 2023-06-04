@@ -1,5 +1,6 @@
 #!/bin/sh
 
+# print empty lines
 for i in {1..5}; do echo; done
 
 user=csifon
@@ -159,7 +160,8 @@ wget --http-user=$user --http-passwd=$passwd "$url_cent" -O $output_dir/centrals
 ## ----
 
 url_sat="$url
-    and SubGroupNumber > 0"
+    and SubGroupNumber > 0
+    and Group_M_Mean200 > 1e13"
 
 wget --http-user=$user --http-passwd=$passwd "$url_sat" -O $output_dir/satellites.txt
 
