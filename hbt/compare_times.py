@@ -9,6 +9,8 @@ from scipy.optimize import curve_fit
 from scipy.stats import (
     binned_statistic, binned_statistic_2d, pearsonr,
     PearsonRConstantInputWarning)
+import seaborn as sns
+from sklearn.neighbors import KernelDensity
 from time import time
 import warnings
 
@@ -62,7 +64,7 @@ def main():
     print(np.sort(satellites.colnames))
 
     review_subsamples(args, satellites)
-    return
+    #return
 
     if args.ncores > 1:
         pool = mp.Pool()
@@ -105,14 +107,15 @@ def review_subsamples(args, s):
     tlb = s.sim.t_lookback.value
     print('\n*** Special subsamples ***')
     if not args.debug:
-        print('remember to set --debug\n')
-        return
+        ic.enable()
     print()
     nsat = s.size
     ic(nsat)
     review_tmstar(args, s, tlb, nsat, plot_path)
     review_tsat(args, s, tlb, nsat, plot_path)
     review_tacc(args, s, tlb, nsat, plot_path)
+    if not args.debug:
+        ic.disable()
     return
 
 
@@ -227,7 +230,7 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
     for i, ev_i in enumerate(events):
         xcol = f'history:{ev_i}:time'
         x = satellites[xcol] if use_lookback else tmax - satellites[xcol]
-        m = ['Mbound', 'Mstar', 'Mgas', 'M200Mean']
+        m = ['Mbound', 'Mstar', 'Mgas']#, 'M200Mean']
         m += [f'history:{ev}:{mi}' for mi in m for ev in ('birth',)+events]
         ic('---')
         ic(xcol)
@@ -240,10 +243,11 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
             ax = axes[i,j]
             format_ax(ax, i, j, xlim, nc)
             ycol = f'history:{ev_j}:time'
+            ic(xcol, ycol)
             y = satellites[ycol] if use_lookback else tmax - satellites[ycol]
             # diagonal
             if j == i:
-                plot_times_hist(x, tx, ax, iname, xlim)
+                plot_times_hist(x, tx, ax, iname, xlim, ylim=(0,0.4))
             # lower triangle
             elif j < i:
                 if c_lower is None:
@@ -310,12 +314,12 @@ def format_ax(ax, i, j, xlim, ncols, fs=18, labelpad=5):
         rax.set_ylabel(axlabels[i], **kwargs)
         format_ticks(rax)
     # bottom
-    if i == ncols - 1 and j < ncols - 1:
+    if i == ncols - 1:# and j < ncols - 1:
         ax.set_xlabel(axlabels[j], **kwargs)
     else:
-        ax.set(xticklabels=[])
+        ax.set(xlabel='', xticklabels=[])
     # top
-    if i == 0 and j > 0:
+    if i == 0:# and j > 0:
         tax = ax.twiny()
         tax.plot([], [])
         tax.set(xlim=xlim)
@@ -346,9 +350,15 @@ def plot_times_2d(satellites, x, y, bins, ax, i, j, axname, extent,
     h2d = np.histogram2d(x, y, bins=bins)[0]
     ntot = x.size
     if c == 'corr':
+        ic(cmap, cmap_rng)
         cmap = cmr.get_sub_cmap(cmap, *cmap_rng)
-        color = cmr.take_cmap_colors(
-            cmap, N=1, cmap_range=(r,r))[0]
+        ic(cmap)
+        ic(r)
+        try:
+            color = cmr.take_cmap_colors(
+                cmap, N=1, cmap_range=(r,r))[0]
+        except ValueError:
+            return
         cmap_ij = mplcolors.LinearSegmentedColormap.from_list(
             'cmap_ij', [[1, 1, 1], color])
         # making vmin slightly <0 so that the colormaps don't include white
@@ -387,15 +397,17 @@ def plot_times_2d(satellites, x, y, bins, ax, i, j, axname, extent,
     return im
 
 
-def plot_times_hist(x, tx, ax, axname, xlim):
+def plot_times_hist(x, tx, ax, axname, xlim, bw=0.1, ylim=None):
     # ax.annotate(
     #     f'({iname})', xy=(0.05,0.95), xycoords='axes fraction',
     #     ha='left', va='top', fontsize=14)
-    h = ax.hist(x, tx, histtype='stepfilled', color='C9')[0]
-    ic(axname, tx, h, h/h.sum())
+    #h = ax.hist(x, tx, histtype='stepfilled', color='C9')[0]
+    #ic(axname, tx, h, h/h.sum())
+    #kde = KernelDensity(kernel='gaussian', bandwidth=bw).fit(x[:,None])
+    sns.kdeplot(x, bw_method=bw, ax=ax, fill=True)
     ax.axvline(np.median(x), color='0.2')
     ax.tick_params(which='both', length=5)
-    ax.set(yticks=[], xlim=xlim)
+    ax.set(yticks=[], xlim=xlim, ylim=ylim, xlabel='')
     return
 
 

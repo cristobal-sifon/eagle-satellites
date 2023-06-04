@@ -2,6 +2,7 @@ data/
 subcat/
 plots/
 test*.png
+Untitled.ipynb
 tmp*
 
 SubGen/
