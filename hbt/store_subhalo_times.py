@@ -66,11 +66,10 @@ def main():
     print(f'host tracks in {time()-ti:.2f} s')
     ic0(host_track_id_today[:5])
 
-
     groups = ('trackids', 
               'max_Mbound', 'max_Mstar', 'max_Mdm', 'max_Mgas',
-              #'max_Mstar/Mbound', 'max_Mdm/Mbound', 'max_Mgas/Mbound',
-              #'max_Mbound/Mstar', 'max_Mgas/Mstar',
+              #'max_Mstar/Mbound', #'max_Mdm/Mbound', 'max_Mgas/Mbound',
+              #'max_Mbound/Mstar', #'max_Mgas/Mstar',
               'birth', 'first_infall', 'last_infall', 'sat', 'cent')
     names = [('TrackId', 'TrackId_current_host', 'TrackId_previous_host')] \
             + (len(groups)-1) \
@@ -105,6 +104,8 @@ def main():
 
     ## now calculate things!
     snaps = np.sort(sim.snapshots)[::-1]
+    #snaps = np.concatenate([snaps[:360:40], snaps[-5:]])
+    ic(snaps, snaps.size)
 
     z, t = np.zeros((2,snaps.size))
     selection = ('TrackId', 'Rank', 'HostHaloId', 'Mbound', 'MboundType')
@@ -119,7 +120,7 @@ def main():
         subs_i = Subhalos(
             subs_i, sim, snap, logMmin=None, logM200Mean_min=None,
             logMstar_min=None, load_any=False, verbose_when_loading=False)
-        ic0(type(subs_i), subs_i.shape)
+        ic0(type(subs_i), subs_i.shape, subs_i['Mstar'].min(), subs_i['Mstar'].max())
         z[i] = sim.redshift(snap)
         t[i] = sim.cosmology.lookback_time(z[i]).to('Gyr').value
 
@@ -130,7 +131,8 @@ def main():
         ics['history'](this.shape)
         this = Subhalos(
             this, subs_i.sim, subs_i.isnap, load_any=False, logMmin=None,
-            logM200Mean_min=None, logMstar_min=None, exclude_non_FoF=False)
+            logM200Mean_min=None, logMstar_min=None, exclude_non_FoF=False,
+            verbose_when_loading=False)
         if i == 0:
             ic(np.sort(this.columns))
         ics['history'](this.shape, subs_i.shape, history.shape)
@@ -147,28 +149,24 @@ def main():
         if i > 0:
             new_cent = (this['cent:isnap'] == -1) & (this['Rank'] == 0)
             ics['cent'](new_cent.sum())
-            # ics['cent'](this['TrackId'][new_cent])
-            # ics['cent'](history['trackids:TrackId'][new_cent])
-            #return
             history.loc[new_cent, cols['cent'][:3]] = [snap, t[i], z[i]]
             history = assign_masses(history, this, new_cent, 'cent')
             all_cent_history = (history['cent:isnap'] > -1)
-            ev = 'cent'
             ic_cols = ['trackids:TrackId'] \
-                + [f'{ev}:{x}' for x in ('isnap','z','time','Mbound','Mstar')]
+                + [f'cent:{x}' for x in ('isnap','z','time','Mbound','Mstar')]
             #ics['cent'](history.loc[all_cent_history, ic_cols])
         #continue
 
         history = max_mass(history, this, groups, cols, snap, t[i], z[i])
-        ics['masses'](this.catalog.loc[jtr, ['TrackId','MboundType4']])
-        ics['masses'](history.loc[jtr, jtr_cols])
+        # ics['masses'](this.catalog.loc[jtr, ['TrackId','MboundType4']])
+        # ics['masses'](history.loc[jtr, jtr_cols])
 
         ## birth
         # this is updated all the time while the subhalo exists
         # doing this every time so we can record the mass at birth
         # and so that satellites that already existed in the first snapshot
         # do get assigned a birth time
-        exist = np.in1d(history['trackids:TrackId'], subs_i['TrackId'])
+        exist = np.isin(history['trackids:TrackId'], subs_i['TrackId'])
         ics['birth'](exist.sum(), (1-exist).sum())
         history.loc[exist, cols['birth'][:3]] = [snap, t[i], z[i]]
         history = assign_masses(history, this, exist, 'birth')
@@ -240,17 +238,21 @@ def main():
         #ic(np.sort(history['sat/Mbound']))
         #ic((history > -1).sum())
         #ic(history.mean())
-        if (args.store or True) and i % 20 == 0:
+        if (args.store or True) and ((i % 10 == 0) or (snap < 10)):
             store_h5(hdf, groups, names, history)
             #store_npy(path, groups, names, history)
             #break
         if args.test and i >= 3:
             break
 
+    if args.test or args.debug:
+        ics['masses']()
+        ics['masses'](history.iloc[:20][cols['max_Mstar']])
+
     print(f'Failed: {failed}, i.e., {len(failed)} times')
     if args.store or args.test:
         store_h5(hdf, groups, names, history)
-        print(f'Finished! Stored everything to {hdf}.')
+        print(f'Finished! Stored everything to {hdf}')
 
     return
 
@@ -263,39 +265,38 @@ def assign_masses(history, this, mask, group):
 
 
 def max_mass(history, this, events, cols, snap, ti, zi):
-    #ics['masses']()
+    ics['masses']()
     #ic(this)
     for event in events:
         if event[:4] == 'max_':
-            m = event[4:]
-            #ics['masses'](event, m)
-            # define before splitting m
-            histdata = history[f'{event}:{m}']
-            m = m.split('/')
+            m = event[4:].split('/')
+            histdata = history[f'{event}:{m[0]}']
             thisdata = this[m[0]]
             if len(m) == 2:
+                histdata = histdata / history[f'{event}:{m[1]}']
                 thisdata = thisdata / this[m[1]]
             m = '/'.join(m)
             # greater or eaqual than because I'm going backwards
             # in time (i.e., I want to record the earliest snapshot
             # where the maximum mass is obtained)
             gtr = (thisdata >= histdata)
-            # this is working
             history.loc[gtr, cols[event][:3]] = [snap, ti, zi]
-            # but this is not
             history = assign_masses(history, this, gtr, event)
-            #history.loc[gtr, key] = thisdata.loc[gtr]
-            #if m == 'Mbound':
-                #ics['masses'](history.loc[gtr, cols[event]])
+            if m in ('Mstar', 'Mbound/Mstar'):
+                ics['masses'](history.loc[gtr, cols[event]][:10], gtr.sum())
     return history
 
 
 def store_h5(hdf, groups, names, data):
     with h5py.File(hdf, 'w') as out:
         for group, grnames in zip(groups, names):
-            gr = out.create_group(group)
+            #ic(group)
+            gr = out.create_group(group.replace('/', '-over-'))
             for name in grnames:
+                #ic(name)
                 col = f'{group}:{name}'
+                if group == 'max_Mstar':
+                    ics['masses'](col, data[col].to_numpy())
                 gr.create_dataset(
                     name, data=data[col].to_numpy(), dtype=data[col].dtype)
     ic0(f'Saved to {hdf}')

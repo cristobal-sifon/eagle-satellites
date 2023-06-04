@@ -20,6 +20,7 @@ if sys.version_info[0] == 2:
 import warnings
 warnings.simplefilter('ignore', FutureWarning)
 warnings.simplefilter('ignore', RuntimeWarning)
+warnings.simplefilter('ignore', UserWarning)
 
 #import lnr
 import plottery
@@ -67,50 +68,13 @@ def wrap_plot(args, sim, subs, isnap, hostmass='logM200Mean',
         logM200Mean_min=logMmin, logMstar_min=logMstar_min,
         verbose_when_loading=False)
     print(np.sort(subs.colnames))
-    return
-    # ic(np.sort(subs['Mbound']))
-    # ic(np.sort(subs['Mdm']))
-    # ic(np.sort(subs['Mstar']))
-    # ic(np.sort(subs['Mgas']))
-    # ic(np.sort(subs['Mbound/Mstar']))
-    # ic((subs['Ndm'] < 100).sum())
-    # ic(np.sort(subs['Nstar']))
-    # ic(np.sort(subs['Ndm']))
-    # ic(np.sort(subs['Ngas']))
-    # ic(np.unique(subs['SnapshotIndexOfSink']))
-    # ic(np.unique(subs['Depth'], return_counts=True))
-    # #ic(np.sort(subs['N']))
-    # return
-    j = np.isfinite(subs['history:first_infall:M200Mean'])
-    # ic(j.sum())
-    # print(np.histogram(subs['history:first_infall:M200Mean'][j], 20))
-    # return
-    ic(subs[['Rank','history:sat:isnap','history:sat:Mbound',
-             'history:cent:isnap','history:cent:Mbound']])
-    ic(subs[['history:max_Mbound:isnap','history:max_Mbound:Mbound']])
-    ic(np.unique(subs['HostHaloId']).size)
-    c = (subs['Rank'] == 0) & (subs['M200Mean'] < 2e13) \
-        & (subs['M200Mean'] > 1e13)
-    ic(c.sum())
-    s = (subs['Rank'] > 0) & (subs['M200Mean'] < 2e13) \
-        & (subs['Mstar'] > 1e9) & (subs['M200Mean'] > 1e13)
-    ic(c.sum(), s.sum())
     print('{0} objects'.format(subs[subs.colnames[0]].size))
     print()
-
-    # some numbers
-    # ms = subs['M200Mean'].values
-    # ic(ms.size, ms.min(), ms.max())
-    # s = (subs['Mstar'] > 1e9) & (subs['Rank'] > 0)
-    # c = (subs['Mstar'] > 1e9) & (subs['Rank'] == 0)
-    # b = np.array([1e13, 2e13, 5e13, 8e13, 1e14, 2e14, 5e14])
-    # ic(b)
-    # h = np.histogram(ms[c], b)[0]
-    # ic(h)
-    # ic(np.cumsum(h[::-1])[::-1])
-    # hs = np.histogram(ms[s], b)[0]
-    # ic(hs)
-    # ic(np.cumsum(hs[::-1])[::-1])
+    # debugging
+    # tbins = np.arange(0, 15, 2)
+    # for m in ('Mbound', 'Mdm', 'Mstar', 'Mgas'):
+    #     t = subs[f'history:max_{m}:time']
+    #     ic(m, t.min(), t.max(), np.histogram(t, tbins)[0])
     # return
 
     plot_path = f'{hostmass}_{logM200Mean_min:.1f}-logM_{logMmin}'
