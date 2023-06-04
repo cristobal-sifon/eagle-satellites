@@ -6,7 +6,8 @@ import numpy as np
 ccolor = '0.2'
 scolor = 'k'
 
-max_events = {f'max_{m}': f'max,{m[1:]}' for m in ('Mbound', 'Mstar', 'Mgas', 'Mdm')}
+max_events = {f'max_{m}': 'max,sub' if m == 'Mbound' else f'max,{m[1:]}'
+              for m in ('Mbound', 'Mstar', 'Mgas', 'Mdm')}
 events = {'last_infall': 'acc', 'first_infall': 'infall',
           'birth': 'birth', 'cent': 'cent', 'sat': 'sat', **max_events}
 
@@ -16,6 +17,7 @@ units = {'mass': r'\mathrm{M}_\odot', 'time': '\mathrm{Gyr}',
 xbins = {
     'ComovingMostBoundDistance': np.logspace(-1.7, 0.5, 9),
     #'logComovingMostBoundDistance': np.logspace(-2, 0.5, 9),
+    #'PhysicalMostBoundPeculiarVelocity': np.
     'M200Mean': np.logspace(13, 14.85, 6),
     'mu': np.logspace(-5, 0, 9),
     'Mstar': np.logspace(8.9, 11.1, 9),
@@ -28,6 +30,7 @@ xbins = {
     'ComovingMostBoundDistance/R200MeanComoving': \
         np.append([0.02], np.logspace(-1.5, 0.5, 7)),
         #np.logspace(-1.7, 0.5, 9)
+    #'PhysicalMostBoundPeculiarVelocity/PhysicalMostBoundHostVelocityDispersion'
     }
 for event in events.keys():
     xbins[f'history:{event}:time'] = np.linspace(0, 11, 6)
@@ -51,13 +54,17 @@ binlabel = {
     'z': 'z',
     }
 for m in ('Mbound', 'Mstar', 'Mdm', 'Mgas'):
-    binlabel[f'max_{m}'] = fr'{binlabel[m]}^\mathrm{{max-m[1:]}}'
+    name = 'sub' if m == 'Mbound' else m[1:]
+    binlabel[f'max_{m}'] = fr'{binlabel[m]}^\mathrm{{max,{name}}}'
 _xx = 'ComovingMostBoundDistance'
 for i in '012':
     p = 'p' + i.replace('0', '')
     xbins[f'{_xx}{i}'] = xbins[_xx]
     binlabel[f'{_xx}{i}'] = f'{binlabel[_xx]}_\mathrm{{{p}}}'
     xbins[f'{_xx}{i}/R200Mean'] = xbins[f'{_xx}/R200Mean']
+for p, n in zip(('01', '02', '12'), ('xy', 'xz', 'yz')):
+    xbins[f'{_xx}{p}'] = xbins[_xx]
+    binlabel[f'{_xx}{p}'] = f'{binlabel[_xx]}_{{{n}}}'
 for event, event_label in events.items():
     h = f'history:{event}'
     elabel = f'\mathrm{{{event_label}}}'

@@ -11,7 +11,6 @@ import numpy as np
 from numpy.lib.recfunctions import append_fields
 import os
 import pandas as pd
-#import cudf as pd
 from scipy.stats import binned_statistic as binstat
 import six
 from time import time
@@ -147,7 +146,8 @@ class BaseSubhalo(BaseDataSet):
         # conveninence names
         colmap = {'Mgas': 'MboundType0', 'Mdm': 'MboundType1',
                   'Mstar': 'MboundType4', 'Ngas': 'NboundType0',
-                  'Ndm': 'NboundType1', 'Nstar': 'NboundType4'}
+                  'Ndm': 'NboundType1', 'Nstar': 'NboundType4',
+                  'R': 'ComovingMostBoundDistance'}
         colmap = {**colmap, 
                   # positions
                   **{i: f'ComovingMostBoundPosition{n}'
@@ -165,6 +165,10 @@ class BaseSubhalo(BaseDataSet):
                   # peculiar velocities
                   **{f'v{i}pec': f'v{i}-PhysicalMostBoundHostMeanVelocity{n}'
                      for n, i in enumerate('xyz')},
+                  # distance from host centre
+                  **{f'd{p}': f'ComovingMostBoundDistance{n}'
+                     for p, n in zip(('x', 'y', 'z', 'xy', 'xz', 'yz'),
+                                     ('0', '1', '2', '01', '02', '12'))}
                   }
         if not isinstance(col, str):
             X = pd.DataFrame()
@@ -306,14 +310,15 @@ class BaseSubhalo(BaseDataSet):
             if isinstance(self.catalog, pd.DataFrame) \
             else self.catalog.dtype.names
         cols = [col for col in cols
-                if ((col[:6] == 'Mbound' or np.any(
+                if ((col.startswith('Mbound') or np.any(
                     [col.endswith(i) for i in
-                     ('Mbound','MboundType',
-                      'Mgas','Mdm','Mstar','LastMaxMass')]))
-                    and 'SnapshotIndex' not in col)]
+                     #('Mbound','Mgas','Mdm','Mstar','LastMaxMass')]))
+                     ('Mbound','LastMaxMass')]))
+                    and 'SnapshotIndex' not in col
+                    and '/' not in col)]
         for col in cols:
-                if self.catalog[col].max() < 1e10:
-                    self.catalog[col] = 1e10 * self.catalog[col]
+            if self.catalog[col].max() < 1e6:
+                self.catalog[col] = 1e10 * self.catalog[col]
 
     ### methods ###
 
@@ -1137,8 +1142,8 @@ class Subhalos(BaseSubhalo):
         for col in list(self.catalog):
             if 'M200' in col or col == 'MVir':
                 # otherwise I think this happens twice?
-                if self.catalog[col].max() < 1e10:
-                    self.catalog[col] = 1e10 * self.catalog[col]
+                if self.catalog[col].max() < 1e6:
+                    self.catalog[col] = 1e6 * self.catalog[col]
         if verbose:
             print('Joined hosts in {0:.2f} s'.format(time()-to))
         del hosts
@@ -1174,6 +1179,7 @@ class Subhalos(BaseSubhalo):
             for grp in hdf.keys():
                 group = hdf.get(grp)
                 for col in group.keys():
+                    grp = grp.replace('-over-', '/')
                     dfcol = col if grp == 'trackids' else f'{grp}:{col}'
                     history[f'history:{dfcol}'] = np.array(group.get(col))
         self._catalog = self.catalog.merge(

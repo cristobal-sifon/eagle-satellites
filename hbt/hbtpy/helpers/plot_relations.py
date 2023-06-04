@@ -56,7 +56,7 @@ def run(args, sim, subs, logM200Mean_min, which_relations, ncores=1):
         relation_kwargs = dict(
             satellites_label='Satellites today',
             centrals_label='Centrals today', show_centrals=True,
-            min_hostmass=logM200Mean_min, show_ratios=False
+            min_hostmass=logM200Mean_min, show_ratios=True
             #, xlim=(3e7,1e12))
             )
 
@@ -147,7 +147,8 @@ def wrap_relations_distance(args, stat):
     plot_args = []
     # defined here to avoid repetition
     ycols_present = ['Mbound/Mstar', 'Mstar/Mbound', 'Mstar', 'Mbound',
-                     'Mbound/M200Mean']
+                     'Mbound/M200Mean',
+        'PhysicalMostBoundPeculiarVelocity2/PhysicalMostBoundHostVelocityDispersion2']
     bincols_present = ['M200Mean', 'Mbound', 'Mstar']
     for ie, event in enumerate(('first_infall', 'last_infall', 'cent', 'sat')):
         h = f'history:{event}'
@@ -155,6 +156,7 @@ def wrap_relations_distance(args, stat):
                  f'{h}:time', f'{h}:Mbound/{h}:Mstar',
                  f'{h}:Mbound', f'{h}:Mstar'] \
                 + ycols_present
+        ycols = ycols_present
         bincols = [f'{h}:time', f'{h}:Mstar', f'{h}:Mbound',
                    f'{h}:Mbound/{h}:Mstar'] \
                   + bincols_present
@@ -169,7 +171,7 @@ def wrap_relations_distance(args, stat):
                 ylim = (2, 100)
             else: ylim = None
             #ylim = None
-            for xyz in ('0', ''):
+            for xyz in ('01', ''):
                 for xcol in (f'{d}{xyz}/R200MeanComoving', f'{d}{xyz}'):
                 #for xcol in (f'{d}{xyz}/R200MeanComoving',):
                     # 2d histogram
@@ -331,7 +333,7 @@ def wrap_relations_hsmr_history(args, stat, do_mass=True, do_ratios=False,
                        'ComovingMostBoundDistance/R200Mean',
                        'ComovingMostBoundDistance0/R200Mean')
             for bincol in bincols:
-                if 'time' not in bincol: continue
+                #if 'time' not in bincol: continue
                 logbins = ('time' not in bincol \
                     and bincol.split(':')[-1] != 'z')
                 ic(bincol, logbins)
@@ -368,7 +370,7 @@ def wrap_relations_hsmr_history(args, stat, do_mass=True, do_ratios=False,
                             kwds['ylim'] = ylim if stat == 'mean' else (0, 0.6)
                             plot_args.append(
                                 [[xcol, ycol, bincol, xb], kwds.copy()])
-                continue
+                #continue
                 #
                 x_bins = np.logspace(9, 13, 10)
                 kwds['xlim'] = (x_bins[0], x_bins[-1])
@@ -913,10 +915,18 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
         #     ax.plot(xcenters, relation[2], '-', color=colors[2],
         #             lw=8, zorder=13)
         if show_ratios:
+            ov = relation_overall
             for i, (r, c) in enumerate(zip(relation, colors)):
-                axes[1].plot(xcenters, r/relation_overall, '-',
+                axes[1].plot(xcenters, r/ov, '-',
                              color=c, lw=4, zorder=10+i)
             axes[1].axhline(1, ls='--', color='k', lw=1)
+            if show_uncertainties:
+                ylim_ratio = axes[1].get_ylim()
+                for i, (lo, hi, c) in enumerate(zip(err_lo, err_hi, colors)):
+                    axes[1].fill_between(
+                        xcenters, lo/ov, hi/ov, color=c,
+                        zorder=-10+i, alpha=0.4, lw=0)
+                axes[1].set_ylim(ylim_ratio)
     else:
         relation, colors, _ = relation_surface(
             xdata, ydata, xbins, ybins, statistic, gsat, bindata, bins,
