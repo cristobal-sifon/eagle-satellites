@@ -4,6 +4,8 @@ plots/
 test*.png
 tmp*
 
+SubGen/
+
 # Backup files
 *~
 *.save
