@@ -131,10 +131,6 @@ class BaseSubhalo(BaseDataSet):
         super(BaseSubhalo, self).__init__(catalog, as_dataframe=as_dataframe)
         BaseSimulation.__init__(self, sim)
         self.cosmology = self.sim.cosmology
-        #self.Mbound = 1e10 * self.catalog['Mbound']
-        #self.MboundType = 1e10 * self.catalog['MboundType']
-        #self.Nbound = self.catalog['Nbound']
-        #self.NboundType = self.catalog['NboundType']
         self.as_dataframe = as_dataframe
         self.pvref = pvref
         self._update_mass_columns()
@@ -144,11 +140,12 @@ class BaseSubhalo(BaseDataSet):
         if (isinstance(col, str) and col in cols):
             return self.catalog[col]
         # conveninence names
-        colmap = {'Mgas': 'MboundType0', 'Mdm': 'MboundType1',
-                  'Mstar': 'MboundType4', 'Ngas': 'NboundType0',
+        masscols = {'Mbound': 'Mbound', 'Mgas': 'MboundType0',
+                    'Mdm': 'MboundType1', 'Mstar': 'MboundType4'}
+        colmap = {'Ngas': 'NboundType0',
                   'Ndm': 'NboundType1', 'Nstar': 'NboundType4',
                   'R': 'ComovingMostBoundDistance'}
-        colmap = {**colmap, 
+        colmap = {**masscols, **colmap, 
                   # positions
                   **{i: f'ComovingMostBoundPosition{n}'
                      for n, i in enumerate('xyz')},
@@ -188,10 +185,12 @@ class BaseSubhalo(BaseDataSet):
                     'can only calculate difference of two columns,'
                     f' received {col}')
             return self.__getitem__(col[0]) - self.__getitem__(col[1])
+        #norm = 1e10 if col in masscols else 1
+        norm = 1
         if col in cols:
-            return self.catalog[col]
+            return norm * self.catalog[col]
         if col in colmap:
-            return self.catalog[colmap[col]]
+            return norm * self.catalog[colmap[col]]
         if col in ('Mtot', 'Mtotal'):
             return self._get_total_mass()
         raise KeyError(f'column {col} not found')
@@ -590,6 +589,7 @@ class Subhalos(BaseSubhalo):
         self.verbose_when_loading = verbose_when_loading
         self.exclude_non_FoF = exclude_non_FoF
         self.non_FoF = (self.catalog['HostHaloId'] == -1)
+        # correct if they are given in linear space
         if logMmin is not None and logMmin > 100:
             logMmin = np.log10(logMmin)
         self.logMmin = logMmin
@@ -1143,7 +1143,7 @@ class Subhalos(BaseSubhalo):
             if 'M200' in col or col == 'MVir':
                 # otherwise I think this happens twice?
                 if self.catalog[col].max() < 1e6:
-                    self.catalog[col] = 1e6 * self.catalog[col]
+                    self.catalog[col] = 1e10 * self.catalog[col]
         if verbose:
             print('Joined hosts in {0:.2f} s'.format(time()-to))
         del hosts
@@ -1186,6 +1186,9 @@ class Subhalos(BaseSubhalo):
             history.reset_index(), how='left', left_on='TrackId',
             right_on='history:TrackId')
         self._update_mass_columns()
+        ic()
+        ic(history[['history:sat:time','history:max_Mstar:time']])
+        ic(self.catalog[['TrackId','history:sat:time','history:max_Mstar:time']])
         return
 
     def siblings(self, trackid, return_value='index'):

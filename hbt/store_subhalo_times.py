@@ -234,20 +234,16 @@ def main():
         history.loc[jinfall_first, 'trackids:TrackId_previous_host'] \
             = this['TrackId_cent'][jinfall_first]
 
-        #ic(np.unique(history['cent/isnap'], return_counts=True))
-        #ic(np.sort(history['sat/Mbound']))
-        #ic((history > -1).sum())
-        #ic(history.mean())
-        if (args.store or True) and ((i % 10 == 0) or (snap < 10)):
+        if args.store and ((i % 10 == 0) or (snap < 10)):
             store_h5(hdf, groups, names, history)
-            #store_npy(path, groups, names, history)
-            #break
         if args.test and i >= 3:
             break
 
     if args.test or args.debug:
         ics['masses']()
         ics['masses'](history.iloc[:20][cols['max_Mstar']])
+        ics['masses'](
+            np.histogram(history['max_Mstar:time'], np.arange(0, 15, 2))[0])
 
     print(f'Failed: {failed}, i.e., {len(failed)} times')
     if args.store or args.test:
@@ -267,6 +263,7 @@ def assign_masses(history, this, mask, group):
 def max_mass(history, this, events, cols, snap, ti, zi):
     ics['masses']()
     #ic(this)
+    ic(np.sort(events))
     for event in events:
         if event[:4] == 'max_':
             m = event[4:].split('/')
@@ -283,17 +280,15 @@ def max_mass(history, this, events, cols, snap, ti, zi):
             history.loc[gtr, cols[event][:3]] = [snap, ti, zi]
             history = assign_masses(history, this, gtr, event)
             if m in ('Mstar', 'Mbound/Mstar'):
-                ics['masses'](history.loc[gtr, cols[event]][:10], gtr.sum())
+                ics['masses'](snap, history.loc[gtr, cols[event]][:10], gtr.sum())
     return history
 
 
 def store_h5(hdf, groups, names, data):
     with h5py.File(hdf, 'w') as out:
         for group, grnames in zip(groups, names):
-            #ic(group)
             gr = out.create_group(group.replace('/', '-over-'))
             for name in grnames:
-                #ic(name)
                 col = f'{group}:{name}'
                 if group == 'max_Mstar':
                     ics['masses'](col, data[col].to_numpy())

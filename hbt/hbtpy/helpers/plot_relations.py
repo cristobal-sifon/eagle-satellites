@@ -165,6 +165,8 @@ def wrap_relations_distance(args, stat):
         # uncomment when testing
         # ycols = ['Mbound']
         # bincols = ['Mstar']
+        ycols = ['Mbound/Mstar']
+        bincols = ['Mstar']
         for ycol in ycols:
             if stat == 'mean' \
                     and ycol in ('Mbound/Mstar', f'{h}:Mbound/{h}:Mstar'):
@@ -527,9 +529,9 @@ def wrap_relations_time(args, stat, do_time_differences=False):
 def do_xbins(X, mask, xbins, xlim=None, xscale='log'):
     ic()
     ic(xlim)
-    mask = mask & np.isfinite(X)
     if xlim is not None:
         X = X[(xlim[0] <= X) & (X <= xlim[1])]
+    mask = mask & np.isfinite(X)
     ic(X.shape, mask.shape, mask.sum())
     if isinstance(xbins, int):
         #ic(X[mask], X[mask].shape)
@@ -570,9 +572,10 @@ def plot_segregation_literature(ax, xcol, ycol):
     ax.errorbar(
         xlit, ylit, (ylitlo,ylithi), fmt='o', ms=10, elinewidth=3,
         color='k', zorder=100,
-        label=r'Sifón+18 ($\log\langle' \
-            ' m_{\u2605}/\mathrm{M}_\odot' \
-            r' \rangle=10.1$)')
+        # label=r'Sifón+18 ($\log\langle' \
+        #     ' m_{\u2605}/\mathrm{M}_\odot' \
+        #     r' \rangle=10.1$)')
+        label=r'Sifón+18 (1.3)')
     # Kumar+22
     xlit = np.array([0.2, 0.38, 0.58, 0.78])
     if '/R200Mean' in xcol:
@@ -592,9 +595,10 @@ def plot_segregation_literature(ax, xcol, ycol):
     ax.errorbar(
         xlit, ylit, (ylitlo,ylithi), fmt='s', ms=8, elinewidth=3,
         color='k', mfc='w', mew=3, zorder=100,
-        label=r'Kumar+22 ($\log\langle' \
-            ' m_{\u2605}/\mathrm{M}_\odot' \
-            r' \rangle=10.5$)')
+        # label=r'Kumar+22 ($\log\langle' \
+        #     ' m_{\u2605}/\mathrm{M}_\odot' \
+        #     r' \rangle=10.5$)')
+        label=r'Kumar+22 (3.2)')
     return
 
 
@@ -1078,10 +1082,10 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
             and ('Mstar' in ycol or ycol.count('Mbound') == 2) \
             and (xcol.split('/')[0][-1] not in '012') \
             and statistic == 'mean':
-        t = np.logspace(-1.6, -0.2, 10)
-        ax.plot(t, 100*t**(2/3), '-', color='0.5', lw=2)
-        ax.text(0.1, 30, r"$\propto (R/R_\mathrm{200m})^{2/3}$", va='center',
-                ha='center', color='0.5', rotation=45, fontsize=14)
+        t = np.logspace(-0.7, 0, 10)
+        ax.plot(t, 20*t**1.3, '-', color='0.5', lw=2)
+        ax.text(0.6, 8, r"$\propto (R/R_\mathrm{200m})^{1.3}$", va='center',
+                ha='center', color='0.5', rotation=60, fontsize=14)
 
     if literature:
         xcol_split = xcol.split(':')
