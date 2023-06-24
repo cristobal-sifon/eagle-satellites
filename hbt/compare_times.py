@@ -2,6 +2,7 @@ import cmasher as cmr
 from icecream import ic
 from matplotlib import (
     cm, colors as mplcolors, pyplot as plt, ticker, rcParams)
+from matplotlib.colors import LogNorm
 import multiprocessing as mp
 import numpy as np
 import os
@@ -48,23 +49,43 @@ def main():
     to = time()
     subs = Subhalos(
         reader.LoadSubhalos(-1), sim, -1, as_dataframe=True, logMmin=9,
-        logM200Mean_min=9)
+        logM200Mean_min=9, logMstar_min=9)
     #subs.sort(order='Mbound')
     print(f'Loaded subhalos in {(time()-to)/60:.2f} minutes')
+    ic(subs.satellites)
 
     print('In total there are {0} central and {1} satellite subhalos'.format(
         subs.centrals.size, subs.satellites.size))
 
     centrals = Subhalos(
-        subs.centrals, sim, -1, load_distances=False, load_velocities=False,
-        load_history=False, logMstar_min=9)
+        subs.centrals, sim, -1, load_any=False, logMstar_min=9)
     satellites = Subhalos(
-        subs.satellites, sim, -1, load_distances=False, load_velocities=False,
-        load_history=False, logM200Mean_min=13, logMstar_min=9)
-    print(np.sort(satellites.colnames))
+        subs.satellites, sim, -1, load_any=False,
+        logM200Mean_min=13, logMstar_min=9)
+    #print(np.sort(satellites.colnames))
+    # ic(satellites.catalog)
+    # return
 
-    review_subsamples(args, satellites)
+    #review_subsamples(args, satellites)
     #return
+
+    # some default configs
+    kwargs = {
+        'corr': dict(cmap='cmr.ember_r', cmap_rng=(0.35, 1),
+                     norm=LogNorm(vmin=0.2, vmax=0.9)),
+        'Mstar': dict(cmap='cmr.toxic_r', cmap_rng=(0.35, 1),
+                      norm=LogNorm(vmin=2e9, vmax=1e11)),
+        'Mbound': dict(cmap='cmr.cosmic', cmap_rng=(0.35, 1),
+                       norm=LogNorm(vmin=2e9, vmax=1e11)),
+        'Mbound/Mstar': dict(cmap='cmr.neon_r', cmap_rng=(0.1, 1),
+                             norm=LogNorm(vmin=2, vmax=150)),
+        'M200Mean': dict(cmap='inferno_r', cmap_rng=(0.3, 1),
+                         norm=LogNorm(vmin=1e13, vmax=2e14)),
+        # not setting vmin,vmax,log for this one
+        'ratio': dict(cmap='cmr.rainforest_r', cmap_rng=(0.35, 1)),
+        'ratio-over-max': dict(cmap='cmr.rainforest_r', cmap_rng=(0.35, 1),
+                               vmin=0, vmax=1)
+        }
 
     if args.ncores > 1:
         pool = mp.Pool()
@@ -73,25 +94,34 @@ def main():
         run = lambda f: f
     run(plot_times(
         satellites, c_lower='corr', c_upper='Mbound/Mstar',
-        cmap_lower='cmr.ember_r', cmap_lower_rng=(0.35, 1),
-        cmap_upper='cmr.neon_r', cmap_upper_rng=(0.1, 1)))
-    # run(plot_times(
-    #     satellites, c_lower='corr', c_upper='Mstar',
-    #     cmap_lower='cmr.ember_r', cmap_lower_rng=(0.35, 1),
-    #     cmap_upper='cmr.toxic_r',
-    #     vmin_upper=9.3, vmax_upper=11))
-    # run(plot_times(
-    #     satellites, c_lower='Mbound', c_upper='history:first_infall:Mbound',
-    #     cmap_lower='cmr.ember_r', cmap_upper='cmr.cosmic_r'))
-    # run(plot_times(
-    #     satellites, c_lower='history:first_infall:Mbound',
-    #     c_upper='history:first_infall:Mbound/history:first_infall:Mstar',
-    #     cmap_lower='cmr.ember_r', cmap_upper='cmr.cosmic_r',
-    #     vmin_lower=10.5, vmax_lower=13, cmap_lower_rng=(0,0.8),
-    #     cmap_upper_rng=(0,0.8)))
-    # run(plot_times(
-    #     satellites, c_lower='history:first_infall:Mstar',
-    #     c_upper='M200Mean'))
+        kwargs_lower=kwargs['corr'], kwargs_upper=kwargs['Mbound/Mstar']))
+    run(plot_times(
+        satellites, c_lower='history:max_Mstar:Mstar', c_upper='Mstar',
+        kwargs_lower=kwargs['Mstar'], kwargs_upper=kwargs['Mstar']))
+    run(plot_times(
+        satellites, c_lower='Mbound', c_upper='history:first_infall:Mbound',
+        kwargs_lower=kwargs['Mbound'], kwargs_upper=kwargs['Mbound']))
+    run(plot_times(
+        satellites, c_lower='Mbound', c_upper='history:max_Mbound:Mbound',
+        kwargs_lower=kwargs['Mbound'], kwargs_upper=kwargs['Mbound']))
+    run(plot_times(
+        satellites, c_lower='Mbound/history:first_infall:Mbound',
+        c_upper='Mstar/history:first_infall:Mstar',
+        kwargs_lower={**kwargs['ratio'], 'norm': LogNorm(vmin=0.1, vmax=2)},
+        kwargs_upper={**kwargs['ratio'], 'norm': LogNorm(vmin=0.5, vmax=5)}))
+    run(plot_times(
+        satellites, c_lower='Mbound/history:max_Mbound:Mbound',
+        c_upper='Mstar/history:max_Mstar:Mstar',
+        kwargs_lower=kwargs['ratio-over-max'],
+        kwargs_upper=kwargs['ratio-over-max']))
+    run(plot_times(
+        satellites, c_lower='history:first_infall:Mbound/history:max_Mbound:Mbound',
+        c_upper='history:first_infall:Mstar/history:max_Mstar:Mstar',
+        kwargs_lower=kwargs['ratio-over-max'],
+        kwargs_upper=kwargs['ratio-over-max']))
+    run(plot_times(
+        satellites, c_lower='history:first_infall:Mstar', c_upper='M200Mean',
+        kwargs_lower=kwargs['Mstar'], kwargs_upper=kwargs['M200Mean']))
     # run(plot_times(
     #     satellites, c_lower='history:sat:Mstar', c_upper='Mstar',
     #     cmap_lower='cmr.toxic_r', cmap_upper='cmr.toxic_r',
@@ -211,12 +241,40 @@ def review_tacc(args, s, tlb, nsat, plot_path):
 
 
 def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
-               cmap_lower='cmr.ember_r', cmap_lower_rng=(0,1),
-               cmap_upper='cmr.cosmic_r', cmap_upper_rng=(0,1), vmin_lower=None,
-               vmax_lower=None, stat_lower=np.nanmean, vmin_upper=None,
-               vmax_upper=None, stat_upper=np.nanmean):
-    #cmap_lower = define_cmap(c_lower, cmap_lower, cmap_lower_rng)
-    events = ('cent', 'sat', 'first_infall', 'last_infall', 'max_Mbound',
+            #    cmap_lower='cmr.ember_r', cmap_lower_rng=(0,1),
+            #    cmap_upper='cmr.cosmic_r', cmap_upper_rng=(0,1), vmin_lower=None,
+            #    vmax_lower=None, stat_lower=np.nanmean, log_lower=False,
+            #    vmin_upper=None, vmax_upper=None, stat_upper=np.nanmean,
+            #    log_upper=False):
+               stat_lower=np.nanmean, stat_upper=np.nanmean,
+               kwargs_lower={}, kwargs_upper={}):
+    """
+    To do:
+        - Implement option whether colorbar should be log-normed
+    """
+
+    # if isinstance(cmap_lower, (tuple, list, np.ndarray)):
+    #     cmap_lower_rng = cmap_lower[1]
+    #     if len(cmap_lower) == 3:
+    #         if vmin_lower is not None: vmin_lower = cmap_lower[2][0]
+    #         if vmax_lower is not None: vmax_lower = cmap_lower[2][1]
+    #     cmap_lower = cmap_lower[0]
+    # if isinstance(cmap_upper, (tuple, list, np.ndarray)):
+    #     cmap_upper_rng = cmap_upper[1]
+    #     if len(cmap_upper) == 3:
+    #         if vmin_upper is not None: vmin_lower = cmap_upper[2][0]
+    #         if vmax_upper is not None: vmax_lower = cmap_upper[2][1]
+    #     cmap_upper = cmap_upper[0]
+    ic(kwargs_lower['cmap'])
+    kwargs = [kwargs_lower, kwargs_upper]
+    for i, kw in enumerate(kwargs):
+        if 'cmap_rng' in kw:
+            cmap = kw.get('cmap', 'viridis')
+            cmap = cmr.get_sub_cmap(cmap, kw.get('vmin', 0), kw.get('vmax', 1))
+            kwargs[i]['cmap'] = cmap
+    kwargs_lower, kwargs_upper = kwargs
+    ic(kwargs_lower['cmap'])
+    events = ('cent', 'sat', 'first_infall', 'last_infall', 'max_Mdm',
               'max_Mstar', 'max_Mgas')
     nc = len(events)
     fig, axes = plt.subplots(
@@ -234,17 +292,16 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
         m += [f'history:{ev}:{mi}' for mi in m for ev in ('birth',)+events]
         ic('---')
         ic(xcol)
-        for mi in m:
-            r = pearsonr(x, satellites[mi])[0]
-            #if abs(r) > 0.5:
-            ic(mi, r)
+        # for mi in m:
+        #     r = pearsonr(x, satellites[mi])[0]
+        #     ic(mi, r)
         ic('---')
         for j, ev_j in enumerate(events):
             ax = axes[i,j]
-            format_ax(ax, i, j, xlim, nc)
             ycol = f'history:{ev_j}:time'
             ic(xcol, ycol)
             y = satellites[ycol] if use_lookback else tmax - satellites[ycol]
+            ic(x, y)
             # diagonal
             if j == i:
                 plot_times_hist(x, tx, ax, iname, xlim, ylim=(0,0.4))
@@ -255,8 +312,9 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
                 else:
                     im_lower = plot_times_2d(
                         satellites, x, y, tx, ax, i, j, iname, extent, c_lower,
-                        cmap=cmap_lower, cmap_rng=cmap_lower_rng,
-                        vmin=vmin_lower, vmax=vmax_lower, stat=stat_lower)
+                        # cmap=cmap_lower, cmap_rng=cmap_lower_rng,
+                        # vmin=vmin_lower, vmax=vmax_lower, stat=stat_lower)
+                        stat=stat_lower, **kwargs_lower)
             # upper triangle
             elif j > i:
                 if c_upper is None:
@@ -264,15 +322,22 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
                 else:
                     im_upper = plot_times_2d(
                         satellites, x, y, tx, ax, i, j, iname, extent, c_upper,
-                        cmap=cmap_upper, cmap_rng=cmap_upper_rng,
-                        vmin=vmin_upper, vmax=vmax_upper, stat=stat_upper)
+                        # cmap=cmap_upper, cmap_rng=cmap_upper_rng,
+                        # vmin=vmin_upper, vmax=vmax_upper, stat=stat_upper)
+                        stat=stat_upper, **kwargs_upper)
             ax.set(xlim=xlim)
             if j != i:
                 ax.plot(tx, tx, 'k--', lw=1)
                 ax.set(ylim=xlim)
                 ax.tick_params(which='both', length=3)
+            format_ax(ax, i, j, xlim, nc)
             iname += 1
     # colorbars
+    # quick fix for now
+    cmap_lower = kwargs_lower.get('cmap', 'viridis')
+    cmap_lower_rng = kwargs_lower.get('cmap_rng', (0, 1))
+    cmap_upper = kwargs_upper.get('cmap', 'viridis')
+    cmap_upper_rng = kwargs_upper.get('cmap_rng', (0, 1))
     show_colorbar(
         axes, im_lower, c_lower, cmap_lower, cmap_lower_rng, stat_lower,
         location='bottom')
@@ -293,7 +358,7 @@ def format_ax(ax, i, j, xlim, ncols, fs=18, labelpad=5):
                 '$m_\mathrm{sub}^\mathrm{max}$',
                 '$m_\mathrm{\u2605}^\mathrm{max}$',
                 '$m_\mathrm{gas}^\mathrm{max}$']
-    axlabels = [f'{i} (Gyr)' for i in axlabels]
+    axlabels = [f'{i} (Gya)' for i in axlabels]
     kwargs = {'fontsize': fs, 'labelpad': labelpad}
     # diagonal
     if i == j and i < ncols - 1:
@@ -305,18 +370,18 @@ def format_ax(ax, i, j, xlim, ncols, fs=18, labelpad=5):
     if j == 0 and i > 0:
         ax.set_ylabel(axlabels[i], **kwargs)
     else:
-        ax.set(yticklabels=[])
+        ax.set(ylabel='', yticklabels=[])
     # right
     if j == ncols - 1 and i < ncols - 1:
         rax = ax.twinx()
         rax.plot([], [])
-        rax.set(ylim=xlim)
         rax.set_ylabel(axlabels[i], **kwargs)
+        rax.set(ylim=xlim)
         format_ticks(rax)
     # bottom
-    if i == ncols - 1:# and j < ncols - 1:
-        ax.set_xlabel(axlabels[j], **kwargs)
-    else:
+    #if i == ncols - 1:# and j < ncols - 1:
+    ax.set_xlabel(axlabels[j], **kwargs)
+    if i < ncols - 1:
         ax.set(xlabel='', xticklabels=[])
     # top
     if i == 0:# and j > 0:
@@ -338,15 +403,22 @@ def format_ticks(ax, diagonal=False):
         ax.yaxis.set_major_locator(ticker.NullLocator())
     else:
         ax.yaxis.set_major_locator(ticker.FixedLocator([5,10]))
+    ax.tick_params(length=5, width=2)
     return
 
 
 def plot_times_2d(satellites, x, y, bins, ax, i, j, axname, extent,
-                  c, cmap, cmap_rng=(0,1),
-                  stat=np.nanmean, vmin=None, vmax=None, annotate_r=True):
+                  c, cmap, cmap_rng=(0,1), stat=np.nanmean, annotate_r=True,
+                  **kwargs):
+    """
+    kwargs passed to ``plt.imshow``
+    """
     is_lower = j < i
     # these are for correlations and for annotations
-    r, pr = pearsonr(x, y)
+    try:
+        r, pr = pearsonr(x, y)
+    except ValueError:
+        r = np.nan
     h2d = np.histogram2d(x, y, bins=bins)[0]
     ntot = x.size
     if c == 'corr':
@@ -358,7 +430,7 @@ def plot_times_2d(satellites, x, y, bins, ax, i, j, axname, extent,
             color = cmr.take_cmap_colors(
                 cmap, N=1, cmap_range=(r,r))[0]
         except ValueError:
-            return
+            color = 'C0'
         cmap_ij = mplcolors.LinearSegmentedColormap.from_list(
             'cmap_ij', [[1, 1, 1], color])
         # making vmin slightly <0 so that the colormaps don't include white
@@ -369,14 +441,21 @@ def plot_times_2d(satellites, x, y, bins, ax, i, j, axname, extent,
             origin='lower', aspect='auto', vmin=0, vmax=0.025*ntot)
         h2d[np.isnan(h2d)] = 0
     else:
-        cmap = cmr.get_sub_cmap(cmap, *cmap_rng)
+        ic(cmap)
+        #cmap = cmr.get_sub_cmap(cmap, *cmap_rng)
         m2d = binned_statistic_2d(
             x, y, satellites[c], stat, bins=bins)[0]
         #if not is_lower:
             #m2d = m2d.T
+        # im = ax.imshow(
+        #     np.log10(m2d), origin='lower', aspect='auto', vmin=vmin,
+        #     vmax=vmax, cmap=cmap, extent=extent)
+        # if vmin is not None: vmin = 10**vmin
+        # if vmax is not None: vmax = 10**vmax
         im = ax.imshow(
-            np.log10(m2d), origin='lower', aspect='auto', vmin=vmin,
-            vmax=vmax, cmap=cmap, extent=extent)
+            m2d, origin='lower', aspect='auto', extent=extent,
+            #cmap=cmap, norm=mplcolors.LogNorm(vmin=vmin, vmax=vmax))
+            **kwargs)
     # annotate correlation coefficient
     if annotate_r:
         # annot_top = (f'{r:.2f}\n({axname})', (0.05, 0.95), 'left', 'top')
@@ -398,21 +477,15 @@ def plot_times_2d(satellites, x, y, bins, ax, i, j, axname, extent,
 
 
 def plot_times_hist(x, tx, ax, axname, xlim, bw=0.1, ylim=None):
-    # ax.annotate(
-    #     f'({iname})', xy=(0.05,0.95), xycoords='axes fraction',
-    #     ha='left', va='top', fontsize=14)
-    #h = ax.hist(x, tx, histtype='stepfilled', color='C9')[0]
-    #ic(axname, tx, h, h/h.sum())
-    #kde = KernelDensity(kernel='gaussian', bandwidth=bw).fit(x[:,None])
     sns.kdeplot(x, bw_method=bw, ax=ax, fill=True)
     ax.axvline(np.median(x), color='0.2')
     ax.tick_params(which='both', length=5)
-    ax.set(yticks=[], xlim=xlim, ylim=ylim, xlabel='')
+    ax.set(yticks=[], xlim=xlim, ylim=ylim, ylabel='')
     return
 
 
 def show_colorbar(axes, im, c, cmap, cmap_rng, stat, location='left',
-                  logstat=True):
+                  logstat=False):
     assert location in ('left', 'right', 'bottom', 'top')
     orientation = 'vertical' if location in ('left', 'right') else 'horizontal'
     if c == 'corr':
@@ -436,10 +509,25 @@ def show_colorbar(axes, im, c, cmap, cmap_rng, stat, location='left',
             label = f'{binlabel[c[0]]}/{binlabel[c[1]]}'
         else:
             label = binlabel[c]
+        if stat in ('mean', np.mean, np.nanmean):
+            label = rf'$\langle {label} \rangle$'
+        elif stat in ('median', np.median, np.nanmedian):
+            label = f'med(${label}$)'
+        elif stat in ('std', np.std, np.nanstd):
+            label = rf'$\sigma({label})$'
         cbar = plt.colorbar(
             im, ax=axes, location=location, fraction=0.1, aspect=30,
-            label=f'{statlabel}(${label}$)')
-        #cbar.
+            #label=f'{statlabel}(${label}$)')
+            label=label)
+        ic(im.norm, isinstance(im.norm, LogNorm))
+        if isinstance(im.norm, LogNorm):
+            cbar_ticks = cbar.get_ticks()
+            ic(cbar_ticks)
+            ax = cbar.ax.xaxis if orientation == 'horizontal' else cbar.ax.yaxis
+            #if (cbar_ticks.min() >= 0.001) and (cbar_ticks.max() <= 1000):
+            if (im.norm.vmin > 1e-4) and (im.norm.vmax < 10000):
+                fmt = '%d' if im.norm.vmin > 0.1 else '%s'
+                ax.set_major_formatter(ticker.FormatStrFormatter(fmt))
     return
 
 
