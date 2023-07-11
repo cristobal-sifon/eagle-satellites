@@ -185,8 +185,10 @@ class Simulation(object):
     @property
     def snapshot_indices(self):
         if self._snapshot_indices is None:
-            self._snapshot_indices = np.arange(
-                self.snapshots.size, dtype=int)[self.snapshot_mask]
+            self._snapshot_indices = np.array(
+                [i for i in range(self.snapshot_list.size)
+                 if self.get_snapshot_file_from_index(i)
+                 in self.snapshot_files])
         return self._snapshot_indices
 
     @property
@@ -272,6 +274,28 @@ class Simulation(object):
             snapshot index
         """
         return self.snapshot_indices[self.snapshots == snap][0]
+
+    def snapshot_index_from_redshift(self, z, return_zsnap=False):
+        """Return snapshot index closest to a given redshift
+        
+        Parameters
+        ----------
+        redshift : float
+        
+        Returns
+        -------
+        isnap : int
+            snapshot index
+        zsnap : float
+            Only returned if ``return_zsnap==True``. Redshift of the
+            selected snapshot
+        """
+        j = np.argmin(np.abs(self.redshifts - z))
+        isnap = self.snapshot_indices[j]
+        if return_zsnap:
+            zsnap = self.redshift(isnap)
+            return isnap, zsnap
+        return isnap
 
     def initialize_tree(self):
         if not os.path.isdir(self.data_path):
