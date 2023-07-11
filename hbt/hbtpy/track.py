@@ -111,6 +111,7 @@ class TrackArray(BaseSubhalo):
 
 
 class Track(BaseSubhalo):
+    """Track object containing history of individual subhalo"""
 
     def __init__(self, trackid, sim):
         """
@@ -334,6 +335,7 @@ class Track(BaseSubhalo):
             name of file containing host halo histories. Must be full
             (absolute or relative) path
         """
+        raise NotImplementedError
         if host_track is None or isinstance(host_track, (int,np.integer)):
             with h5py.File(host_history_file, 'r') as hdf:
                 trackids = hdf.get('TrackId')
