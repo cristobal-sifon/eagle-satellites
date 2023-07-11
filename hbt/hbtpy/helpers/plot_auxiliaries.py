@@ -96,11 +96,11 @@ def get_axlabel(col, statistic='mean'):
         if col in axlabel:
             label = axlabel[col]
         elif col in binlabel:
-            label = bincol[col]
+            label = binlabel[col]
         else:
             label = col
     if statistic in ('count', 'mean'):
-        return f'${label}$'
+        return f'${label}$'.replace('$$', '$')
     label = label.replace('$', '')
     label = label.split()
     if len(label) == 2:
