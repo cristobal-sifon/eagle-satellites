@@ -11,6 +11,7 @@ import numpy as np
 from numpy.lib.recfunctions import append_fields
 import os
 import pandas as pd
+#import cudf as pd
 from scipy.stats import binned_statistic as binstat
 import six
 from time import time
@@ -112,6 +113,17 @@ class BaseDataSet(object):
             self.catalog.merge(right, *args, **kwargs), self.sim, self.isnap,
             load_any=False)
 
+    def sort(self, column, inplace=False, **kwargs):
+        """Sort catalog by column or columns
+        
+        ``kwargs`` are passed to ``pd.DataFrame.sort_values"""
+        if not self.as_dataframe:
+            self._catalog = self.DataFrame(self._catalog)
+        c = self._catalog.sort_values(column, **kwargs)
+        if not inplace:
+            self._catalog = c
+        if not self.as_dataframe:
+            self._catalog = self._catalg.to_records()
 
 
 class BaseSubhalo(BaseDataSet):
@@ -125,9 +137,6 @@ class BaseSubhalo(BaseDataSet):
         sim : ``Simulation``
         """
         assert pvref in ('Average', 'MostBound')
-        # setting to False here to load the Mbounds and Nbounds below
-        # (easier to load from hdf5 than DataFrame)
-        #super(BaseSubhalo, self).__init__(catalog, as_dataframe=False)
         super(BaseSubhalo, self).__init__(catalog, as_dataframe=as_dataframe)
         BaseSimulation.__init__(self, sim)
         self.cosmology = self.sim.cosmology
@@ -140,33 +149,8 @@ class BaseSubhalo(BaseDataSet):
         if (isinstance(col, str) and col in cols):
             return self.catalog[col]
         # conveninence names
-        masscols = {'Mbound': 'Mbound', 'Mgas': 'MboundType0',
-                    'Mdm': 'MboundType1', 'Mstar': 'MboundType4'}
-        colmap = {'Ngas': 'NboundType0',
-                  'Ndm': 'NboundType1', 'Nstar': 'NboundType4',
-                  'R': 'ComovingMostBoundDistance'}
-        colmap = {**masscols, **colmap, 
-                  # positions
-                  **{i: f'ComovingMostBoundPosition{n}'
-                     for n, i in enumerate('xyz')},
-                  **{f'{i}avg': f'ComovingAveragePosition{n}'
-                     for n, i in enumerate('xyz')},
-                  # velocities
-                  **{f'v{i}': f'PhysicalMostBoundVelocity{n}'
-                     for n, i in enumerate('xyz')},
-                  **{f'v{i}avg': f'PhysicalAverageVelocity{n}'
-                     for n, i in enumerate('xyz')},
-                  # host position
-                  **{f'{i}_host': f'CenterComoving{n}'
-                     for n, i in enumerate('xyz')},
-                  # peculiar velocities
-                  **{f'v{i}pec': f'v{i}-PhysicalMostBoundHostMeanVelocity{n}'
-                     for n, i in enumerate('xyz')},
-                  # distance from host centre
-                  **{f'd{p}': f'ComovingMostBoundDistance{n}'
-                     for p, n in zip(('x', 'y', 'z', 'xy', 'xz', 'yz'),
-                                     ('0', '1', '2', '01', '02', '12'))}
-                  }
+        colmap = {'Mgas': 'MboundType0', 'Mdm': 'MboundType1',
+                  'Mstar': 'MboundType4'}
         if not isinstance(col, str):
             X = pd.DataFrame()
             for c in col:
@@ -185,12 +169,10 @@ class BaseSubhalo(BaseDataSet):
                     'can only calculate difference of two columns,'
                     f' received {col}')
             return self.__getitem__(col[0]) - self.__getitem__(col[1])
-        #norm = 1e10 if col in masscols else 1
-        norm = 1
         if col in cols:
-            return norm * self.catalog[col]
+            return self.catalog[col]
         if col in colmap:
-            return norm * self.catalog[colmap[col]]
+            return self.catalog[colmap[col]]
         if col in ('Mtot', 'Mtotal'):
             return self._get_total_mass()
         raise KeyError(f'column {col} not found')
@@ -308,16 +290,12 @@ class BaseSubhalo(BaseDataSet):
         cols = self.catalog.columns \
             if isinstance(self.catalog, pd.DataFrame) \
             else self.catalog.dtype.names
-        cols = [col for col in cols
-                if ((col.startswith('Mbound') or np.any(
-                    [col.endswith(i) for i in
-                     #('Mbound','Mgas','Mdm','Mstar','LastMaxMass')]))
-                     ('Mbound','LastMaxMass')]))
-                    and 'SnapshotIndex' not in col
-                    and '/' not in col)]
         for col in cols:
-            if self.catalog[col].max() < 1e6:
-                self.catalog[col] = 1e10 * self.catalog[col]
+           if np.any([i in col and 'SnapshotIndex' not in col for i in
+                      ('Mbound','MboundType',
+                       'Mgas','Mdm','Mstar','LastMaxMass')]):
+                if self.catalog[col].max() < 1e10:
+                    self.catalog[col] = 1e10 * self.catalog[col]
 
     ### methods ###
 
@@ -342,18 +320,6 @@ class BaseSubhalo(BaseDataSet):
         if index == -1:
             return np.array(self.Nbound)
         return self.NboundType[:,index]
-
-    def sort(self, col, ascending=True, ignore_index=True):
-        """Sort data by values in ``col``"""
-        if self.as_dataframe:
-            self._catalog.sort_values(
-                col, ascending=ascending, inplace=True,
-                ignore_index=ignore_index)
-        else:
-            if ascending:
-                self._catalog.sort(order=col)
-            else:
-                self._catalog[::-1].sort(order=col)
 
     ## easy access to positions, distances and velocities ##
 
@@ -646,14 +612,6 @@ class Subhalos(BaseSubhalo):
 
     ### attributes ###
 
-    # this is a good idea but breaks things so leaving for later
-    # @property
-    # def satellites(self):
-    #     return self.__init__(
-    #         self.catalog.loc[self.satellite_mask], self.sim, self.isnap,
-    #         logMmin=None, logMstar_min=None, logM200Mean_min=None,
-    #         load_any=False, verbose_when_loading=False)
-
     ### hidden methods ###
 
     ### methods ###
@@ -700,14 +658,14 @@ class Subhalos(BaseSubhalo):
         # 1d
         if self.verbose_when_loading:
             ti = time()
-            # print('1d:')
-            # print(self.pcols())
+            print('1d:')
+            print(self.pcols())
         for dcol, pcol in zip(self.dcols(1, frame), self.pcols(frame)):
             self.catalog[dcol] = ((hosts[pcol] - hosts[pcol+'_h'])**2)**0.5
             if self.verbose_when_loading:
-                print(pcol, dcol)
-            #     print('percentiles:', np.percentile(self.satellites[dcol],
-            #           [0,1,25,50,99,100]))
+                print(dcol, pcol)
+                print('percentiles:', np.percentile(self.satellites[dcol],
+                      [0,1,25,50,99,100]))
         if self.verbose_when_loading:
             #print(hosts[['HostHaloId','HostHaloId_h','Rank','Rank_h']][j])
             #print(hosts[['ComovingMostBoundPosition0'[j])
@@ -721,8 +679,8 @@ class Subhalos(BaseSubhalo):
                 self.catalog[dcols]**2, axis=1)**0.5
             if self.verbose_when_loading:
                 print(dcol)
-            #     print('percentiles:', np.percentile(self.satellites[dcol],
-            #           [0,1,25,50,99,100]))
+                print('percentiles:', np.percentile(self.satellites[dcol],
+                      [0,1,25,50,99,100]))
         if self.verbose_when_loading:
             print('2d distances in {0:.2f} s'.format(time()-ti))
         # 3d
@@ -785,18 +743,6 @@ class Subhalos(BaseSubhalo):
         if return_value == 'index':
             return self._range[host_mask][0]
         return np.array(self.catalog[host_mask])
-
-    def merge(self, right, how='inner', **kwargs):
-        """Wrapper for ``pandas.DataFrame.merge``.
-        Returns a ``Subhalos`` object
-        ``right`` can be a ``Subhalos`` object or a ``DataFrame``
-        """
-        if isinstance(right, Subhalos):
-            right = right.catalog
-        return Subhalos(
-            self.catalog.merge(right, how=how, **kwargs),
-            self.sim, self.isnap, load_any=False,
-            logM200Mean_min=None, logMmin=None, logMstar_min=None)
 
     def _shmr_binning(self, x, bins, log=False):
         if not np.iterable(bins):
@@ -1142,7 +1088,7 @@ class Subhalos(BaseSubhalo):
         for col in list(self.catalog):
             if 'M200' in col or col == 'MVir':
                 # otherwise I think this happens twice?
-                if self.catalog[col].max() < 1e6:
+                if self.catalog[col].max() < 1e10:
                     self.catalog[col] = 1e10 * self.catalog[col]
         if verbose:
             print('Joined hosts in {0:.2f} s'.format(time()-to))
@@ -1164,9 +1110,7 @@ class Subhalos(BaseSubhalo):
         return
 
     def read_history(self):
-        file = os.path.join(self.sim.data_path, 'history', 'history.h5')
-        if file.endswith('.bak'):
-            warnings.warn(f'using a backup history file: {file}')
+        file = os.path.join(self.sim.data_path, 'history', 'history_new.h5')
         if not os.path.isfile(file):
             wrn = f'cannot load history: history file {file} does not exist'
             warnings.warn(wrn)
@@ -1179,16 +1123,12 @@ class Subhalos(BaseSubhalo):
             for grp in hdf.keys():
                 group = hdf.get(grp)
                 for col in group.keys():
-                    grp = grp.replace('-over-', '/')
                     dfcol = col if grp == 'trackids' else f'{grp}:{col}'
                     history[f'history:{dfcol}'] = np.array(group.get(col))
         self._catalog = self.catalog.merge(
             history.reset_index(), how='left', left_on='TrackId',
             right_on='history:TrackId')
         self._update_mass_columns()
-        ic()
-        ic(history[['history:sat:time','history:max_Mstar:time']])
-        ic(self.catalog[['TrackId','history:sat:time','history:max_Mstar:time']])
         return
 
     def siblings(self, trackid, return_value='index'):
