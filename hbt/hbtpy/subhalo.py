@@ -1110,7 +1110,7 @@ class Subhalos(BaseSubhalo):
         return
 
     def read_history(self):
-        file = os.path.join(self.sim.data_path, 'history', 'history_new.h5')
+        file = os.path.join(self.sim.data_path, 'history', 'history.h5')
         if not os.path.isfile(file):
             wrn = f'cannot load history: history file {file} does not exist'
             warnings.warn(wrn)

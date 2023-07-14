@@ -526,6 +526,42 @@ def wrap_relations_time(args, stat, do_time_differences=False):
 ################################################
 ################################################
 
+
+def apply_bins(subs, mask, bincol, bins, statistic, logbins, binlabel, cmap):
+    has_iterable_bins = np.iterable(bins)
+    bindata = subs[bincol]
+    mask = mask & np.isfinite(bindata)
+    if not has_iterable_bins:
+        if logbins:
+            j = mask & (bindata > 0)
+            ic(bindata.min(), bindata.max(), j.sum())
+            vmin, vmax = np.log10(np.percentile(bindata[j], [1,99]))
+            bins = np.logspace(vmin, vmax, bins)
+        else:
+            vmin, vmax = np.percentile(bindata[mask], [1,99])
+            bins = np.linspace(vmin, vmax, bins)
+        ic(vmin, vmax)
+        ic(bins)
+    if not binlabel:
+        binlabel = f'{statistic}({bincol})'
+    if logbins:
+        lb = np.log10(bins)
+        bin_centers = 10**((lb[1:]+lb[:-1])/2)
+    else:
+        bin_centers = (bins[1:]+bins[:-1]) / 2
+    ic(bin_centers)
+    if has_iterable_bins:
+        vmin = bin_centers[0]
+        vmax = bin_centers[-1]
+    #colors, colormap = colorscale(array=bin_centers, log=logbins)
+    normfunc = mplcolors.LogNorm if logbins else mplcolors.Normalize
+    colormap = cm.ScalarMappable(
+        normfunc(vmin=bin_centers[0], vmax=bin_centers[-1]), cmap)
+    colors = colormap.to_rgba(bin_centers)
+    return mask, bins, bin_centers, bindata, binlabel, \
+        vmin, vmax, colormap, colors
+
+
 def do_xbins(X, mask, xbins, xlim=None, xscale='log'):
     ic()
     ic(xlim)
@@ -600,6 +636,92 @@ def plot_segregation_literature(ax, xcol, ycol):
         #     r' \rangle=10.5$)')
         label=r'Kumar+22 (3.2)')
     return
+
+
+def relation_centrals(ax, subs, xcol, ycol, bincol, xbins, xcenters, bins,
+                      statistic, centrals_label='_none_', color='k',
+                      selection=None, selection_min=None, selection_max=None):
+    jcen = (subs['Rank'] == 0)
+    # shouldn't we ignore selection for centrals?
+    if selection is not None:
+        if selection_min is not None:
+            jcen = jcen & (subs[selection] >= selection_min)
+        if selection_max is not None:
+            jcen = jcen & (subs[selection <= selection_max])
+    #
+    if bincol is not None and 'M200Mean' not in bincol:
+        if 'Distance' not in bincol and 'time' not in bincol:
+            bc = '/'.join([i.split(':')[-1] for i in bincol.split('/')])
+            if bc != 'z':
+                jcen = jcen & (subs[bc] >= bins[0]) & (subs[bc] <= bins[-1])
+    if jcen.sum() == 0:
+        show_centrals = False
+    else:
+        yc = '/'.join([i.split(':')[-1] for i in ycol.split('/')])
+        cydata = subs[yc][jcen]
+        if statistic == 'std':
+            cydata = np.log10(cydata)
+        if 'time' in xcol or 'Distance' in xcol \
+                or xcol.split(':')[-1] == 'z':
+            ncen = -np.ones(xcenters.size, dtype=int)
+        else:
+            xc = '/'.join([i.split(':')[-1] for i in xcol.split('/')])
+            cxdata = subs[xc][jcen]
+            ncen = np.histogram(cxdata, xbins)[0]
+        # in this case just show overall mean
+        if 'time' in xcol or ('Distance' in xcol and '/' in ycol) \
+                or xcol.split(':')[-1] == 'z':
+            if statistic == 'mean':
+                c0 = np.mean(cydata)
+            elif statistic == 'std':
+                c0 = np.std(cydata)
+            else:
+                c0 = np.std(cydata) / np.mean(cydata)
+            cenrel = c0 * np.ones(xcenters.size)
+        elif '/' in statistic:
+            st = statistic.split('/')
+            cenrel = binstat(cxdata, cydata, st[0], xbins)[0] \
+                / binstat(cxdata, cydata, st[1], xbins)[0]
+        else:
+            st = count_stat if statistic == 'count' else statistic
+            try:
+                st = getattr(np, f'nan{st}')
+            except AttributeError:
+                pass
+            cenrel = binstat(cxdata, cydata, st, xbins)[0]
+        cenrel[cenrel == 0] = np.nan
+        # specifically historical mbound/mstar vs mstar binned by time
+        if 'history' in xcol and 'Mstar' in xcol \
+                and bincol.count('time') == 1 \
+                and 'Mbound' in ycol and 'Mstar' in ycol \
+                and ycol.count('history') == 2:
+            f = os.path.join(subs.sim.data_path, f'chsmr_{statistic}.txt')
+            cen_file = os.path.join(
+                subs.sim.data_path, f'chsmr_{statistic}.txt')
+            cen_time = np.loadtxt(cen_file)
+            for tref, ls in zip((0, 5, 10), ('o--', 's-.', '^:')):
+                # load stellar masss bins
+                with open(cen_file) as cf:
+                    xcen = np.array(
+                        [cf.readline() for i in range(3)][-1][2:].split(','),
+                        dtype=float)
+                xcen = (xcen[:-1]+xcen[1:]) / 2
+                jcentime = np.argmin(np.abs(cen_time[:,1]-tref))
+                ic(tref, jcentime)
+                ycentime = cen_time[jcentime,3:]
+                ycentime[ycentime == 0] = np.nan
+                ic(ycentime)
+                jjcen = (xcen <= xcenters[-1])
+                # plot_line(
+                #     ax, xcen[jjcen], ycentime[jjcen], ls=ls, lw=2,
+                #     color='C3', ms=4, label=f'Centrals {tref} Gyr ago')
+        #else:
+        ls = '--' if 'Distance' in xcol else 'o--'
+        ic(cenrel)
+        plot_line(
+            ax, xcenters, cenrel, ls='o--', lw=2, color=color, ms=6,
+            label=centrals_label, zorder=100)
+    return cenrel, ncen
 
 
 def relation_lines(x, y, xbins, statistic, mask=None, bindata=None, bins=10,
@@ -718,6 +840,35 @@ def relation_surface(x, y, xbins, ybins, statistic, mask=None,
     return relation, colors, cmap
 
 
+def set_yscale_log(axes, show_ratios, ylim_ratios):
+    ylim = axes[0].get_ylim()
+    ic(ylim)
+    axes[0].yaxis.set_minor_formatter(ticker.NullFormatter())
+    if ylim[0] >= 0.001 and ylim[1] <= 1000:
+        fmt = '%d' if ylim[0] >= 1 else '%s'
+        axes[0].yaxis.set_major_formatter(ticker.FormatStrFormatter(fmt))
+    if show_ratios:
+        if ylim_ratios is not None:
+            axes[1].set_ylim(ylim_ratios)
+        ylim = axes[1].get_ylim()
+        ic(ylim)
+        ic(ylim[0] > 0 and ylim[1]/ylim[0] >= 50,
+            ylim[0] <= 0 and ylim[1] >= 20)
+        if (ylim[0] > 0 and ylim[1]/ylim[0] >= 50) \
+                or (ylim[0] <= 0 and ylim[1] >= 20):
+            axes[1].set_yscale('log')
+            axes[1].yaxis.set_major_formatter(
+                ticker.FormatStrFormatter('%s'))
+    return
+
+
+#############################
+##                         ##
+##      Main function      ##
+##                         ##
+#############################
+
+
 def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
                   lines_only=True, statistic='mean', selection='Mstar',
                   selection_min=1e8, selection_max=None,
@@ -747,13 +898,13 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
     ic(xcol, xscale, xbins)
     ic(ycol, yscale, ybins)
     ic(bincol, logbins, bins)
+    ic(selection, selection_min, selection_max)
     # doesn't make much sense otherwise
     if statistic != 'mean':
         show_contours = False
     count_stat = np.nanmedian
     statmap = {'mean': np.nanmean, 'median': np.nanmedian, 'std': np.nanstd,
                'std/mean': lambda x: np.std(x)/np.nanmean(x)}
-    has_iterable_bins = np.iterable(bins)
     cen, sat, mtot, mstar, mhost, dark, Nsat, Ndark, Ngsat = \
         definitions(subs, hostmass=hostmass, min_hostmass=min_hostmass)
     xdata = subs[xcol]
@@ -761,8 +912,8 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
     ic(xdata.shape, ydata.shape)
     mask = np.isfinite(xdata) & np.isfinite(ydata)
     ic(mask.sum())
-    #cmap = plt.get_cmap(cmap)
     cmap = cmr.get_sub_cmap(cmap, *cmap_range)
+    # additional binning?
     if bincol is None:
         statistic = 'count'
         # this just for easier integration of code in the plotting bit
@@ -771,55 +922,32 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
         with_alpha = False
         lines_only = False
     else:
-        bindata = subs[bincol]
-        mask = mask & np.isfinite(bindata)
-        if not has_iterable_bins:
-            if logbins:
-                j = mask & (bindata > 0)
-                ic(bindata.min(), bindata.max(), j.sum())
-                vmin, vmax = np.log10(
-                    np.percentile(bindata[j], [1,99]))
-                bins = np.logspace(vmin, vmax, bins)
-            else:
-                vmin, vmax = np.percentile(bindata[mask], [1,99])
-                bins = np.linspace(vmin, vmax, bins)
-            ic(vmin, vmax)
-            ic(bins)
+        mask, bins, bin_centers, bindata, binlabel, vmin, vmax, colormap, colors \
+            = apply_bins(subs, mask, bincol, bins, statistic, logbins,
+                         binlabel, cmap)
 
-        #ic(bincol, logbins)
-        #ic(bins)
-        #ic(bindata.min(), bindata.max())
-        #ic(np.histogram(bindata, bins)[0])
-        if not binlabel:
-            binlabel = f'{statistic}({bincol})'
-        if logbins:
-            lb = np.log10(bins)
-            bin_centers = 10**((lb[1:]+lb[:-1])/2)
-        else:
-            bin_centers = (bins[1:]+bins[:-1]) / 2
-        ic(bin_centers)
-        if has_iterable_bins:
-            vmin = bin_centers[0]
-            vmax = bin_centers[-1]
-
-        #colors, colormap = colorscale(array=bin_centers, log=logbins)
-        if logbins:
-            normfunc = mplcolors.LogNorm
-        else:
-            normfunc = mplcolors.Normalize
-        colormap = cm.ScalarMappable(
-            normfunc(vmin=bin_centers[0], vmax=bin_centers[-1]), cmap)
-        colors = colormap.to_rgba(bin_centers)
     #mask = mask & (subs[hostmass] >= 10**min_hostmass)
     # these cases should be controlled with xbins rather than selection
     if xcol == selection and not force_selection:
         selection = None
     if selection is not None:
+        assert isinstance(selection, (str, np.str_)), \
+            '``selection`` must be a single column name'
         seldata = subs[selection]
-        if selection_min is not None:
-            mask = mask & (seldata >= selection_min)
-        if selection_max is not None:
-            mask = mask & (seldata <= selection_max)
+        # if we are generating bins in some "selection" quantity,
+        # make sure the definitions are consistent
+        if np.iterable(selection_min) or np.iterable(selection_max):
+            assert (np.iterable(selection_max) \
+                and np.iterable(selection_max) \
+                and (len(selection_min) == len(selection_max))), \
+                f'selection_min {selection_min} inconsistent with' \
+                    f' selection_max {selection_max}'
+        # this should only apply if we're selecting a single bin
+        else:
+            if selection_min is not None:
+                mask = mask & (seldata >= selection_min)
+            if selection_max is not None:
+                mask = mask & (seldata <= selection_max)
     #ic(mask.sum())
     xdata = xdata[mask]
     ydata = ydata[mask]
@@ -913,11 +1041,6 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
                 ax.fill_between(
                     xcenters, err_lo[i], err_hi[i], color=c, zorder=-10+i,
                     alpha=0.4, lw=0)
-        # highlight the bin around logmstar=10 for comparison with
-        # observations
-        # if literature and 'Distance' in xcol and bincol == 'Mstar':
-        #     ax.plot(xcenters, relation[2], '-', color=colors[2],
-        #             lw=8, zorder=13)
         if show_ratios:
             ov = relation_overall
             for i, (r, c) in enumerate(zip(relation, colors)):
@@ -996,85 +1119,11 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
         ic(f'{xcol} = {xcenters}')
         ic(f'{ycol} = {satrel}')
     # centrals have not been masked
+    # remember we are ignoring selections for centrals now
     if show_centrals:
-        jcen = (subs['Rank'] == 0)
-        if selection is not None:
-            if selection_min is not None:
-                jcen = jcen & (subs[selection] >= selection_min)
-            if selection_max is not None:
-                jcen = jcen & (subs[selection <= selection_max])
-        if bincol is not None and 'M200Mean' not in bincol:
-            if 'Distance' not in bincol and 'time' not in bincol:
-                bc = '/'.join([i.split(':')[-1] for i in bincol.split('/')])
-                if bc != 'z':
-                    jcen = jcen & (subs[bc] >= bins[0]) & (subs[bc] <= bins[-1])
-        if jcen.sum() == 0:
-            show_centrals = False
-        else:
-            yc = '/'.join([i.split(':')[-1] for i in ycol.split('/')])
-            cydata = subs[yc][jcen]
-            if statistic == 'std':
-                cydata = np.log10(cydata)
-            if 'time' in xcol or 'Distance' in xcol \
-                    or xcol.split(':')[-1] == 'z':
-                ncen = -np.ones(xcenters.size, dtype=int)
-            else:
-                xc = '/'.join([i.split(':')[-1] for i in xcol.split('/')])
-                cxdata = subs[xc][jcen]
-                ncen = np.histogram(cxdata, xbins)[0]
-            # in this case just show overall mean
-            if 'time' in xcol or ('Distance' in xcol and '/' in ycol) \
-                    or xcol.split(':')[-1] == 'z':
-                if statistic == 'mean':
-                    c0 = np.mean(cydata)
-                elif statistic == 'std':
-                    c0 = np.std(cydata)
-                else:
-                    c0 = np.std(cydata) / np.mean(cydata)
-                cenrel = c0 * np.ones(xcenters.size)
-            elif '/' in statistic:
-                st = statistic.split('/')
-                cenrel = binstat(cxdata, cydata, st[0], xbins)[0] \
-                    / binstat(cxdata, cydata, st[1], xbins)[0]
-            else:
-                st = count_stat if statistic == 'count' else statistic
-                try:
-                    st = getattr(np, f'nan{st}')
-                except AttributeError:
-                    pass
-                cenrel = binstat(cxdata, cydata, st, xbins)[0]
-            cenrel[cenrel == 0] = np.nan
-            # specifically historical mbound/mstar vs mstar binned by time
-            if 'history' in xcol and 'Mstar' in xcol and bincol.count('time') == 1 \
-                    and 'Mbound' in ycol and 'Mstar' in ycol \
-                    and ycol.count('history') == 2:
-                f = os.path.join(sim.data_path, f'chsmr_{statistic}.txt')
-                print(f, os.path.isfile(f))
-                cen_file = os.path.join(sim.data_path, f'chsmr_{statistic}.txt')
-                cen_time = np.loadtxt(cen_file)
-                print(cen_time.shape)
-                for tref, ls in zip((0, 5, 10), ('o--', 's-.', '^:')):
-                    # load stellar masss bins
-                    with open(cen_file) as cf:
-                        xcen = np.array(
-                            [cf.readline() for i in range(3)][-1][2:].split(','),
-                            dtype=float)
-                    xcen = (xcen[:-1]+xcen[1:]) / 2
-                    jcentime = np.argmin(np.abs(cen_time[:,1]-tref))
-                    ic(tref, jcentime)
-                    ycentime = cen_time[jcentime,3:]
-                    ycentime[ycentime == 0] = np.nan
-                    ic(ycentime)
-                    jjcen = (xcen <= xcenters[-1])
-                    # plot_line(
-                    #     ax, xcen[jjcen], ycentime[jjcen], ls=ls, lw=2,
-                    #     color='C3', ms=4, label=f'Centrals {tref} Gyr ago')
-            #else:
-            ls = '--' if 'Distance' in xcol else 'o--'
-            ic(cenrel)
-            plot_line(
-                ax, xcenters, cenrel, ls='o--', lw=2, color=ccolor, ms=6,
-                label=centrals_label, zorder=100)
+        cenrel, ncen = relation_centrals(
+            ax, subs, xcol, ycol, bincol, xbins, xcenters, bins, statistic,
+            centrals_label=centrals_label, color=ccolor)
     else:
         cenrel = -np.ones(xcenters.size)
         ncen = np.zeros(xcenters.size)
@@ -1132,26 +1181,7 @@ def plot_relation(sim, subs, xcol='Mstar', ycol='Mbound',
         #     ax.xaxis.set_major_locator(ticker.MultipleLocator(2))
         axes[-1].xaxis.set_major_formatter(ticker.FormatStrFormatter('%d'))
     if yscale == 'log':
-        ylim = axes[0].get_ylim()
-        ic(ylim)
-        axes[0].yaxis.set_minor_formatter(ticker.NullFormatter())
-        if ylim[0] >= 0.001 and ylim[1] <= 1000:
-            fmt = '%d' if ylim[0] >= 1 else '%s'
-            axes[0].yaxis.set_major_formatter(ticker.FormatStrFormatter(fmt))
-        if show_ratios:
-            if ylim_ratios is not None:
-                axes[1].set_ylim(ylim_ratios)
-            ylim = axes[1].get_ylim()
-            ic(ylim)
-            ic(ylim[0] > 0 and ylim[1]/ylim[0] >= 50,
-               ylim[0] <= 0 and ylim[1] >= 20)
-            if (ylim[0] > 0 and ylim[1]/ylim[0] >= 50) \
-                    or (ylim[0] <= 0 and ylim[1] >= 20):
-                axes[1].set_yscale('log')
-                axes[1].yaxis.set_major_formatter(
-                    ticker.FormatStrFormatter('%s'))
-            #axes[1].set_yticks(np.logspace(, 4, 9))
-            #axes[1].set_ylim(ylim)
+        set_yscale_log(axes, show_ratios, ylim_ratios)
 
     # diagonal line when applicable (we do this after setting the limits)
     if show_1to1:
