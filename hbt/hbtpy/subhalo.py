@@ -102,16 +102,18 @@ class BaseDataSet(object):
         """Wrapper for ``pandas.DataFrame.groupby``"""
         return self.catalog.groupby(*args, **kwargs)
 
-    def merge(self, right, *args, **kwargs):
+    def merge(self, right, in_place=True, *args, **kwargs):
         """Wrapper for ``pandas.DataFrame.merge``.
         Returns a ``Subhalos`` object
         ``right`` can be a ``Subhalos`` object or a ``DataFrame``
         """
         if isinstance(right, Subhalos):
             right = right.catalog
-        return Subhalos(
-            self.catalog.merge(right, *args, **kwargs), self.sim, self.isnap,
-            load_any=False)
+        new = self.catalog.merge(right, *args, **kwargs)
+        if in_place:
+            self._catalog = new
+        else:
+            return Subhalos(new, self.sim, self.isnap, load_any=False)
 
     def sort(self, column, inplace=False, **kwargs):
         """Sort catalog by column or columns
