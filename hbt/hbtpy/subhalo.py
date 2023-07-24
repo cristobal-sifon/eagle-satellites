@@ -299,7 +299,7 @@ class BaseSubhalo(BaseDataSet):
                 # it's easier to add other exceptions here
                 if 'Depth' in col:
                     continue
-                if self.catalog[col].max() < 1e10:
+                if self.catalog[col].max() < 1e6:
                     self.catalog[col] = 1e10 * self.catalog[col]
 
     ### methods ###
@@ -1093,7 +1093,7 @@ class Subhalos(BaseSubhalo):
         for col in list(self.catalog):
             if 'M200' in col or col == 'MVir':
                 # otherwise I think this happens twice?
-                if self.catalog[col].max() < 1e10:
+                if self.catalog[col].max() < 1e6:
                     self.catalog[col] = 1e10 * self.catalog[col]
         if verbose:
             print('Joined hosts in {0:.2f} s'.format(time()-to))
