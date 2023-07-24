@@ -296,6 +296,9 @@ class BaseSubhalo(BaseDataSet):
            if np.any([i in col and 'SnapshotIndex' not in col for i in
                       ('Mbound','MboundType',
                        'Mgas','Mdm','Mstar','LastMaxMass')]):
+                # it's easier to add other exceptions here
+                if 'Depth' in col:
+                    continue
                 if self.catalog[col].max() < 1e10:
                     self.catalog[col] = 1e10 * self.catalog[col]
 
