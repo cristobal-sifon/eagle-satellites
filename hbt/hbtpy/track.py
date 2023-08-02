@@ -247,6 +247,10 @@ class Track(BaseSubhalo):
         return self._last_central_snapshot_index
 
     @property
+    def length(self):
+        return self.track['Mbound'].size
+
+    @property
     def Mbound(self):
         return 1e10 * self.track['Mbound']
 
