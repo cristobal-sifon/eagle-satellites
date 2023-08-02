@@ -297,10 +297,11 @@ class BaseSubhalo(BaseDataSet):
                       ('Mbound','MboundType',
                        'Mgas','Mdm','Mstar','LastMaxMass')]):
                 # it's easier to add other exceptions here
-                if 'Depth' in col:
+                if 'Depth' in col or 'time' in col:
                     continue
                 if self.catalog[col].max() < 1e6:
-                    self.catalog[col] = 1e10 * self.catalog[col]
+                    self.catalog[col] \
+                        = 1e10 * self.catalog[col] / self.sim.cosmology.h
 
     ### methods ###
 
@@ -1092,9 +1093,9 @@ class Subhalos(BaseSubhalo):
         # update host masses
         for col in list(self.catalog):
             if 'M200' in col or col == 'MVir':
-                # otherwise I think this happens twice?
                 if self.catalog[col].max() < 1e6:
-                    self.catalog[col] = 1e10 * self.catalog[col]
+                    self.catalog[col] \
+                        = 1e10 * self.catalog[col] / self.sim.cosmology.h
         if verbose:
             print('Joined hosts in {0:.2f} s'.format(time()-to))
         del hosts
