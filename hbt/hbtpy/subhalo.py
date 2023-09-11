@@ -152,7 +152,8 @@ class BaseSubhalo(BaseDataSet):
             return self.catalog[col]
         # conveninence names
         colmap = {'Mgas': 'MboundType0', 'Mdm': 'MboundType1',
-                  'Mstar': 'MboundType4'}
+                  'Mstar': 'MboundType4', 'Ngas': 'NboundType0',
+                  'Ndm': 'NboundType1', 'Nstar': 'NboundType4'}
         if not isinstance(col, str):
             X = pd.DataFrame()
             for c in col:
@@ -288,7 +289,7 @@ class BaseSubhalo(BaseDataSet):
         assert ax in [0, 1, 2]
         return 'xyz'[[0, 1, 2].index(ax)]
 
-    def _update_mass_columns(self):
+    def _update_mass_columns(self, history_only=False):
         cols = self.catalog.columns \
             if isinstance(self.catalog, pd.DataFrame) \
             else self.catalog.dtype.names
@@ -297,7 +298,13 @@ class BaseSubhalo(BaseDataSet):
                       ('Mbound','MboundType',
                        'Mgas','Mdm','Mstar','LastMaxMass')]):
                 # it's easier to add other exceptions here
-                if 'Depth' in col or 'time' in col:
+                if 'Depth' in col or 'time' in col or 'isnap' in col \
+                    or col.split(':')[-1] == 'z':
+                    continue
+                # in this case only divide by h - units are already Msun
+                if history_only and 'history' in col:
+                    self.catalog[col] \
+                        = self.catalog[col] / self.sim.cosmology.h
                     continue
                 if self.catalog[col].max() < 1e6:
                     self.catalog[col] \
@@ -622,7 +629,7 @@ class Subhalos(BaseSubhalo):
 
     ### methods ###
 
-    def distance2host(self, frame='Physical', verbose=False):
+    def distance2host(self, frame='Comoving', verbose=False):
         """Calculate the distance of all subhalos to the center of
         their host
 
@@ -1130,11 +1137,18 @@ class Subhalos(BaseSubhalo):
                 group = hdf.get(grp)
                 for col in group.keys():
                     dfcol = col if grp == 'trackids' else f'{grp}:{col}'
-                    history[f'history:{dfcol}'] = np.array(group.get(col))
+                    # it's easier to correct for h here than in
+                    # _update_mass_columns
+                    # norm = self.sim.cosmology.h if \
+                    #     (dfcol.split(':')[-1] in
+                    #      ('Mbound','Mgas','Mstar','Mdm', 'M200Mean','MVir')) \
+                    #     else 1
+                    history[f'history:{dfcol}'] \
+                        = np.array(group.get(col))#  / norm
         self._catalog = self.catalog.merge(
             history.reset_index(), how='left', left_on='TrackId',
             right_on='history:TrackId')
-        self._update_mass_columns()
+        self._update_mass_columns(history_only=True)
         return
 
     def siblings(self, trackid, return_value='index'):
