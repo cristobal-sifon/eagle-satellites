@@ -46,7 +46,7 @@ def main():
 
     subs = Subhalos(
         subs, sim, isnap, exclude_non_FoF=True,
-        logMmin=9, logM200Mean_min=12, logMstar_min=9,
+        logMmin=None, logM200Mean_min=None, logMstar_min=None,
         load_distances=True, load_velocities=False,
         load_hosts=False, load_history=False)
     subhalos = subs.catalog
@@ -67,14 +67,14 @@ def main():
 
     groups = ('trackids', 
               'max_Mbound', 'max_Mstar', 'max_Mdm', 'max_Mgas',
-              #'max_Mstar/Mbound', #'max_Mdm/Mbound', 'max_Mgas/Mbound',
-              #'max_Mbound/Mstar', #'max_Mgas/Mstar',
-              'birth', 'first_infall', 'last_infall', 'sat', 'cent')
+            #   'max_Mstar/Mbound', 'max_Mdm/Mbound', 'max_Mgas/Mbound',
+            #   'max_Mbound/Mstar', 'max_Mgas/Mstar',
+              'birth', 'first_infall', 'last_infall', 'sat', 'cent', 'peri')
     names = [('TrackId', 'TrackId_current_host', 'TrackId_previous_host')] \
             + (len(groups)-1) \
                 * [('isnap', 'time', 'z', 'Mbound',
                     'Mstar', 'Mdm', 'Mgas', 'M200Mean', 'Depth')]
-    #           TrackIDs                         isnap      time,z,masses       depth
+    #           TrackIDs           isnap      time,z,masses      depth
     dtypes = [3*[np.int32]] \
               + (len(groups)-1)*[[np.int16] + 7*[np.float32] + [np.int8]]
     cols = {group: [f'{group}:{name}' for name in grnames]
@@ -110,6 +110,9 @@ def main():
     snaps = np.concatenate([snaps[:360:40], snaps[-5:]])
     ic(snaps, snaps.size)
 
+    # a flag to update pericenters
+    past_peri = np.zeros(track_ids.size, dtype=bool)
+
     z, t = np.zeros((2,snaps.size))
     failed = []
     for i, snap in enumerate(tqdm(snaps)):
@@ -139,6 +142,9 @@ def main():
         if i == 0:
             ic0(np.sort(this.columns))
         ics['history'](this.shape, subs_i.shape, history.shape)
+
+        # this raises a MemoryError
+        #this.distance2host('Comoving')
 
         ## sat
         # this one gets updated all the time
@@ -258,6 +264,9 @@ def main():
         history.loc[jinfall_first, 'trackids:TrackId_previous_host'] \
             = this['TrackId_cent'][jinfall_first]
 
+        # pericenter
+        #past_
+
         if args.store and ((i % 10 == 0) or (snap < 10)):
             store_h5(hdf, groups, names, history)
         if args.test and i >= 3:
@@ -311,7 +320,7 @@ def max_mass(history, this, events, cols, snap, ti, zi):
             # history = assign_masses(history, this, gtr, event)
             history = update_history(
                 history, this, cols, snap, ti, zi, gtr, event)
-            if m in ('Mstar', 'Mbound/Mstar'):
+            if m in ('Mstar', 'Mbound'):
                 mcols = [i for i in cols[event]]
                 mcols.insert(0, 'trackids:TrackId')
                 ics['masses'](snap, history.loc[gtr, mcols][:10], gtr.sum())
