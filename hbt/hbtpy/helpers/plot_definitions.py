@@ -12,7 +12,7 @@ events = {'last_infall': 'acc', 'first_infall': 'infall',
           'birth': 'birth', 'cent': 'cent', 'sat': 'sat', **max_events}
 
 massnames = ['Mbound', 'Mstar', 'Mdm', 'Mgas', 'Mass', 'M200', 'MVir']
-units = {'mass': r'\mathrm{M}_\odot', 'time': '\mathrm{Gyr}',
+units = {'mass': r'\mathrm{M}_\odot', 'time': '\mathrm{Gya}',
          'distance': 'h^{-1}\mathrm{Mpc}'}
 xbins = {
     'ComovingMostBoundDistance': np.logspace(-1.7, 0.5, 9),
@@ -23,12 +23,13 @@ xbins = {
     'Mstar': np.logspace(8.9, 11.1, 9),
     'Mgas': np.logspace(8, 11, 10),
     'Mbound': np.logspace(9, 13, 10),
-    'time': np.arange(0, 13.5, 2),
+    'time': np.append(np.arange(2), np.arange(2, 13.5, 2)),
     'z': np.array([0, 0.5, 1, 1.5, 2, 3, 5]),
     # some common ratios
-    'ComovingMostBoundDistance/R200Mean': np.logspace(-1.7, 0.5, 9),
+    'ComovingMostBoundDistance/R200Mean': np.logspace(-1.7, 0.7, 10),
+    # it seems there's nothing beyond 4R/R200m
     'ComovingMostBoundDistance/R200MeanComoving': \
-        np.append([0.02], np.logspace(-1.5, 0.5, 7)),
+        np.append([0.02], np.logspace(-1.5, 0.6, 9)),
         #np.logspace(-1.7, 0.5, 9)
     #'PhysicalMostBoundPeculiarVelocity/PhysicalMostBoundHostVelocityDispersion'
     }

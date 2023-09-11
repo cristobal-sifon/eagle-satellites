@@ -114,7 +114,8 @@ def plot_fractions_1d(subs, cols, xcol):
 
 def plot_fractions_2d(subs, cols, xcol, ycol):
     tbins = np.arange(0, 13.6, 0.5)
-    dbins = np.arange(-13.5, 13.6, 0.5)
+    #dbins = np.arange(-13.5, 13.6, 0.5)
+    dbins = np.arange(-1, 1.01, 0.1) - 0.05
     bins = [dbins if '-' in col else tbins for col in (ycol,xcol)]
     extent = [bins[1][0], bins[1][-1], bins[0][0], bins[0][-1]]
     s = subs.satellite_mask

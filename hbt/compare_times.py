@@ -8,8 +8,7 @@ import numpy as np
 import os
 from scipy.optimize import curve_fit
 from scipy.stats import (
-    binned_statistic, binned_statistic_2d, pearsonr,
-    PearsonRConstantInputWarning)
+    binned_statistic, binned_statistic_2d, pearsonr)
 import seaborn as sns
 from sklearn.neighbors import KernelDensity
 from time import time
@@ -31,7 +30,7 @@ adjust_kwargs = dict(
     left=0.10, right=0.95, bottom=0.05, top=0.98, wspace=0.3, hspace=0.1)
 
 warnings.simplefilter('once', RuntimeWarning)
-warnings.simplefilter('ignore', PearsonRConstantInputWarning)
+#warnings.simplefilter('ignore', PearsonRConstantInputWarning)
 
 
 def main():
@@ -118,7 +117,7 @@ def main():
         satellites, c_lower='history:first_infall:Mbound/history:max_Mbound:Mbound',
         c_upper='history:first_infall:Mstar/history:max_Mstar:Mstar',
         kwargs_lower=kwargs['ratio-over-max'],
-        kwargs_upper=kwargs['ratio-over-max']))
+        kwargs_upper={**kwargs['ratio'], 'vmin': 0.4, 'vmax': 1}))
     run(plot_times(
         satellites, c_lower='history:first_infall:Mstar', c_upper='M200Mean',
         kwargs_lower=kwargs['Mstar'], kwargs_upper=kwargs['M200Mean']))
@@ -252,19 +251,6 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
     To do:
         - Implement option whether colorbar should be log-normed
     """
-
-    # if isinstance(cmap_lower, (tuple, list, np.ndarray)):
-    #     cmap_lower_rng = cmap_lower[1]
-    #     if len(cmap_lower) == 3:
-    #         if vmin_lower is not None: vmin_lower = cmap_lower[2][0]
-    #         if vmax_lower is not None: vmax_lower = cmap_lower[2][1]
-    #     cmap_lower = cmap_lower[0]
-    # if isinstance(cmap_upper, (tuple, list, np.ndarray)):
-    #     cmap_upper_rng = cmap_upper[1]
-    #     if len(cmap_upper) == 3:
-    #         if vmin_upper is not None: vmin_lower = cmap_upper[2][0]
-    #         if vmax_upper is not None: vmax_lower = cmap_upper[2][1]
-    #     cmap_upper = cmap_upper[0]
     ic(kwargs_lower['cmap'])
     kwargs = [kwargs_lower, kwargs_upper]
     for i, kw in enumerate(kwargs):
@@ -274,7 +260,7 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
             kwargs[i]['cmap'] = cmap
     kwargs_lower, kwargs_upper = kwargs
     ic(kwargs_lower['cmap'])
-    events = ('cent', 'sat', 'first_infall', 'last_infall', 'max_Mdm',
+    events = ('birth', 'cent', 'sat', 'first_infall', 'last_infall', 'max_Mdm',
               'max_Mstar', 'max_Mgas')
     nc = len(events)
     fig, axes = plt.subplots(
@@ -347,14 +333,14 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
     # save!
     c_lower = hbt_tools.format_colname(c_lower)
     c_upper = hbt_tools.format_colname(c_upper)
-    output = f'compare_times/comparetimes__{c_lower}__{c_upper}'
+    output = f'compare_times/comparetimes__{c_lower}__{c_upper}__birth'
     hbt_tools.save_plot(
         fig, output, satellites.sim, tight=False, h_pad=0.2)
     return
 
 
 def format_ax(ax, i, j, xlim, ncols, fs=18, labelpad=5):
-    axlabels = ['cent', 'sat', 'infall', 'acc',
+    axlabels = ['birth', 'cent', 'sat', 'infall', 'acc',
                 '$m_\mathrm{sub}^\mathrm{max}$',
                 '$m_\mathrm{\u2605}^\mathrm{max}$',
                 '$m_\mathrm{gas}^\mathrm{max}$']

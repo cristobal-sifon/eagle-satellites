@@ -1,3 +1,4 @@
+from icecream import ic
 from matplotlib import pyplot as plt
 import numpy as np
 import os
@@ -45,11 +46,18 @@ def main():
         ax.hist(subs['Mstar'][mask], mstarbins, histtype='step', lw=3,
                 color=f'C{i+1}', zorder=10-i,
                 label=f'$N_\mathrm{{DM}}\leq{Nmin_i}$')
+        ic(Nmin_i)
+        for mstar_min in (1e7, 1e8, 1e9):
+            j = (subs['Mstar'] >= mstar_min) & mask
+            ic(np.log10(mstar_min), j.sum(),
+                subs[['Nbound','Ndm']][j],
+                subs[['Mdm','Mstar']][j]/1e8,
+                subs['Mdm/Mstar'][j])
+            print()
     for i, Nmin_i in enumerate(Nmin):
         mask = (subs['Nbound'] <= Nmin_i)
         ax.hist(subs['Mstar'][mask], mstarbins, histtype='step', lw=3,
                 zorder=10-i, ls='--', color=f'C{i+1}')
-    #ax.text()
     ax.set(xscale='log', yscale='log', xlabel='Mstar', ylabel='N')
     ax.legend(fontsize=14)
     output = os.path.join(sim.plot_path, 'orphan.png')

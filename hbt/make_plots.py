@@ -71,10 +71,16 @@ def wrap_plot(args, sim, subs, isnap, hostmass='logM200Mean',
     print('{0} objects'.format(subs[subs.colnames[0]].size))
     print()
     # debugging
+    # events = ('max_Mstar', 'max_Mbound', 'max_Mdm', 'sat', 'cent',
+    #           'first_infall', 'last_infall')
     # tbins = np.arange(0, 15, 2)
-    # for m in ('Mbound', 'Mdm', 'Mstar', 'Mgas'):
-    #     t = subs[f'history:max_{m}:time']
-    #     ic(m, t.min(), t.max(), np.histogram(t, tbins)[0])
+    # for event in events:
+    #     h = f'history:{event}'
+    #     d = subs[f'{h}:Depth']
+    #     ic(event, np.unique(d))
+    #     if 'max_' in event:
+    #         t = subs[f'{h}:time']
+    #         ic(t.min(), t.max(), np.histogram(t, tbins)[0])
     # return
 
     plot_path = f'{hostmass}_{logM200Mean_min:.1f}-logM_{logMmin}'
