@@ -101,14 +101,22 @@ class BaseDataSet:
         """Wrapper for ``pandas.DataFrame.groupby``"""
         return self.catalog.groupby(*args, **kwargs)
 
-    def merge(self, right, in_place=True, *args, **kwargs):
+    def merge(
+        self, right, left_cols=None, right_cols=None, in_place=True, *args, **kwargs
+    ):
         """Wrapper for ``pandas.DataFrame.merge``.
         Returns a ``Subhalos`` object
         ``right`` can be a ``Subhalos`` object or a ``DataFrame``
         """
         if isinstance(right, Subhalos):
             right = right.catalog
-        new = self.catalog.merge(right, *args, **kwargs)
+        if left_cols is not None:
+            left = self.__getitem__(left_cols)
+        else:
+            left = self.catalog
+        if right_cols is not None:
+            right = right[right_cols]
+        new = left.merge(right, *args, **kwargs)
         if in_place:
             self._catalog = new
         else:
@@ -148,6 +156,7 @@ class BaseSubhalo(BaseDataSet):
         self.as_dataframe = as_dataframe
         self.pvref = pvref
         self._update_mass_columns()
+        # self._update_position_columns()
 
     def __getitem__(self, col):
         cols = self.colnames
@@ -338,6 +347,25 @@ class BaseSubhalo(BaseDataSet):
                     continue
                 if self.catalog[col].max() < 1e6:
                     self.catalog[col] = 1e10 * self.catalog[col] / self.sim.cosmology.h
+
+    def _update_position_columns(self, history_only=False):
+        for col in self.colnames:
+            # distances will already be using these updated positions
+            if np.any(
+                [
+                    i in col and "SnapshotIndex" not in col
+                    for i in ("Position", "R200", "RVir", "RHalf", "Rmax")
+                ]
+            ):  # it's easier to add other exceptions here
+                if (
+                    "Depth" in col
+                    or "time" in col
+                    or "isnap" in col
+                    or col.split(":")[-1] == "z"
+                ):
+                    continue
+                if self.catalog[col].max() < 70:
+                    self.catalog[col] = self.catalog[col] / self.sim.cosmology.h
 
     ### methods ###
 
@@ -752,14 +780,6 @@ class Subhalos(BaseSubhalo):
         )
         if self.verbose_when_loading:
             print("hosts:", np.sort(hosts.columns))
-        j = (hosts["HostHaloId"] > 100) & (hosts["HostHaloId"] <= 102)
-        # print('j =', j.sum())
-        """
-        tbl = Table.from_pandas(hosts[j])
-        cols = [fits.Column(name=key, array=tbl[key]) for key in tbl.colnames]
-        hdu = fits.BinTableHDU.from_columns(cols)
-        hdu.writeto('test_hosthalo.fits')
-        """
         if self.verbose_when_loading:
             print("Joined hosts in {0:.2f} min".format((time() - to) / 60))
         # 1d
