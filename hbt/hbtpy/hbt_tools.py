@@ -29,8 +29,18 @@ def timer(func):
 
 
 def format_colname(col):
-    return col.replace('-', '-minus-').replace('/', '-over-').replace(':', '-')
-
+    for event in ('birth', 'cent', 'sat', 'first_infall', 'last_infall'):
+        e = ''.join([i[0] for i in event.split('_')])
+        col = col.replace(f'history:{event}', f'h{e}')
+    for event in ('max_Mbound', 'max_Mdm', 'max_Mstar', 'max_Mgas'):
+        e = event.split('_')[1][1]
+        col = col.replace(f'history:{event}', f'max{e}')
+    col = col.replace('ComovingMostBound', 'CMB') \
+        .replace('MeanComoving', 'MeanCom') \
+        .replace('-', '-minus-') \
+        .replace('/', '-over-') \
+        .replace(':', '-')
+    return col
 
 def load_subhalos(args, isnap=None, selection=None):
     """Convenience function to load subhalos with HBTReader"""
