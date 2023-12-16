@@ -14,7 +14,7 @@ import sys
 from HBTReader import HBTReader
 
 
-class BaseSimulation(object):
+class BaseSimulation:
     """
     This class is imported by external objects such as Subhalo or
     Track. For now, it only provides the capability to load a
@@ -31,6 +31,16 @@ class BaseSimulation(object):
             self.sim = sim
         self.reader = HBTReader(self.sim.path)
 
+    def load_subhalos(self, isnap=None, z=None, selection=None, **kwargs):
+        """Wrapper to initialize a Subhalos object from the simulation"""
+        if isnap is None:
+            if z is None:
+                raise ValueError('must provide either isnap or z')
+            isnap = self.snapshot_index_from_redshift(z)
+        subs = self.reader.LoadSubhalos(isnap, selection=selection)
+        subs = Subhalos(subs, self, isnap, **kwargs)
+        return subs
+
 
 class Simulation(object):
     """Simulation object
@@ -45,7 +55,10 @@ class Simulation(object):
         self._cosmology = None
         self._family = None
         self._formatted_name = None
+        self._reader = None
         self._redshifts = None
+        self._scale_factor_dict = None
+        self._scale_factors = None
         self._snapshots = None
         self._snapshot_files = None
         self._snapshot_list = None
@@ -97,6 +110,11 @@ class Simulation(object):
         return os.path.join('data', self.name.replace('/', '_'), 'infall.txt')
 
     @property
+    def lookback_dict(self):
+        return {i: self.cosmology.lookback_time(zi)
+                for i, zi in self.redshift_dict.items()}
+
+    @property
     def mass_columns(self):
         return ['LastMaxMass', 'Mbound', 'Mstar', 'Mdm', 'Mgas', 'Mass',
                 'M200', 'M200Mean', 'MVir']
@@ -135,12 +153,19 @@ class Simulation(object):
         return os.path.join('plots', self.name.replace('/', '_'))
 
     @property
+    def reader(self):
+        if self._reader is None:
+            self._reader = HBTReader(self.path)
+        return self._reader
+
+    @property
+    def redshift_dict(self):
+        return {i: 1/a - 1 for i, a in self.scale_factor_dict.items()}
+
+    @property
     def redshifts(self):
         if self._redshifts is None:
-            self._redshifts =  np.array(
-                [x.split('_')[2][1:].replace('p', '.')
-                 for x in self.snapshot_list],
-                dtype=float)[self.snapshot_mask]
+            self._redshifts =  1 / self.scale_factors - 1
         return self._redshifts
 
     @property
@@ -148,8 +173,17 @@ class Simulation(object):
         return '/cosma/home/durham/jvbq85/data/HBT/data'
 
     @property
-    def scale_factor(self):
-        return 1 / (1+self.redshifts)
+    def scale_factor_dict(self):
+        if self._scale_factor_dict is None:
+            self._scale_factor_dict = self.reader.GetScaleFactorDict()
+        return self._scale_factor_dict
+
+    @property
+    def scale_factors(self):
+        if self._scale_factors is None:
+            self._scale_factors = np.array(
+                [a for i, a in self.scale_factor_dict.items()])
+        return self._scale_factors
 
     @property
     def snapshot_files(self):
@@ -160,10 +194,12 @@ class Simulation(object):
 
     @property
     def snapshot_list(self):
-        """All snapshots as listed in ``snapshotlist.txt``"""
         if self._snapshot_list is None:
-            self._snapshot_list = np.loadtxt(
-                os.path.join(self.path, 'snapshotlist.txt'), dtype=str)
+            # self._snapshot_list = np.loadtxt(
+            #     os.path.join(self.path, 'snapshotlist.txt'), dtype=str)
+            self._snapshot_list = np.array(
+                [file.split('/')[-1].replace('.hdf5', '').split('_')[1]
+                 for file in self.snapshot_files], dtype=int)
         return self._snapshot_list
 
     @property
@@ -243,6 +279,18 @@ class Simulation(object):
         """
         return self.masstype_pandas_columns[self._masstype_index(mtype)]
 
+    # THIS CANNOT WORK DUE TO CIRCULAR IMPORT
+    # def load_subhalos(self, isnap=None, z=None, selection=None, **kwargs):
+    #     """Wrapper to initialize a Subhalos object from the simulation"""
+    #     reader = HBTReader(self.path)
+    #     if isnap is None:
+    #         if z is None:
+    #             raise ValueError('must provide either isnap or z')
+    #         isnap = self.snapshot_index_from_redshift(z)
+    #     subs = reader.LoadSubhalos(isnap, selection=selection)
+    #     subs = Subhalos(subs, self, isnap, **kwargs)
+    #     return subs
+
     def redshift(self, isnap: int):
         """Redshift given snapshot index
 
@@ -253,9 +301,12 @@ class Simulation(object):
         """
         if isnap < 0:
             isnap = self.snapshots[-1] + 1 + isnap
-        try:
-            return self.redshifts[self.snapshots == isnap][0]
-        except IndexError:
+        if isnap in self.scale_factor_dict:
+            return 1 / self.scale_factor_dict.get(isnap) - 1
+        else:
+        # try:
+        #     return self.redshifts[self.snapshots == isnap][0]
+        # except IndexError:
             msg = f'snapshot {isnap} not found in {self.name}'
             raise IndexError(msg)
 
@@ -292,6 +343,7 @@ class Simulation(object):
         """
         j = np.argmin(np.abs(self.redshifts - z))
         isnap = self.snapshot_indices[j]
+        ic(j, self.redshifts[j], isnap, self.redshift(isnap))
         if return_zsnap:
             zsnap = self.redshift(isnap)
             return isnap, zsnap
