@@ -40,6 +40,51 @@ def main():
     #     [subs.catalog['Depth'], 3*np.ones(subs.catalog['Depth'].size)], axis=0)
     #subs.catalog['Depth'][subs['Depth'] > 3] = 3
 
+    ic(np.unique(subs['Depth']), np.unique(subs['history:first_infall:Depth']))
+    db = np.unique(subs['history:first_infall:Depth'])
+    print('unique history:first_infall:Depths', db)
+    db = db[np.isfinite(db)]
+    db = np.append(db-0.5, db[-1:]+0.5)
+    for d in np.unique(subs['Depth']):
+        jd = (subs['Depth'] == d)
+        print(f'of the {jd.sum():.0f} that have Depth={d:.0f}:')
+        x = subs['history:first_infall:Depth'][jd]
+        for i, c in zip(*np.unique(x, return_counts=True)):
+            print(f'  {c:4d} ({c/jd.sum():.2f}) fell in with Depth={i}')
+    print()
+    db = np.unique(subs['Depth'])
+    print('unique Depths', db)
+    db = np.append(db-0.5, db[-1:]+0.5)
+    print()
+    for d in np.unique(subs['history:first_infall:Depth']):
+        jd = (subs['history:first_infall:Depth'] == d)
+        print(f'of the {jd.sum():.0f} that fell in with Depth={d:0f}:')
+        x = subs['Depth'][jd]
+        for i, c in zip(*np.unique(x, return_counts=True)):
+            print(f'  {c:4d} ({c/jd.sum():.2f}) have Depth={i}')
+    print()
+
+    dbins = np.append(np.arange(-0.5, 3.5), np.array([100]))
+    fig, ax = plt.subplots()
+    d = (dbins[:-1]+dbins[1:]) / 2
+    d[-1] = d[-2] + 1
+    ic(dbins, d)
+    h2d = np.histogram2d(
+        subs['history:first_infall:Depth'], subs['Depth'], dbins)[0]
+    h2d[h2d == 0] = np.nan
+    im = ax.imshow(h2d.T/np.nansum(h2d), origin='lower',
+                   extent=(dbins[0],dbins[-2]+1,dbins[0],dbins[-2]+1))
+    plt.colorbar(im, ax=ax)
+    for i, d_i in enumerate(d):
+        for j, d_j in enumerate(d):
+            ax.annotate(
+                f'{h2d[i,j]:.0f}', xy=(d_i,d_j), fontsize=14,
+                ha='center', va='center', color='C1', fontweight='bold')
+    ax.set(xlabel='history:first_infall:Depth', ylabel='Depth')
+    output = os.path.join(sim.plot_path, 'depth', 'depth_today_infall.png')
+    savefig(output)
+    return
+
     cols = ['TrackId', 'Depth', 'history:first_infall:time',
             'history:cent:time', 'Mstar/history:first_infall:Mstar',
             'Mbound/history:first_infall:Mbound', 'Mbound/Mstar']
