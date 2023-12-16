@@ -48,7 +48,7 @@ def main():
     to = time()
     subs = Subhalos(
         reader.LoadSubhalos(-1), sim, -1, as_dataframe=True,
-        logMmin=9, logM200Mean_min=9, exclude_non_FoF=False)
+        logMmin=None, logM200Mean_min=9, exclude_non_FoF=False)
     #subs.sort(order='Mbound')
     print(f'Loaded subhalos in {(time()-to)/60:.2f} minutes')
 
@@ -133,7 +133,7 @@ def main():
         xgrid, ygrid, n.T, cmap=cmap, norm=LogNorm(), rasterized=True)
     ycent = 10**func(np.log10(mstarbins), *fit_cent)
     bins_in_fit = (mstarbins >= mstar_fit_min) & (mstarbins <= mstar_fit_max)
-    ax.plot(mstarbins, ycent, 'C4', lw=3, dashes=(5,4), label='Centrals',
+    ax.plot(mstarbins, ycent, 'C4', lw=3, dashes=(4,3), label='Centrals',
             path_effects=[pe.Stroke(linewidth=4.5, foreground='w'),
                           pe.Normal()])
     ysat = 10**func(np.log10(mstarbins), *fit_sat)
@@ -157,7 +157,7 @@ def main():
     # centrals
     jc = (centrals['M200Mean'] > 1e13)
     ax.scatter(centrals['Mstar'][jc], centrals['Mbound'][jc], c='k', s=4,
-               marker='*', label='Cluster centrals')
+               marker='*', label='Cluster centrals', zorder=100)
     for mclmin in (1e13, 5e13, 1e14):
         n = (centrals['M200Mean'] > mclmin).sum()
         print(f'{n} clusters above M200Mean={mclmin/1e14:.1f}e14 Msun')

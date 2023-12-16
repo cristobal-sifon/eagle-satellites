@@ -107,7 +107,7 @@ def main():
 
     ## now calculate things!
     snaps = np.sort(sim.snapshots)[::-1]
-    snaps = np.concatenate([snaps[:360:40], snaps[-5:]])
+    #snaps = np.concatenate([snaps[:360:40], snaps[-5:]])
     ic(snaps, snaps.size)
 
     # a flag to update pericenters

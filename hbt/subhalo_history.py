@@ -53,19 +53,44 @@ def main():
     subs = Subhalos(
         reader.LoadSubhalos(-1), sim, -1, as_dataframe=True, logMmin=9,
         logM200Mean_min=9)
-    #subs.sort(order='Mbound')
+    print(np.median(subs['history:max_Mstar:time'][subs.satellite_mask]))
+    
     print(f'Loaded subhalos in {(time()-to)/60:.2f} minutes')
 
     print('In total there are {0} central and {1} satellite subhalos'.format(
         subs.centrals.size, subs.satellites.size))
 
     centrals = Subhalos(
-        subs.centrals, sim, -1, load_distances=False, load_velocities=False,
-        load_history=False, logMstar_min=9)
+        subs.centrals, sim, -1, load_any=False, logMstar_min=9)
     satellites = Subhalos(
-        subs.satellites, sim, -1, load_distances=False, load_velocities=False,
-        load_history=False, logM200Mean_min=13, logMstar_min=9)
+        subs.satellites, sim, -1, load_any=False, logM200Mean_min=13,
+        logMstar_min=9)
+    print(np.median(satellites['history:max_Mstar:time']))
+    tdiff = satellites['history:max_Mbound:time'] - satellites['history:cent:time']
+    print((np.abs(tdiff) > 1).sum(), tdiff.size,
+          (np.abs(tdiff) > 1).sum()/tdiff.size)
+    #return
     print(np.sort(satellites.colnames))
+    
+    # central infallers
+    tbins = np.arange(0, 14.5, 2)
+    ic(tbins)
+    t = satellites['history:first_infall:time']
+    d = satellites['history:first_infall:Depth']
+    nt = np.histogram(t, tbins)[0]
+    ic(nt)
+    ntc = np.histogram(t[d == 0], tbins)[0]
+    ic(ntc, ntc/nt)
+    tmb = satellites['history:max_Mbound:time']
+    late_mmax = np.histogram(t[tmb < t], tbins)[0]
+    ic(late_mmax, late_mmax/nt)
+    centrals_late_mmax = np.histogram(t[(d == 0) & (tmb < t)], tbins)[0]
+    satellites_late_mmax = np.histogram(t[(d > 0) & (tmb < t)], tbins)[0]
+    ic(centrals_late_mmax, centrals_late_mmax/late_mmax, centrals_late_mmax/ntc)
+    ic(satellites_late_mmax, satellites_late_mmax/late_mmax,
+       satellites_late_mmax/(nt-ntc))
+    return
+
     # fit HSMR
     # fit_hsmr(centrals)
     # fit_hsmr(satellites)
@@ -139,6 +164,10 @@ def demographics(satellites):
         for ai in a:
             p = np.percentile(x, [50-ai/2,50+ai/2])
             print(f'    {ai}th range = {p[0]:.2e} - {p[1]:.2e}')
+        # Latex format
+        p = np.percentile(x, [25, 75, 5, 90])
+        p = ' & '.join(f'{pi:4.1f}' for pi in p)
+        print(f'  {med:.2f} [] & {p}')
         return #nothing for now
 
     times_out = 'times_hist'

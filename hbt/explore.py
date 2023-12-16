@@ -36,8 +36,8 @@ for key in ('Mbound', 'LastMaxMass', 'Nbound'):
         np.percentile(subs[key][sat], [1,5,25,50,75,95,99])))
 
 #print(reader.GetScaleFactorDict())
-# snap = 0 --> z = 0.1
-# snap = 365 --> z = 1.0
+# snap = 0 --> a = 0.1
+# snap = 365 --> a = 1.0
 
 # some plots to understand what's going on
 def make_hist_sub(column, ax, bins=50, log=False, log_hist=True):
@@ -68,15 +68,15 @@ def make_hist_sub(column, ax, bins=50, log=False, log_hist=True):
     ax.legend(fontsize=13)#, loc='lower center')
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-columns = ('Mbound', 'Nbound', 'LastMaxMass', 'SnapshotIndexOfLastMaxMass',
-           'SnapshotIndexOfLastIsolation', 'PhysicalMostBoundDistance',
-           'ComovingMostBoundDistance')
-log = (True, True, True, False, False)
-ncol = len(columns)
-fig, axes = plt.subplots(figsize=(5*ncol,4), ncols=ncol)
-for ax, column, log_i in zip(axes, columns, log):
-    make_hist_sub(column, ax, log=log_i)
-savefig(os.path.join(plot_path, 'hist_subhalos.pdf'), fig=fig)
+    columns = ('Mbound', 'Nbound', 'LastMaxMass', 'SnapshotIndexOfLastMaxMass',
+            'SnapshotIndexOfLastIsolation', 'PhysicalMostBoundDistance',
+            'ComovingMostBoundDistance')
+    log = (True, True, True, False, False)
+    ncol = len(columns)
+    fig, axes = plt.subplots(figsize=(5*ncol,4), ncols=ncol)
+    for ax, column, log_i in zip(axes, columns, log):
+        make_hist_sub(column, ax, log=log_i)
+    savefig(os.path.join(plot_path, 'hist_subhalos.pdf'), fig=fig)
 
 # now all the different mass types
 def make_hist_sub_mtypes(column, i, ax, bins=50, log=True, log_hist=True,
@@ -117,78 +117,78 @@ def make_hist_sub_mtypes(column, i, ax, bins=50, log=True, log_hist=True,
             label='Type {0} ({1},{2})'.format(i+1,ns.sum(),nc.sum()))
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-fig, axes = plt.subplots(figsize=(12,10), ncols=2, nrows=2)
-ax = axes[0]
-ratio_bins = np.append(np.linspace(-5, -0.3, 20), np.linspace(-0.3, 0, 20)[1:])
-for row, name in zip(axes, ('MboundType','NboundType')):
-    print('plotting {0} ...'.format(name), end=' ')
-    for ax, ratio, bins in zip(row, (False,True), (50, ratio_bins)):
-        for i in range(6):
-            make_hist_sub_mtypes(name, i, ax, ratio=ratio, bins=bins)
-        #aux = [make_hist_sub_mtypes(name, i, ax, ratio=ratio)
-               #for i in range(subs['MboundType'][0].size)]
-    ax.legend(fontsize=12, loc='upper left')
-    print()
-output = os.path.join(plot_path, 'hist_MNboundType.pdf')
-savefig(output, fig=fig)
+    fig, axes = plt.subplots(figsize=(12,10), ncols=2, nrows=2)
+    ax = axes[0]
+    ratio_bins = np.append(np.linspace(-5, -0.3, 20), np.linspace(-0.3, 0, 20)[1:])
+    for row, name in zip(axes, ('MboundType','NboundType')):
+        print('plotting {0} ...'.format(name), end=' ')
+        for ax, ratio, bins in zip(row, (False,True), (50, ratio_bins)):
+            for i in range(6):
+                make_hist_sub_mtypes(name, i, ax, ratio=ratio, bins=bins)
+            #aux = [make_hist_sub_mtypes(name, i, ax, ratio=ratio)
+                #for i in range(subs['MboundType'][0].size)]
+        ax.legend(fontsize=12, loc='upper left')
+        print()
+    output = os.path.join(plot_path, 'hist_MNboundType.pdf')
+    savefig(output, fig=fig)
 
 
-bins = {'Mbound': np.logspace(-4.3, 4, 100),
-        'Nbound': np.logspace(-0.3, 8, 100),
-        'SnapshotIndexOfLastIsolation': np.arange(0, reader.MaxSnap, 2),
-        'redshift': np.logspace(-2, 0.3, 50)}
-fig, axes = plt.subplots(figsize=(14,6), ncols=2)
-# Mbound
-ax = axes[0]
-hist2d, xe, ye = np.histogram2d(
-    subs['SnapshotIndexOfLastIsolation'][sat], subs['Mbound'][sat],
-    (bins['SnapshotIndexOfLastIsolation'],bins['Mbound']))
-extent = (bins['SnapshotIndexOfLastIsolation'][0],
-          bins['SnapshotIndexOfLastIsolation'][-1],
-          bins['Mbound'][0], bins['Mbound'][-1])
-#img = ax.imshow(
-    #np.log10(hist2d.T), origin='lower', aspect='auto', extent=extent)
-X, Y = np.meshgrid(xe, ye)
-img = ax.pcolor(X, Y, hist2d.T, norm=LogNorm())
-cbar = plt.colorbar(img, ax=ax, format=LogFormatterMathtext())
-cbar.set_label('Number of subhalos')
-#cbar.set_yticks([])
-ax.set_ylabel('Mbound')
-# Nbound
-ax = axes[1]
-hist2d, xe, ye = np.histogram2d(
-    subs['SnapshotIndexOfLastIsolation'][sat], subs['Nbound'][sat],
-    (bins['SnapshotIndexOfLastIsolation'],bins['Nbound']))
-extent = (bins['SnapshotIndexOfLastIsolation'][0],
-          bins['SnapshotIndexOfLastIsolation'][-1],
-          bins['Nbound'][0], bins['Nbound'][-1])
-#img = ax.imshow(
-    #np.log10(hist2d.T), origin='lower', aspect='auto', extent=extent)
-X, Y = np.meshgrid(xe, ye)
-img = plt.pcolor(X, Y, hist2d.T, norm=LogNorm())
-cbar = plt.colorbar(img, ax=ax, format=LogFormatterMathtext())
-cbar.set_label('Number of subhalos')
-ax.set_ylabel('Nbound')
-# plot formatting
-try:
-    snaps = np.array(
-        [i.split('/')[-1].split('_')[1].split('.')[0]
-         for i in sorted(glob(os.path.join(path_hbt, 'SubSnap*')))],
-         dtype=int)
-except IndexError:
-    snaps = []
-    for i in sorted(os.listdir(path_hbt)):
-        try:
-            snaps.append(int(i))
-        except ValueError:
-            pass
-scale_factor = np.array([reader.GetScaleFactor(snap) for snap in snaps])
-redshifts = 1/scale_factor - 1
-redshifts = ['{0:.2f}'.format(z) for z in redshifts]
-for ax in axes:
-    ax.set_yscale('log')
-    ax.xaxis.set_major_locator(ticker.FixedLocator(snaps))
-    ax.xaxis.set_major_formatter(ticker.FixedFormatter(redshifts))
-    ax.set_xlabel('Last isolation redshift')
-output = os.path.join(plot_path, 'LastIsolation_Mbound.pdf')
-savefig(output, fig=fig)
+    bins = {'Mbound': np.logspace(-4.3, 4, 100),
+            'Nbound': np.logspace(-0.3, 8, 100),
+            'SnapshotIndexOfLastIsolation': np.arange(0, reader.MaxSnap, 2),
+            'redshift': np.logspace(-2, 0.3, 50)}
+    fig, axes = plt.subplots(figsize=(14,6), ncols=2)
+    # Mbound
+    ax = axes[0]
+    hist2d, xe, ye = np.histogram2d(
+        subs['SnapshotIndexOfLastIsolation'][sat], subs['Mbound'][sat],
+        (bins['SnapshotIndexOfLastIsolation'],bins['Mbound']))
+    extent = (bins['SnapshotIndexOfLastIsolation'][0],
+            bins['SnapshotIndexOfLastIsolation'][-1],
+            bins['Mbound'][0], bins['Mbound'][-1])
+    #img = ax.imshow(
+        #np.log10(hist2d.T), origin='lower', aspect='auto', extent=extent)
+    X, Y = np.meshgrid(xe, ye)
+    img = ax.pcolor(X, Y, hist2d.T, norm=LogNorm())
+    cbar = plt.colorbar(img, ax=ax, format=LogFormatterMathtext())
+    cbar.set_label('Number of subhalos')
+    #cbar.set_yticks([])
+    ax.set_ylabel('Mbound')
+    # Nbound
+    ax = axes[1]
+    hist2d, xe, ye = np.histogram2d(
+        subs['SnapshotIndexOfLastIsolation'][sat], subs['Nbound'][sat],
+        (bins['SnapshotIndexOfLastIsolation'],bins['Nbound']))
+    extent = (bins['SnapshotIndexOfLastIsolation'][0],
+            bins['SnapshotIndexOfLastIsolation'][-1],
+            bins['Nbound'][0], bins['Nbound'][-1])
+    #img = ax.imshow(
+        #np.log10(hist2d.T), origin='lower', aspect='auto', extent=extent)
+    X, Y = np.meshgrid(xe, ye)
+    img = plt.pcolor(X, Y, hist2d.T, norm=LogNorm())
+    cbar = plt.colorbar(img, ax=ax, format=LogFormatterMathtext())
+    cbar.set_label('Number of subhalos')
+    ax.set_ylabel('Nbound')
+    # plot formatting
+    try:
+        snaps = np.array(
+            [i.split('/')[-1].split('_')[1].split('.')[0]
+            for i in sorted(glob(os.path.join(path_hbt, 'SubSnap*')))],
+            dtype=int)
+    except IndexError:
+        snaps = []
+        for i in sorted(os.listdir(path_hbt)):
+            try:
+                snaps.append(int(i))
+            except ValueError:
+                pass
+    scale_factor = np.array([reader.GetScaleFactor(snap) for snap in snaps])
+    redshifts = 1/scale_factor - 1
+    redshifts = ['{0:.2f}'.format(z) for z in redshifts]
+    for ax in axes:
+        ax.set_yscale('log')
+        ax.xaxis.set_major_locator(ticker.FixedLocator(snaps))
+        ax.xaxis.set_major_formatter(ticker.FixedFormatter(redshifts))
+        ax.set_xlabel('Last isolation redshift')
+    output = os.path.join(plot_path, 'LastIsolation_Mbound.pdf')
+    savefig(output, fig=fig)
