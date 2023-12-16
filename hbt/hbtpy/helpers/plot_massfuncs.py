@@ -16,7 +16,7 @@ from .plot_auxiliaries import (
     binning, definitions, get_axlabel, get_bins, get_label_bincol, logcenters,
     massbins, plot_line)
 from .plot_definitions import (
-    ccolor, scolor, massnames, units, xbins, binlabel, events, axlabel)
+    ccolor, scolor, massnames, units, xbins, binlabel, axlabel)
 
 
 def plot_massfunction(

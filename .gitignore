@@ -1,6 +1,7 @@
 data/
-subcat/
+paper/
 plots/
+subcat/
 test*.png
 Untitled.ipynb
 tmp*
