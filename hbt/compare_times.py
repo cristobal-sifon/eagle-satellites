@@ -8,7 +8,7 @@ import numpy as np
 import os
 from scipy.optimize import curve_fit
 from scipy.stats import (
-    binned_statistic, binned_statistic_2d, pearsonr)
+    binned_statistic, binned_statistic_2d, gaussian_kde, pearsonr)
 import seaborn as sns
 from sklearn.neighbors import KernelDensity
 from time import time
@@ -47,25 +47,35 @@ def main():
     print(f'Loaded reader in {time()-to:.1f} seconds')
     to = time()
     subs = Subhalos(
-        reader.LoadSubhalos(-1), sim, -1, as_dataframe=True, logMmin=9,
-        logM200Mean_min=9, logMstar_min=9)
+        reader.LoadSubhalos(-1), sim, -1, as_dataframe=True, logMmin=None,
+        logM200Mean_min=None, logMstar_min=9)
     #subs.sort(order='Mbound')
     print(f'Loaded subhalos in {(time()-to)/60:.2f} minutes')
-    ic(subs.satellites)
+    ic(subs)
+    ic(subs.central_mask.sum(), subs.satellite_mask.sum())
 
     print('In total there are {0} central and {1} satellite subhalos'.format(
-        subs.centrals.size, subs.satellites.size))
+        subs.centrals.shape[0], subs.satellites.shape[0]))
 
     centrals = Subhalos(
         subs.centrals, sim, -1, load_any=False, logMstar_min=9)
     satellites = Subhalos(
-        subs.satellites, sim, -1, load_any=False,
+        subs.satellites, sim, -1, load_any=False, logMmin=None,
         logM200Mean_min=13, logMstar_min=9)
+    print(np.median(satellites['history:max_Mstar:time']))
+    ic(satellites.size)
+
+    ic(np.log10(satellites['M200Mean'].min()))
+    ic((satellites['history:max_Mbound:z'] < satellites['history:cent:z']).sum())
+    ic((satellites['history:max_Mbound:time'] > satellites['history:cent:time'] + 1).sum())
+    ic((satellites['history:max_Mbound:time'] < satellites['history:cent:time'] - 1).sum())
+    ic((satellites['history:max_Mstar:time'] < 0.1).sum(),
+        (satellites['history:max_Mstar:time'] == 0).sum())
     #print(np.sort(satellites.colnames))
     # ic(satellites.catalog)
     # return
 
-    #review_subsamples(args, satellites)
+    review_subsamples(args, satellites)
     #return
 
     # some default configs
@@ -94,33 +104,33 @@ def main():
     run(plot_times(
         satellites, c_lower='corr', c_upper='Mbound/Mstar',
         kwargs_lower=kwargs['corr'], kwargs_upper=kwargs['Mbound/Mstar']))
-    run(plot_times(
-        satellites, c_lower='history:max_Mstar:Mstar', c_upper='Mstar',
-        kwargs_lower=kwargs['Mstar'], kwargs_upper=kwargs['Mstar']))
-    run(plot_times(
-        satellites, c_lower='Mbound', c_upper='history:first_infall:Mbound',
-        kwargs_lower=kwargs['Mbound'], kwargs_upper=kwargs['Mbound']))
-    run(plot_times(
-        satellites, c_lower='Mbound', c_upper='history:max_Mbound:Mbound',
-        kwargs_lower=kwargs['Mbound'], kwargs_upper=kwargs['Mbound']))
-    run(plot_times(
-        satellites, c_lower='Mbound/history:first_infall:Mbound',
-        c_upper='Mstar/history:first_infall:Mstar',
-        kwargs_lower={**kwargs['ratio'], 'norm': LogNorm(vmin=0.1, vmax=2)},
-        kwargs_upper={**kwargs['ratio'], 'norm': LogNorm(vmin=0.5, vmax=5)}))
-    run(plot_times(
-        satellites, c_lower='Mbound/history:max_Mbound:Mbound',
-        c_upper='Mstar/history:max_Mstar:Mstar',
-        kwargs_lower=kwargs['ratio-over-max'],
-        kwargs_upper=kwargs['ratio-over-max']))
-    run(plot_times(
-        satellites, c_lower='history:first_infall:Mbound/history:max_Mbound:Mbound',
-        c_upper='history:first_infall:Mstar/history:max_Mstar:Mstar',
-        kwargs_lower=kwargs['ratio-over-max'],
-        kwargs_upper={**kwargs['ratio'], 'vmin': 0.4, 'vmax': 1}))
-    run(plot_times(
-        satellites, c_lower='history:first_infall:Mstar', c_upper='M200Mean',
-        kwargs_lower=kwargs['Mstar'], kwargs_upper=kwargs['M200Mean']))
+    # run(plot_times(
+    #     satellites, c_lower='history:max_Mstar:Mstar', c_upper='Mstar',
+    #     kwargs_lower=kwargs['Mstar'], kwargs_upper=kwargs['Mstar']))
+    # run(plot_times(
+    #     satellites, c_lower='Mbound', c_upper='history:first_infall:Mbound',
+    #     kwargs_lower=kwargs['Mbound'], kwargs_upper=kwargs['Mbound']))
+    # run(plot_times(
+    #     satellites, c_lower='Mbound', c_upper='history:max_Mbound:Mbound',
+    #     kwargs_lower=kwargs['Mbound'], kwargs_upper=kwargs['Mbound']))
+    # run(plot_times(
+    #     satellites, c_lower='Mbound/history:first_infall:Mbound',
+    #     c_upper='Mstar/history:first_infall:Mstar',
+    #     kwargs_lower={**kwargs['ratio'], 'norm': LogNorm(vmin=0.1, vmax=2)},
+    #     kwargs_upper={**kwargs['ratio'], 'norm': LogNorm(vmin=0.5, vmax=5)}))
+    # run(plot_times(
+    #     satellites, c_lower='Mbound/history:max_Mbound:Mbound',
+    #     c_upper='Mstar/history:max_Mstar:Mstar',
+    #     kwargs_lower=kwargs['ratio-over-max'],
+    #     kwargs_upper=kwargs['ratio-over-max']))
+    # run(plot_times(
+    #     satellites, c_lower='history:first_infall:Mbound/history:max_Mbound:Mbound',
+    #     c_upper='history:first_infall:Mstar/history:max_Mstar:Mstar',
+    #     kwargs_lower=kwargs['ratio-over-max'],
+    #     kwargs_upper={**kwargs['ratio'], 'vmin': 0.4, 'vmax': 1}))
+    # run(plot_times(
+    #     satellites, c_lower='history:first_infall:Mstar', c_upper='M200Mean',
+    #     kwargs_lower=kwargs['Mstar'], kwargs_upper=kwargs['M200Mean']))
     # run(plot_times(
     #     satellites, c_lower='history:sat:Mstar', c_upper='Mstar',
     #     cmap_lower='cmr.toxic_r', cmap_upper='cmr.toxic_r',
@@ -170,17 +180,18 @@ def review_tmstar(args, s, tlb, nsat, plot_path):
         ic((ti > tmstar).sum(), (ti > tmstar).sum()/nsat)
         ic(np.median(tmstar[late_mstar] - ti[late_mstar]))
         ic(np.median(tmstar[~late_mstar] - ti[~late_mstar]))
-        ic(binned_statistic(
-            tmstar, ti-tmstar, np.nanmedian, diffbins)[0])
-        ic(binned_statistic(
-            tmstar[late_mstar], (ti-tmstar)[late_mstar],
-            np.nanmedian, diffbins)[0])
-        ic(binned_statistic(
-            tmstar[~late_mstar], (ti-tmstar)[~late_mstar],
-            np.nanmedian, diffbins)[0])
+        # ic(binned_statistic(
+        #     tmstar, ti-tmstar, np.nanmedian, diffbins)[0])
+        # ic(binned_statistic(
+        #     tmstar[late_mstar], (ti-tmstar)[late_mstar],
+        #     np.nanmedian, diffbins)[0])
+        # ic(binned_statistic(
+        #     tmstar[~late_mstar], (ti-tmstar)[~late_mstar],
+        #     np.nanmedian, diffbins)[0])
     for m in ('Mbound', 'Mstar', 'M200Mean'):
         ic(m, np.log10(np.median(s[m][late_mstar])),
-           np.log10(np.median(s[m][~late_mstar])))
+           np.log10(np.median(s[m][~late_mstar])),
+           np.median(s[m][late_mstar])/np.median(s[m][~late_mstar]))
     fit, cov = curve_fit(
         lambda x, a, b: a+b*x, s['history:max_Mbound:time'][~late_mstar],
         s['history:max_Mstar:time'][~late_mstar], p0=(5.1,0.3))
@@ -240,11 +251,6 @@ def review_tacc(args, s, tlb, nsat, plot_path):
 
 
 def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
-            #    cmap_lower='cmr.ember_r', cmap_lower_rng=(0,1),
-            #    cmap_upper='cmr.cosmic_r', cmap_upper_rng=(0,1), vmin_lower=None,
-            #    vmax_lower=None, stat_lower=np.nanmean, log_lower=False,
-            #    vmin_upper=None, vmax_upper=None, stat_upper=np.nanmean,
-            #    log_upper=False):
                stat_lower=np.nanmean, stat_upper=np.nanmean,
                kwargs_lower={}, kwargs_upper={}):
     """
@@ -260,12 +266,15 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
             kwargs[i]['cmap'] = cmap
     kwargs_lower, kwargs_upper = kwargs
     ic(kwargs_lower['cmap'])
-    events = ('birth', 'cent', 'sat', 'first_infall', 'last_infall', 'max_Mdm',
+    # events = ('birth', 'cent', 'sat', 'first_infall', 'last_infall', 'max_Mdm',
+    #           'max_Mstar', 'max_Mgas')
+    events = ('cent', 'sat', 'first_infall', 'last_infall', 'max_Mdm',
               'max_Mstar', 'max_Mgas')
     nc = len(events)
     fig, axes = plt.subplots(
         nc, nc, figsize=(2*nc,2.4*nc), constrained_layout=True)
     tx = np.arange(0, 13.6, 0.5)
+    t1d = np.arange(0, 13.6, 0.1)
     extent = (tx[0], tx[-1], tx[0], tx[-1])
     xlim = extent[:2]
     # to convert lookback times into Universe ages
@@ -275,22 +284,48 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
         xcol = f'history:{ev_i}:time'
         x = satellites[xcol] if use_lookback else tmax - satellites[xcol]
         m = ['Mbound', 'Mstar', 'Mgas']#, 'M200Mean']
-        m += [f'history:{ev}:{mi}' for mi in m for ev in ('birth',)+events]
+        #m += [f'history:{ev}:{mi}' for mi in m for ev in ('birth',)+events]
+        m += [f'history:{ev}:{mi}' for mi in m for ev in events]
         ic('---')
         ic(xcol)
         # for mi in m:
         #     r = pearsonr(x, satellites[mi])[0]
         #     ic(mi, r)
         ic('---')
+        # also high-M200
+        massive = (satellites['M200Mean'] > 1e14)
+        lowmass = (satellites['M200Mean'] < 3e13)
+        ic(massive.sum(), (massive & (satellites['Rank'] == 1)).sum(),
+           lowmass.sum(), (lowmass & (satellites['Rank'] == 1)).sum())
         for j, ev_j in enumerate(events):
             ax = axes[i,j]
             ycol = f'history:{ev_j}:time'
             ic(xcol, ycol)
             y = satellites[ycol] if use_lookback else tmax - satellites[ycol]
-            ic(x, y)
+            #ic(x, y)
             # diagonal
             if j == i:
-                plot_times_hist(x, tx, ax, iname, xlim, ylim=(0,0.4))
+                plot_times_hist(x, t1d, ax, xlim, ylim=(0,0.4), color='k')
+                ic('high-M200')
+                plot_times_hist(
+                    x, t1d, ax, xlim, mask=massive,
+                    format_ax=False, color='C1', lw=2.5, fill=False,
+                    median_kwargs={'ls': '--'})
+                # also low-M200
+                ic('low-M200')
+                plot_times_hist(
+                    x, t1d, ax, xlim, mask=lowmass,
+                    format_ax=False, color='C0', lw=2.5, fill=False,
+                    median_kwargs={'ls': '--'})
+                if xcol == 'history:max_Mstar:time':
+                    late = (x < 0.1)
+                    n = x.size
+                    late_massive = (x[massive] == 0)
+                    late_lowmass = (x[lowmass] == 0)
+                    ic(late.sum()/n, late_massive.sum()/massive.sum(),
+                       late_lowmass.sum()/lowmass.sum())
+                    ic(np.median(x[massive]), np.median(x[lowmass]))
+                    #sys.exit()
             # lower triangle
             elif j < i:
                 if c_lower is None:
@@ -333,14 +368,17 @@ def plot_times(satellites, c_lower='corr', c_upper='Mstar', use_lookback=True,
     # save!
     c_lower = hbt_tools.format_colname(c_lower)
     c_upper = hbt_tools.format_colname(c_upper)
-    output = f'compare_times/comparetimes__{c_lower}__{c_upper}__birth'
+    output = f'compare_times/comparetimes__{c_lower}__{c_upper}'
+    if 'birth' in events:
+        output = f'{output}__birth'
     hbt_tools.save_plot(
         fig, output, satellites.sim, tight=False, h_pad=0.2)
     return
 
 
 def format_ax(ax, i, j, xlim, ncols, fs=18, labelpad=5):
-    axlabels = ['birth', 'cent', 'sat', 'infall', 'acc',
+    #axlabels = ['birth', 'cent', 'sat', 'infall', 'acc',
+    axlabels = ['cent', 'sat', 'infall', 'acc',
                 '$m_\mathrm{sub}^\mathrm{max}$',
                 '$m_\mathrm{\u2605}^\mathrm{max}$',
                 '$m_\mathrm{gas}^\mathrm{max}$']
@@ -426,6 +464,7 @@ def plot_times_2d(satellites, x, y, bins, ax, i, j, axname, extent,
             h2d, extent=extent, cmap=cmap_ij,
             origin='lower', aspect='auto', vmin=0, vmax=0.025*ntot)
         h2d[np.isnan(h2d)] = 0
+        ic(np.triu(h2d).sum()/ntot, np.tril(h2d).sum()/ntot)
     else:
         ic(cmap)
         #cmap = cmr.get_sub_cmap(cmap, *cmap_rng)
@@ -462,11 +501,30 @@ def plot_times_2d(satellites, x, y, bins, ax, i, j, axname, extent,
     return im
 
 
-def plot_times_hist(x, tx, ax, axname, xlim, bw=0.1, ylim=None):
-    sns.kdeplot(x, bw_method=bw, ax=ax, fill=True)
-    ax.axvline(np.median(x), color='0.2')
-    ax.tick_params(which='both', length=5)
-    ax.set(yticks=[], xlim=xlim, ylim=ylim, ylabel='')
+def plot_times_hist(x, tx, ax, xlim, bw=0.1, ylim=None, mask=None, color='C0',
+                    fill=True, lw=1.5, format_ax=True, use_sns=True,
+                    show_median=True, median_kwargs={}, **kwargs):
+    if mask is not None:
+        x = x[mask]
+        ic(mask.sum(), mask.sum()/mask.size)
+        #x[~mask] = -1
+    if use_sns:
+        sns.kdeplot(x, bw_method=bw, ax=ax, color=color, fill=fill, lw=lw,
+                    **kwargs)
+    else:
+        kde = gaussian_kde(x, bw)
+        kde = kde(tx)
+        if mask is not None:
+            kde = kde * mask.sum() / mask.size
+        ax.plot(tx, kde, color=color)
+        if fill:
+            ax.fill_between(tx, kde, color=color, alpha=0.2)
+    ic(np.median(x))
+    if show_median:
+        ax.axvline(np.median(x), color=color, lw=1.5, **median_kwargs)
+    if format_ax:
+        ax.tick_params(which='both', length=5)
+        ax.set(yticks=[], xlim=xlim, ylim=ylim, ylabel='')
     return
 
 
