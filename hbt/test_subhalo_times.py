@@ -21,26 +21,32 @@ from hbtpy.track import Track
 
 def main():
     args = hbt_tools.parse_args()
-    if not args.debug: ic.disable()
+    if not args.debug:
+        ic.disable()
 
-    sim = Simulation(args.simulation)
-    history_filename = os.path.join(sim.data_path, 'history', 'history.h5')
+    sim = Simulation(args.simulation, args.root)
+    history_filename = os.path.join(sim.data_path, "history", "history.h5")
     if not os.path.isfile(history_filename):
-        raise OSError(f'history file {history_filename} does not exist')
-    ic(f'Loaded {sim.name} with {sim.snapshots.size} snapshots!')
+        raise OSError(f"history file {history_filename} does not exist")
+    ic(f"Loaded {sim.name} with {sim.snapshots.size} snapshots!")
 
     to = time()
     reader = HBTReader(sim.path)
-    print('Loaded reader in {0:.1f} seconds'.format(time()-to))
+    print("Loaded reader in {0:.1f} seconds".format(time() - to))
 
     isnap = -1
     ti = time()
     subs = reader.LoadSubhalos(isnap)
-    print(f'Loaded subhalos in {time()-ti:.2f} s!')
+    print(f"Loaded subhalos in {time()-ti:.2f} s!")
 
     subs = Subhalos(
-        subs, sim, isnap, exclude_non_FoF=True,
-        load_distances=False, load_velocities=False)
+        subs,
+        sim,
+        isnap,
+        exclude_non_FoF=True,
+        load_distances=False,
+        load_velocities=False,
+    )
     subhalos = subs.catalog
     sats = subs.satellites
     cents = subs.centrals
@@ -49,36 +55,40 @@ def main():
 
     # choose a few tracks
     rng = np.random.default_rng(31)
-    sample_ids = rng.choice(sats['TrackId'], size=4)
+    sample_ids = rng.choice(sats["TrackId"], size=4)
     ic(sample_ids)
 
     fig, ax = plt.subplots()
     for i, trackid in enumerate(sample_ids):
-        #if check_infall(trackid, subs, history_filename):
-            #break
+        # if check_infall(trackid, subs, history_filename):
+        # break
         track = Track(trackid, sim)
         ic(track)
-        sub = subs.catalog[subs.catalog['TrackId'] == trackid]
-        plot_mstar(ax, track, sub, color=f'C{i}')
-        #break
+        sub = subs.catalog[subs.catalog["TrackId"] == trackid]
+        plot_mstar(ax, track, sub, color=f"C{i}")
+        # break
     ax.legend(fontsize=12)
-    ax.set(xlabel='Lookback time (Gyr)', ylabel=f"${binlabel['Mstar']}$",
-           yscale='log')
-    hbt_tools.save_plot(fig, 'max_Mstar', track.sim)
+    ax.set(xlabel="Lookback time (Gyr)", ylabel=f"${binlabel['Mstar']}$", yscale="log")
+    hbt_tools.save_plot(fig, "max_Mstar", track.sim)
 
     return
 
 
-def plot_mstar(ax, track, sub, color='C0'):
-    mstar = track['Mstar']
+def plot_mstar(ax, track, sub, color="C0"):
+    mstar = track["Mstar"]
     ic(mstar)
-    ic(sub['history:max_Mstar:time'])
-    ax.plot(track.sim.t_lookback, mstar, f'{color}-')
+    ic(sub["history:max_Mstar:time"])
+    ax.plot(track.sim.t_lookback, mstar, f"{color}-")
     j = np.argmax(mstar)
-    ax.plot(track.sim.t_lookback[j], mstar[j], 'o', mfc='w', mec=color, mew=2)
-    ax.plot(sub['history:max_Mstar:time'], sub['history:max_Mstar:Mstar'],
-            f'{color}*', ms=12, label=track.trackid)
-    #ax.annotate(
+    ax.plot(track.sim.t_lookback[j], mstar[j], "o", mfc="w", mec=color, mew=2)
+    ax.plot(
+        sub["history:max_Mstar:time"],
+        sub["history:max_Mstar:Mstar"],
+        f"{color}*",
+        ms=12,
+        label=track.trackid,
+    )
+    # ax.annotate(
     #    track.trackid, xy=(0.95,0.95), xycoords='axes fraction',
     #    ha='right', va='top', fontsize=14)
     return
@@ -87,25 +97,24 @@ def plot_mstar(ax, track, sub, color='C0'):
 def check_infall(trackid, subs, history_filename):
     ic()
     ic(trackid, type(trackid))
-    #obj_idx = subs.catalog['TrackId'] == trackid
-    #ic(obj_idx.shape, obj_idx.sum())
+    # obj_idx = subs.catalog['TrackId'] == trackid
+    # ic(obj_idx.shape, obj_idx.sum())
     ic()
-    with h5py.File(history_filename, 'r') as hdf:
-        trackids = np.array(hdf.get('trackids/TrackId'))
-        j = (trackids == trackid)
-        ic(hdf['trackids/TrackId'][j])
-        ic(hdf['trackids/TrackId_current_host'][j])
-        ic(hdf['trackids/TrackId_previous_host'][j])
-        ic(hdf['last_infall/isnap'][j], hdf['last_infall/z'][j])
-        ic(hdf['first_infall/isnap'][j], hdf['first_infall/z'][j])
-        ic(hdf['sat/isnap'][j], hdf['sat/z'][j])
+    with h5py.File(history_filename, "r") as hdf:
+        trackids = np.array(hdf.get("trackids/TrackId"))
+        j = trackids == trackid
+        ic(hdf["trackids/TrackId"][j])
+        ic(hdf["trackids/TrackId_current_host"][j])
+        ic(hdf["trackids/TrackId_previous_host"][j])
+        ic(hdf["last_infall/isnap"][j], hdf["last_infall/z"][j])
+        ic(hdf["first_infall/isnap"][j], hdf["first_infall/z"][j])
+        ic(hdf["sat/isnap"][j], hdf["sat/z"][j])
     ic()
     track = Track(trackid, subs.sim)
     print(track)
-    ic(track.first_satellite_snapshot_index,
-       track.last_central_snapshot)
-    #infall_index = track.infall()
-    #ic(infall_index)
+    ic(track.first_satellite_snapshot_index, track.last_central_snapshot)
+    # infall_index = track.infall()
+    # ic(infall_index)
     # this just to make sure
     infall_index_brute = track.infall(min_snap_range_brute=400)
     ic(infall_index_brute)
@@ -113,6 +122,5 @@ def check_infall(trackid, subs, history_filename):
     return True
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-

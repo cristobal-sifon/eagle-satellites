@@ -1,4 +1,5 @@
-# eagle-satellites
+eagle-satellites
+================
 
 Repository for the "The history and mass content of cluster galaxies in the EAGLE simulation" by Cristóbal Sifón and Jiaxin Han.
 
@@ -15,5 +16,11 @@ Figures in the paper were produced from the following:
 * Figures 10, 11, B.1, and B.2: ``preprocessing.py``
 * Figure 13: ``massloss.py``
 * Figure A.1: ``orphan.py``
+
+All of these are run, at a minimum, with the following signature:
+
+.. code-block::
+
+    
 
 Most of these require first having run ``store_subhalo_times.py`` to generate historical information.

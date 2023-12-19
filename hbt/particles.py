@@ -32,7 +32,7 @@ TO-DO:
 
 def main():
     args = hbt_tools.parse_args()
-    sim = Simulation(args.simulation)
+    sim = Simulation(args.simulation, args.root)
     reader = HBTReader(sim.path)
 
     isnap = -1

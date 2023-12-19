@@ -23,7 +23,7 @@ from hbtpy.subhalo import Subhalos
 
 def main():
     args = hbt_tools.parse_args()
-    sim = Simulation(args.simulation)
+    sim = Simulation(args.simulation, args.root)
 
     reader = HBTReader(sim.path)
 
@@ -85,10 +85,10 @@ def make_plot(args, reader, sim, isnap, logM200Mean_min, rcol, ycol, rbins):
             )
         )
     )
-    m = subs['Mbound']
+    m = subs["Mbound"]
     ic(m.size)
     sat = subs.satellite_mask
-    jmax = (subs['history:max_Mbound:Mbound'] > 1e8)
+    jmax = subs["history:max_Mbound:Mbound"] > 1e8
     ic(sat.sum(), jmax.sum(), (sat & jmax).sum())
     ic(np.sort(m[sat]))
     ic(np.sort(m[jmax]))
@@ -133,7 +133,7 @@ def make_plot(args, reader, sim, isnap, logM200Mean_min, rcol, ycol, rbins):
             hax.set(xscale="log")
             hax.xaxis.set_major_locator(ticker.FixedLocator(np.logspace(6, 12, 4)))
             hax.yaxis.set_major_locator(ticker.FixedLocator([1e1, 1e3, 1e5]))
-            #hax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%d"))
+            # hax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%d"))
         haxes[2].annotate(
             "Selecting by:",
             xy=(0.03, 0.8),

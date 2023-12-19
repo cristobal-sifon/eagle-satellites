@@ -46,7 +46,7 @@ def main():
         ]
     )
     np.random.seed(args.seed)
-    sim = Simulation(args.simulation)
+    sim = Simulation(args.simulation, args.root)
     reader = HBTReader(sim.path)
 
     isnap = -1
@@ -81,7 +81,7 @@ def shmr_history(args, subs):
     sats = subs.satellites
     cens = subs.centrals
     jsort = np.argsort(cens["M200Mean"]).values
-    ic(cens['M200Mean'].iloc[jsort])
+    ic(cens["M200Mean"].iloc[jsort])
     if args.test:
         j = jsort[-5]
         halo_shmr_evolution(
