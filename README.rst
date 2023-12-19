@@ -21,6 +21,6 @@ All of these are run, at a minimum, with the following signature:
 
 .. code-block::
 
-    
+    python fit_relations.py L100 path/to/hbt/data
 
 Most of these require first having run ``store_subhalo_times.py`` to generate historical information.
